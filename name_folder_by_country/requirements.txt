@@ -1,0 +1,13 @@
+affine==2.4.0
+attrs==24.2.0
+certifi==2024.8.30
+click==8.1.7
+click-plugins==1.1.1
+cligj==0.7.2
+colorama==0.4.6
+geographiclib==2.0
+geopy==2.4.1
+numpy==2.1.1
+pyparsing==3.1.4
+pyproj==3.7.0
+rasterio==1.4.1
