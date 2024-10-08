@@ -7,7 +7,7 @@ import json
 import time
 '''
 iterates through a folder and subfolders to find a tiff file and rename the folder based on the country name.
-(some json reading functionality remains commented out.)
+INDIVIDUAL FILE NAMES ARE NOT CHANGED, JUST THE FOLDER NAME AND THE PATHS INSIDE THE JSON FILES.
 '''
 
 # Initialize the geolocator for reverse geocoding
@@ -74,133 +74,111 @@ def rename_folder_based_on_country(folder_path, tiff_path):
     except Exception as e:
         print(f"---Error renaming folder: {e}")
         return None
-    
-# Function to iterate through dataset folders and rename them
-def process_dataset_folders(base_path):
-    base_folder = Path(base_path)
-    for folder_path in base_folder.iterdir():
-        if folder_path.is_dir():
-            '''
-            use this if you want to extract jason info.
-            '''
-            # Look for the JSON file in the folder
-            # json_files = list(folder_path.glob("*.json"))
-            # if json_files:
-            #     # Process the first JSON file found
-            #     json_path = json_files[0]
-            # else:
-            #     print(f"---No JSON file found in {folder_path}")
 
-            # Search for a Sentinel-1 or Sentinel-2 img TIFF file (you can adjust the pattern as needed)
+def update_asset_jsons(old_folder_name, new_folder_path):
+    """
+    Update the asset JSON files in the renamed folder to reflect the new folder name.
+
+    :param old_folder_name: The original folder name before renaming.
+    :param new_folder_path: Path to the folder containing the renamed assets.
+    """
+    # Iterate over all JSON files in the folder that might contain assets
+    for json_file in new_folder_path.glob("*.json"):
+        # Skip the catalog.json since it is handled separately
+        if json_file.name == "catalog.json":
+            continue
+        
+        with open(json_file, 'r') as f:
+            asset_data = json.load(f)
+
+        # Update the href links in the assets section
+        updated = False
+        if 'assets' in asset_data:
+            for asset_key, asset_info in asset_data['assets'].items():
+                if 'href' in asset_info:
+                    old_href = asset_info['href']
+                    # Replace old folder name with the new one
+                    new_href = old_href.replace(str(old_folder_name), str(new_folder_path.name))
+                    asset_info['href'] = new_href
+                    updated = True
+                    print(f"Updated asset href in {json_file.name} for {asset_key}: {old_href} -> {new_href}")
+
+        # If there were any updates, save the modified JSON
+        if updated:
+            with open(json_file, 'w') as f:
+                json.dump(asset_data, f, indent=4)
+                print(f"---Updated asset JSON: {json_file.name}")
+
+# function to update paths inside the stac jsonfile to reflect the new filder name   
+def update_catalogue_json(old_folder_name, base_path, new_folder_path):
+    """
+    Update the paths inside the STAC JSON CATALOGUE file to reflect the new folder name.
+    
+     :param old_folder_name: The original folder name before renaming.
+    :param new_folder_path: Path to the folder containing the renamed STAC JSON and assets.
+    """
+    print(f"+++++++Updating STAC CAT in {base_path}")
+    stac_catalogue_path = Path(base_path) / "catalog.json"
+    print(f"+++++++STAC CAT path: {stac_catalogue_path}")
+    
+    if stac_catalogue_path.exists():
+        with stac_catalogue_path.open('r') as f:
+            stac_data = json.load(f)
+        
+        # Update the asset links to reflect the new folder name
+        for link in stac_data.get('links', []):
+            if 'href' in link:
+                print(f"---href: {link['href']}")
+                old_href_path = Path(link['href'])
+                folder_path = old_href_path.parent
+                file_name = old_href_path.name    
+
+                if f'/{old_folder_name}/' in str(folder_path):
+                    new_folder_path_part = folder_path.as_posix().replace(f'/{old_folder_name}/', f'/{new_folder_path.name}/')
+                    new_href = Path(new_folder_path_part) / file_name
+                    link['href'] = str(new_href)
+
+                    # Logging updated path
+                    print(f"Updated asset path: {old_href_path} -> {new_href}")    
+
+    # Save the updated catalog JSON back to file
+    with stac_catalogue_path.open('w') as f:
+        json.dump(stac_data, f, indent=4)
+        print(f"---Updated STAC CATALOGUE JSON: {stac_catalogue_path}")
+
+
+# Process dataset folders: Renaming and STAC JSON updates
+def process_dataset_folders(base_path):
+    """
+    Traverse dataset folders and update their STAC JSON files with new folder names.
+
+    :param base_path: Base path where the renamed folders are located.
+    """
+
+    for folder_path in base_path.iterdir():
+        if folder_path.is_dir():
+            print(f"---Processing folder: {folder_path}")
+
             tiff_files = list(folder_path.glob("*img.tif"))  # Looks for any file ending with img.tif
                 
             if tiff_files:
                 # Use the first TIFF file found
                 tiff_path = tiff_files[0]
-                # Proceed with renaming using the JSON and the TIFF file to get the CRS
-                rename_folder_based_on_country(folder_path, tiff_path)
+                # Get the original folder name before renaming
+                old_folder_name = folder_path.name
+                print(f"---old_folder_name: {old_folder_name}")
+                # Proceed with renaming using the  TIFF file to get the CRS
+                new_folder_path = rename_folder_based_on_country(folder_path, tiff_path)
+                print(f"---new_folder_path: {new_folder_path}")
+
+                if new_folder_path:
+                    # Update the STAC JSON file with the new folder name
+                    update_asset_jsons(old_folder_name, new_folder_path) 
+
             else:
-                    print(f"---No suitable TIFF file found in {folder_path}")
-
-def update_asset_jsons(base_path):
-    base_folder = Path(base_path)
-    for folder_path in base_folder.iterdir():
-        if folder_path.is_dir():
-            # Find all STAC JSON files (e.g., sentinel12_*.json)
-            json_files = list(folder_path.glob("*.json"))
-            
-            for json_file in json_files:
-                print(f"---Updating STAC file: {json_file}")
-                with open(json_file, 'r') as f:
-                    stac_data = json.load(f)
-
-                # Update href links in the assets section
-                if 'assets' in stac_data:
-                    for asset_key, asset_data in stac_data['assets'].items():
-                        if 'href' in asset_data:
-                            old_href = asset_data['href']
-                            new_href = str(folder_path / Path(old_href).name)
-                            asset_data['href'] = new_href
-                            print(f"---Updated href for {asset_key}: {old_href} -> {new_href}")
-                
-                # Optionally, you can also update the 'links' section if necessary
-                if 'links' in stac_data:
-                    for link in stac_data['links']:
-                        if 'href' in link:
-                            old_link_href = link['href']
-                            new_link_href = str(folder_path / Path(old_link_href).name)
-                            link['href'] = new_link_href
-                            print(f"---Updated link href: {old_link_href} -> {new_link_href}")
-
-                # Save the updated STAC JSON
-                with open(json_file, 'w') as f:
-                    json.dump(stac_data, f, indent=2)
-                print(f"---Updated STAC metadata for {json_file}")
-
-def update_catalog_links(catalog_path, renamed_folders_map):
-    """
-    Update the href links in the catalog.json to reflect renamed folders.
-
-    :param catalog_path: Path to the main STAC catalog.json file
-    :param renamed_folders_map: Dictionary mapping old folder names to new folder names
-    """
-    catalog_path = Path(catalog_path)
-    
-    if not catalog_path.exists():
-        print(f"---Catalog path not found: {catalog_path}")
-        return
-    
-    with open(catalog_path, 'r') as f:
-        catalog_data = json.load(f)
-    
-    updated = False
-    
-    # Update the links in the catalog.json
-    if "links" in catalog_data:
-        for link in catalog_data["links"]:
-            if link["rel"] == "child" or link["rel"] == "item":
-                old_href = link["href"]
-                folder_name = Path(old_href).parts[-2]  # Get the folder name
-                
-                if folder_name in renamed_folders_map:
-                    new_folder_name = renamed_folders_map[folder_name]
-                    new_href = old_href.replace(folder_name, new_folder_name)
-                    link["href"] = new_href
-                    updated = True
-                    print(f"---Updated link: {old_href} -> {new_href}")
-    
-    if updated:
-        # Save the updated catalog.json
-        with open(catalog_path, 'w') as f:
-            json.dump(catalog_data, f, indent=4)
-        print(f"---catalog.json updated successfully.")
-    else:
-        print(f"---No updates required for {catalog_path}")
-
-def generate_renamed_folders_map(base_path):
-    """
-    Generate a dictionary that maps old folder names to new folder names based on the country.
-
-    :param base_path: Path to the base directory containing renamed folders.
-    :return: Dictionary mapping old folder names to new folder names.
-    """
-    renamed_folders_map = {}
-    base_path = Path(base_path)
-
-    # Traverse the directories in base_path
-    for folder_path in base_path.iterdir():
-        if folder_path.is_dir():
-            # Check if the folder contains a country prefix
-            parts = folder_path.name.split('_')
-            
-            if len(parts) > 1:
-                # The original name is likely everything after the first part
-                country = parts[0]  # e.g., "Country" part
-                original_name = '_'.join(parts[1:])  # e.g., "Old_Folder1"
-                renamed_folders_map[original_name] = folder_path.name
-                print(f"---Mapped: {original_name} -> {folder_path.name}")
-
-    return renamed_folders_map
+                    print(f"---No suitable TIFF file found in {folder_path}") 
+        
+    update_catalogue_json(old_folder_name, base_path, new_folder_path) 
 
 
 base_path_root = r"X:\1NEW_DATA\1data\2interim"
@@ -208,15 +186,7 @@ base_path = Path(base_path_root) / "dataset_rename_test"
 # print("---Processing dataset folders in:", base_path)
 # print(f"----Checking path: {base_path}")
 if base_path.exists():
-    # print("---Path exists.")
-    pass
+    process_dataset_folders(base_path)
 else:
-    print("---Path does not exist:", base_path)
-process_dataset_folders(base_path)
-update_asset_jsons(base_path)
+    print("---base_Path does not exist:", base_path)
 
-catalog_path = Path("X:/1NEW_DATA/1data/2interim/dataset_rename_test/catalog.json")
-renamed_folders_map = generate_renamed_folders_map(base_path)
-}
-
-update_catalog_links(catalog_path, renamed_folders_map)
