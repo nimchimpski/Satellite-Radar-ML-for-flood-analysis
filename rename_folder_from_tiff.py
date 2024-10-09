@@ -5,37 +5,16 @@ import os
 from pathlib import Path
 import json
 import time
+from helpers import get_central_coordinate_from_tiff
+from helpers import get_crs_from_tiff
 '''
-iterates through a folder and subfolders to find a tiff file and rename the folder based on the country name.
+Countryname grabbed from Nominatim.
+Iterates through a folder and subfolders to find a tiff file and rename the folder based on the country name.
 INDIVIDUAL FILE NAMES ARE NOT CHANGED, JUST THE FOLDER NAME AND THE PATHS INSIDE THE JSON FILES.
 '''
 
 # Initialize the geolocator for reverse geocoding
 geolocator = Nominatim(user_agent="floodai")
-
-def get_crs_from_tiff(tiff_path):
-    with rasterio.open(tiff_path) as dataset:
-        if not dataset.crs:
-            raise ValueError("---CRS not found in the TIFF file")
-        print(f"---CRS: {dataset.crs}")
-        return dataset.crs      
-
-# Function to get the central coordinates from a TIFF file
-def get_central_coordinate_from_tiff(tiff_path):
-    with rasterio.open(tiff_path) as dataset:
-        # Get the bounding box of the dataset
-        bbox = dataset.bounds
-        # Calculate the central coordinate in the native CRS
-        central_x = (bbox.left + bbox.right) / 2
-        central_y = (bbox.bottom + bbox.top) / 2
-        # Get the dataset CRS (e.g., UTM)
-        src_crs = dataset.crs
-        
-        # Transform to WGS84 (EPSG:4326) for reverse geocoding (lat/lon)
-        transformer = Transformer.from_crs(src_crs, "EPSG:4326", always_xy=True)
-        central_lon, central_lat = transformer.transform(central_x, central_y)
-        
-        return central_lat, central_lon
 
 # Function to get the country name using reverse geocoding
 def get_country_name(lat, lon):
