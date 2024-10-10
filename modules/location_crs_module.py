@@ -30,7 +30,7 @@ def get_crs_from_tiff(tiff_path):
             print("---CRS not found in the TIFF file")
             crs = None
         else:
-            print(f"---CRS: {dataset.crs}")
+            # print(f"---CRS: {dataset.crs}")
             crs = dataset.crs
         return crs 
     
@@ -76,7 +76,7 @@ def reproject_to_epsg4326(tile_path, utm_crs):
         })
 
         # Save the reprojected raster to a new file or overwrite the same file
-        output_file = tile_path.with_name(f"reprojected_{tile_path.name}")
+        output_file = tile_path.with_name(f"epsg4326_{tile_path.name}")
         with rasterio.open(output_file, 'w', **kwargs) as dst:
             for i in range(1, src.count + 1):
                 reproject(
@@ -88,4 +88,4 @@ def reproject_to_epsg4326(tile_path, utm_crs):
                     dst_crs=dst_crs,
                     resampling=Resampling.nearest)
 
-    print(f"---Reprojected tile saved as: {output_file}")
+    print(f"---Reprojected tile saved as: {output_file.name}")
