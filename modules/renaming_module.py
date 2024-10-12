@@ -41,7 +41,7 @@ def remove_characters_from_foldername(base_path):
             else:
                 print(f"No digits between 1 and 99 found in {folder_path.name}. Skipping.")
 
-def remove_word_from_foldername(base_path)
+def remove_word_from_foldername(base_path, word):
 
     '''
     Remove words or characters etc from folder names
@@ -55,13 +55,24 @@ def remove_word_from_foldername(base_path)
             print(f"---Processing folder: {folder_path.name}")
             if 'Unknown' in folder_path.name:
                 # delete the work 'unknown' in the folder name
-                new_folder_name = folder_path.name.replace('Unknown', '')
-                new_folder_name = folder_path.name.replace('Unknown_', '')
+                new_folder_name = folder_path.name.replace(word, '')
                 new_folder_path = folder_path.parent / new_folder_name  
 
                                 # Rename the folder
                 print(f"Renaming: {folder_path} -> {new_folder_path}")
                 folder_path.rename(new_folder_path)
+
+def remove_word_from_filename(file_path, word):
+    '''
+    Remove words or characters etc from folder names
+    base_path is a folder of folders
+    '''
+    if file_path.is_file():
+        if word in file_path.name:
+            new_folder_name = file_path.name.replace(word, '')
+            new_file_path = file_path.parent / new_folder_name 
+            print(f"Renaming: {file_path} -> {new_file_path}")
+            file_path.rename(new_file_path)
 
 
     
