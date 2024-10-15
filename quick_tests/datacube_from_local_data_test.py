@@ -1,6 +1,6 @@
 import os
 import rasterio
-import rioxarray # very important!
+import rioxarray as rxr # very important!
 import numpy as np
 import xarray as xr
 from rasterio.enums import ColorInterp
@@ -163,25 +163,107 @@ def tile_to_dir(stack, date, dir, tile_size, stride, country):
 
     return counter, counter_valid, counter_nomask
 
-def normalize_and_stack(data_root):
+def check_layers(layers, layer_names):
+    '''
+    checks the layers and prints out some info
+    '''
+    # Assuming you have a list of Dask arrays, each representing a layer
+    
+    for i, layer in enumerate(layers):
+        print(f'---layer name = {layer_names[i]}')
+        print(f'---layer type = {type(layer)}')
+        print(f"Layer {i+1}:")
+
+        # Print the shape of the layer
+        print(f"  Shape: {layer.shape}")
+
+        # Print the data type of the layer
+        print(f"  Data Type: {layer.dtype}")
+
+        # Assuming the array has x and y coordinates in the `.coords` attribute (like in xarray)
+        # You can access and print the coordinates if it is an xarray DataArray or a similar structure
+        if hasattr(layer, 'coords'):  # If using Dask with xarray-like data
+            print(f"  X Coordinates: {layer.coords['x']}")
+            print(f"  Y Coordinates: {layer.coords['y']}")
+        else:
+            print("  No coordinate information available.")
+
+        print("\n")  # Separate the output for each layer
+
+def create_vv_and_vh_tifs(image_path):
+    '''
+    will delete the original image after creating the vv and vh tifs
+    '''
+    print('+++in create_vv_and_vh_tifs fn')
+    # Open the multi-band TIFF
+    with rasterio.open(image_path) as src:
+        # Read the vv (first band) and vh (second band)
+        vv_band = src.read(1)  # Band 1 (vv)
+        vh_band = src.read(2)  # Band 2 (vh)
+
+        # Define metadata for saving new files
+        meta = src.meta
+
+        # Update meta to reflect the single band output
+        meta.update(count=1)
+
+        # Save the vv band as a separate TIFF
+        vv_newname = image_path.name.rsplit('_', 1)[0]+'_vv.tif'
+        print('---vv_newname= ',vv_newname)
+        with rasterio.open(image_path.parent / vv_newname, 'w', **meta) as destination:
+            destination.write(vv_band, 1)  # Write band 1 (vv)
+
+        # Save the vh band as a separate TIFF
+        vh_newname = image_path.name.rsplit('_', 1)[0]+'_vh.tif'
+        with rasterio.open(image_path.parent / vh_newname, 'w', **meta) as destination:
+            destination.write(vh_band, 1)  # Write band 2 (vh)
+
+        # delete original image using unlink() method
+    image_path.unlink()
+
+
+def make_datacube(data_root):
     '''
     Loop through each dataset to normalize and load into xarray datacube (stacked on a new dimension)
     'Event' is a single folder conatining flood event data     
     '''
-    layers = []
-    layer_names = []
-
     for event in data_root.iterdir():
         if event.is_dir():
+            print('\n###########################################################')
             print(f"---Preprocessing event: {event.name}")
+            for file in event.iterdir():
+                if 'img.tif' in file.name:
+                    image_path = file
+                    create_vv_and_vh_tifs(image_path)
+                    return
             # Get the datas info from the folder
             datas = make_datas(event)
 
+        else:
+            continue
+        layers = []
+        layer_names = []
+
         for tif_file, band_name in datas.items():
             try:
-                print(f"---Loading {tif_file}")
+                print(f"\n---Loading {tif_file}-------------------------------------------")
                 # Use Dask chunking for large .tif files
-                stack = rioxarray.open_rasterio(Path(data_root, event, tif_file), chunks={'x' : 1024, 'y' : 1024})
+                stack = rxr.open_rasterio(Path(data_root, event, tif_file), chunks={'x': 1024, 'y': 1024})
+                # Check if stack is created successfully
+                if stack is None:
+                    print(f"---Error: Stack for {tif_file} is None")
+                else:
+                                # Print basic info about the stack
+                    print(f"---Successfully loaded stack for {tif_file}")
+                    print(f"---Stack type: {type(stack)}")  # Should be an xarray.DataArray
+                    print(f"---Stack dimensions: {stack.dims}")
+                    print(f"---Stack shape: {stack.shape}")  # Check the shape of the array
+                    print(f"---Stack data type: {stack.dtype}")  # Check the data type of the array
+
+                    # Print the first few coordinate values for x and y
+                    print(f"---X Coordinates: {stack.coords['x'].values[:5]}")  # First 5 x-coordinates
+                    print(f"---Y Coordinates: {stack.coords['y'].values[:5]}")  # First 5 y-coordinates
+           
             except Exception as e:
                 print(f"---Error loading {tif_file}: {e}")
                 continue  # Skip this file if there is an issue loading
@@ -189,35 +271,38 @@ def normalize_and_stack(data_root):
             if 'img.tif' in tif_file:
                 try:
                     stack = stack.assign_coords({'band': band_name})  # Assign 'vv' and 'vh'
-                    # Normalize both VV and VH bands directly on the xarray.DataArray
 
-                    vv_norm = stack.sel(band=band_name[0])
-                    vh_norm = stack.sel(band=band_name[1])
+                    vv = stack.sel(band=band_name[0])
+                    vh = stack.sel(band=band_name[1])
                     # Concatenate VV and VH bands along the 'band' dimension
-                    norm_stack = xr.concat([vv_norm, vh_norm], dim='band')
-                    layers.append(norm_stack)
+                    stack = xr.concat([vv, vh], dim='band')
+                    layers.append(stack)
                     layer_names.extend(band_name)  # ['vv', 'vh']   
                     print(f"---Successfully processed IMG layers: {band_name}")
                 except Exception as e:
                     print(f"---Error normalizing IMG bands for {tif_file}: {e}")
                     continue    
             # Handle single-band layers (e.g., DEM, slope, mask)   
-            elif 'elevation' or 'slope' in tif_file:
+            else:
                 try:
-                    norm_stack = custom_normalize(stack)
-                    layers.append(norm_stack)
+                    print(f"---Processing single-band layer: {band_name}")
+                    print(f'---layers len 1= ',len(layers))
+                    layers.append(stack)
+                    print(f'---layers len 2= ',len(layers))
                     layer_names.append(band_name)
-                    print(f"---Successfully processed layer: {band_name}")
+                    print(f"---Successfully processed layer with band name: {band_name}")
                 except Exception as e:
                     print(f"---Error normalizing bands for {tif_file}: {e}")
                     continue
-        
+    print(f'---finished {event.name}\n'  )   
+    print('---length layers= ',len(layers), '\n')         
+    print(f'---layer_names= {layer_names}\n')
     if layers:
-        # Convert data arrays to float32 before concatenation
-        layers = [layer.astype('float32') for layer in layers]
+        # Convert layers to float32, except for 'mask' and 'valid' layers
+        layers = [layer.astype('float32') if 'mask' not in name and 'analysis_extent' not in name else layer for layer, name in zip(layers, layer_names)]
+        check_layers(layers, layer_names)
         # Concatenate all layers along a new dimension called 'layer' or 'band'
         datacube = xr.concat(layers, dim='layer')
-
         # Assign the layer names (e.g., ['vv', 'vh', 'dem', 'slope']) to the 'layer' dimension
         datacube = datacube.assign_coords(layer=layer_names)
         return datacube
@@ -250,7 +335,7 @@ def make_datas(event):
     
 def main():
     data_root = Path(r"Z:\1NEW_DATA\1data\2interim\TESTS\sample_s1s24326")
-    normalize_and_stack(data_root)
+    make_datacube(data_root)
     # tile_statistics = {}
 
 if __name__ == "__main__":
