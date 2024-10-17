@@ -20,9 +20,6 @@ INDIVIDUAL FILE NAMES ARE NOT CHANGED, JUST THE FOLDER NAME AND THE PATHS INSIDE
 # Initialize the geolocator for reverse geocoding
 geolocator = Nominatim(user_agent="floodai")
 
-
-
-
 # Process dataset folders: Renaming and STAC JSON updates
 def main(base_path):
     """
