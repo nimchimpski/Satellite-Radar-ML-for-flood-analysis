@@ -8,13 +8,16 @@ from tqdm import tqdm
 from pathlib import Path
 import netCDF4 as nc
 from osgeo import gdal
+from check_int16_exceedance import check_int16_exceedance
+from check_int16_exceedance2 import check_int16_exceedance2
+from check_int16_exceedance2 import find_exceedances
 
 def check_nan_gdal(tiff_path):
     '''
     Use GDAL to load and check TIFF for NaNs.
     '''
     dataset = gdal.Open(tiff_path)
-    print(f"+++ Checking {tiff_path} +++")
+    print(f"+++ in check_nan_gdal  +++")
     
     for band in range(1, dataset.RasterCount + 1):
         band_data = dataset.GetRasterBand(band).ReadAsArray()
@@ -28,6 +31,27 @@ def check_nan_gdal(tiff_path):
     
     return dataset
 
+def fill_nodata_with_zero(input_file):
+    # Open the input raster file
+    dataset = gdal.Open(input_file, gdal.GA_Update)
+    band = dataset.GetRasterBand(1)
+
+    # Get the nodata value (if it exists)
+    nodata_value = band.GetNoDataValue()
+
+    # Read the raster as a NumPy array
+    data = band.ReadAsArray()
+
+    # Replace nodata values with 0
+    if nodata_value is not None:
+        data[data == nodata_value] = 0
+    
+    # Write the modified array back to the raster
+    band.WriteArray(data)
+    
+    # Flush and close the file
+    band.FlushCache()
+    dataset = None  # Close the file
 
 # TODO add rtc function
 def custom_normalize(array, lower_percentile=2, upper_percentile=98, clip_range=(0, 1)):
@@ -100,8 +124,6 @@ def filter_allones(tile):
         if np.all(tile == 1):
             print(f"Warning: Tile {i} has all values as 1. Check mask or data integrity.")
 
-
-
 def filter_nomask(tile):
     if (tile.sel(band='mask').sum().values.tolist() == 0):
         return False        
@@ -139,7 +161,6 @@ def tile_datacube(eventcube, tile_size_x=1024, tile_size_y=1024):
     
     return tiled_datacube
 
-
 def check_layers(layers, layer_names):
     '''
     checks the layers and prints out some info
@@ -150,69 +171,57 @@ def check_layers(layers, layer_names):
     for i, layer in enumerate(layers):
         print(f'---layer name = {layer_names[i]}')
         print(f'---layer type = {type(layer)}')
-        print(f"Layer {i+1}:")
+        print(f"---Layer {i+1}:")
 
         # Print the shape of the layer
-        print(f"  Shape: {layer.shape}")
+        print(f"---Shape: {layer.shape}")
 
         # Print the data type of the layer
-        print(f"  Data Type: {layer.dtype}")
+        print(f"---Data Type: {layer.dtype}")
 
         # Assuming the array has x and y coordinates in the `.coords` attribute (like in xarray)
         # You can access and print the coordinates if it is an xarray DataArray or a similar structure
         if hasattr(layer, 'coords'):  # If using Dask with xarray-like data
-            print(f"  X Coordinates: {layer.coords['x']}")
-            print(f"  Y Coordinates: {layer.coords['y']}")
+            print(f"---X Coordinates: {layer.coords['x']}")
+            print(f"---Y Coordinates: {layer.coords['y']}")
         else:
-            print("  No coordinate information available.")
+            print("---No coordinate information available.")
 
         missing_values = np.isnan(layer.values).sum()
         print(f"--- Missing Values (NaN): {missing_values}")
 
         print("\n")  # Separate the output for each layer
 
-def create_vv_and_vh_tifs(event):
+def create_vv_and_vh_tifs(file):
     '''
     will delete the original image after creating the vv and vh tifs
     '''
     print('+++in create_vv_and_vh_tifs fn')
-    # List files in the directory and print them for debugging
-    print('length files in event' , len(list(event.iterdir())))
-    for file in event.iterdir():
-        # Check if the event directory exists and print the path
-        if not event.exists() or not event.is_dir():
-            print(f"---Error: Event directory {event} does not exist or is not a directory")
-            return
 
-        print(f'---looking at= {file.name}')
-        if 'img.tif' in file.name:
-            print(f'---found image file= {file.name}')
-            # Open the multi-band TIFF
-            with rasterio.open(file) as src:
-                # Read the vv (first band) and vh (second band)
-                vv_band = src.read(1)  # Band 1 (vv)
-                vh_band = src.read(2)  # Band 2 (vh)
+    # print(f'---looking at= {file.name}')
+    if 'img.tif' in file.name:
+        print(f'---found image file= {file.name}')
+        # Open the multi-band TIFF
+        with rasterio.open(file) as src:
+            # Read the vv (first band) and vh (second band)
+            vv_band = src.read(1)  # Band 1 (vv)
+            vh_band = src.read(2)  # Band 2 (vh)
+            # Define metadata for saving new files
+            meta = src.meta
+            # Update meta to reflect the single band output
+            meta.update(count=1)
+            # Save the vv band as a separate TIFF
+            vv_newname = file.name.rsplit('_', 1)[0]+'_vv.tif'
+            print('---vv_newname= ',vv_newname)
+            with rasterio.open(file.parent / vv_newname, 'w', **meta) as destination:
+                destination.write(vv_band, 1)  # Write band 1 (vv)
+            # Save the vh band as a separate TIFF
+            vh_newname = file.name.rsplit('_', 1)[0]+'_vh.tif'
+            with rasterio.open(file.parent / vh_newname, 'w', **meta) as destination:
+                destination.write(vh_band, 1)  # Write band 2 (vh)
+        file.unlink()  # Delete the original image file  
 
-                # Define metadata for saving new files
-                meta = src.meta
-
-                # Update meta to reflect the single band output
-                meta.update(count=1)
-
-                # Save the vv band as a separate TIFF
-                vv_newname = file.name.rsplit('_', 1)[0]+'_vv.tif'
-                print('---vv_newname= ',vv_newname)
-                with rasterio.open(file.parent / vv_newname, 'w', **meta) as destination:
-                    destination.write(vv_band, 1)  # Write band 1 (vv)
-
-                # Save the vh band as a separate TIFF
-                vh_newname = file.name.rsplit('_', 1)[0]+'_vh.tif'
-                with rasterio.open(file.parent / vh_newname, 'w', **meta) as destination:
-                    destination.write(vh_band, 1)  # Write band 2 (vh)
-            file.unlink()  # Delete the original image file  
-
-  
-                # delete original image using unlink() method
+            # delete original image using unlink() method
     print('---finished create_vv_and_vh_tifs fn')
 
 def matchresolutions(event):
@@ -231,7 +240,7 @@ def matchresolutions(event):
         # Loop through files and reproject all except the vv and vh files
         for file in event.iterdir():
             if 'vv.tif' not in file.name and 'vh.tif' not in file.name:
-                print(f'---found file to reproject = {file}')
+                print(f'---found file to reproject = {file.name}')
                 # print(f'---target reference_path= {reference_path.name}')
                 
                 # Open the reference and target rasters inside `with` blocks
@@ -320,7 +329,6 @@ def make_eventcube(data_root, event, datas):
         print('---No layers found')
         return None 
     
-
 def make_datas(event):
     datas = {}
     print(f"---gatting datas info from: {event.name}")
@@ -373,33 +381,35 @@ def datacube_check(datacube):
     if datacube.chunks:
         print(datacube.chunks)
     else:
-        print("No chunking detected.")
+        print("---No chunking detected.")
     
     print("\n--- Coordinate Ranges ---")
-    print(f"X Range: {datacube.coords['x'].min().values} to {datacube.coords['x'].max().values}")
-    print(f"Y Range: {datacube.coords['y'].min().values} to {datacube.coords['y'].max().values}")
+    print(f"---X Range: {datacube.coords['x'].min().values} to {datacube.coords['x'].max().values}")
+    print(f"---Y Range: {datacube.coords['y'].min().values} to {datacube.coords['y'].max().values}")
     
     print("\n--- Data Types ---")
     if isinstance(datacube, xr.Dataset):
         for var_name, var_data in datacube.data_vars.items():
-            print(f"Layer {var_name}: {var_data.dtype}")
+            print(f"---Layer {var_name}: {var_data.dtype}")
     elif isinstance(datacube, xr.DataArray):
-        print(f"Data type: {datacube.dtype}")
+        print(f"---Data type: {datacube.dtype}")
     
     print("\n--- Checking for NaN or Missing Values ---")
     if isinstance(datacube, xr.Dataset):
         for var_name in datacube.data_vars:
             missing_values = datacube[var_name].isnull().sum().values
-            print(f"Layer {var_name}: {missing_values} missing values")
+            print(f"---Layer {var_name}: {missing_values} missing values")
     elif isinstance(datacube, xr.DataArray):
         missing_values = datacube.isnull().sum().values
-        print(f"DataArray: {missing_values} missing values")
+        print(f"---DataArray: {missing_values} missing values")
     
     print("\n--- Checking Memory Usage ---")
     memory_usage = datacube.nbytes / (1024**3)  # Convert to GB
-    print(f"Datacube Memory Usage: {memory_usage:.2f} GB")
+    print(f"---Datacube Memory Usage: {memory_usage:.2f} GB")
     
     print("\n+++ Datacube Health Check Completed +++")
+
+
 
 def main():
 
@@ -412,21 +422,40 @@ def main():
     data_root = Path(r"Z:\1NEW_DATA\1data\2interim\TESTS\sample_s1s24326")
     for event in data_root.iterdir():
         # prepare the images
+        # check if file is .nc
+        if event.suffix == '.nc':
+            continue
         if event.is_dir():
             print(f"---Preprocessing event: {event.name}")
-            # split image into seperate vv and vh tiffs
-            create_vv_and_vh_tifs(event)
-            # check for NaNs in the image
-            
-            # reproject everything to match higher resolution
+
+            # Check all files for NaNs and fill with 0 if necessary
+            for file in event.iterdir():
+                if file.suffix == '.tif':
+                    print('---checking= ', file.name)
+                    filestr = str(file)
+                    output_file = str(file.with_name(f'{file.stem}_nonans.tif'))
+                    check_nan_gdal(filestr)
+                    if file.name.endswith('slope.tif'):
+                        # if nans exist, replace with 0
+                        print('-------filling nans in slope.tiff----------------')
+                        fill_nodata_with_zero(filestr)
+                        print('---cheking nans in filled slope.tiff')
+                        check_nan_gdal(filestr)
+                    # split image into seperate vv and vh tiffs
+                    create_vv_and_vh_tifs(file)
+
+            # reproject everything to match higher resolution - needs to loop through whole event folder to find the vv.tif as reference
             matchresolutions(event)     
         # Get the datas info from the folder
         datas = make_datas(event)
         # Create the eventcube
         eventcube = make_eventcube(data_root, event, datas)
-        print('---eventcube made for= ',event.name, '\n')
+        print('--->>>>>>>>eventcube made for= ',event.name, '\n')
+        # check the eventcube for excess int16 values 
+        check_int16_exceedance2(eventcube)
         all_eventcubes.append(eventcube)
         event_names.append(event.name)
+
     print('---finished all events\n')
     print('---event_names= ',event_names)
     print('---############    all_eventcubes= ###########\n',all_eventcubes)
@@ -436,7 +465,8 @@ def main():
     print('--->>>>>>>>>final datacube check::: ')
     datacube_check(datacube)
     # save datacube to data_root
-    datacube.to_netcdf(data_root / f"datacube_v{VERSION}.nc")
+    datacube.to_netcdf(data_root / f"---datacube_v{VERSION}.nc")
+    check_int16_exceedance2(datacube)
 
 if __name__ == "__main__":
     main()
