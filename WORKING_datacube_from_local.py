@@ -140,6 +140,10 @@ def check_layers(layers, layer_names):
         missing_values = np.isnan(layer.values).sum()
         print(f"--- Missing Values (NaN): {missing_values}")
 
+        # Check for Inf values
+        inf_values = np.isinf(layer.values).sum()
+        print(f"---Infinite Values (Inf): {inf_values}")
+
         print("\n")  # Separate the output for each layer
 
 def create_vv_and_vh_tifs(file):
