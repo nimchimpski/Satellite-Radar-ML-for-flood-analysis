@@ -426,20 +426,20 @@ def main():
         if event.suffix == '.nc':
             continue
         if event.is_dir():
-            print(f"---Preprocessing event: {event.name}")
+            print(f">>>Preprocessing event: {event.name}")
 
             # Check all files for NaNs and fill with 0 if necessary
             for file in event.iterdir():
                 if file.suffix == '.tif':
-                    print('---checking= ', file.name)
+                    print('>>>checking= ', file.name)
                     filestr = str(file)
                     output_file = str(file.with_name(f'{file.stem}_nonans.tif'))
                     check_nan_gdal(filestr)
                     if file.name.endswith('slope.tif'):
                         # if nans exist, replace with 0
-                        print('-------filling nans in slope.tiff----------------')
+                        print('>>>----filling nans in slope.tiff----------------')
                         fill_nodata_with_zero(filestr)
-                        print('---cheking nans in filled slope.tiff')
+                        print('>>>cheking nans in filled slope.tiff')
                         check_nan_gdal(filestr)
                     # split image into seperate vv and vh tiffs
                     create_vv_and_vh_tifs(file)
@@ -450,19 +450,19 @@ def main():
         datas = make_datas(event)
         # Create the eventcube
         eventcube = make_eventcube(data_root, event, datas)
-        print('--->>>>>>>>eventcube made for= ',event.name, '\n')
+        print('>>>>>>>>>>>eventcube made for= ',event.name, '\n')
         # check the eventcube for excess int16 values 
         check_int16_exceedance(eventcube)
         all_eventcubes.append(eventcube)
         event_names.append(event.name)
 
-    print('---finished all events\n')
-    print('---event_names= ',event_names)
-    print('---############    all_eventcubes= ###########\n',all_eventcubes)
+    print('>>>finished all events\n')
+    print('>>>event_names= ',event_names)
+    print('>>>############    all_eventcubes= ###########\n',all_eventcubes)
     # combine all eventcubes into a single datacube
     datacube = xr.concat(all_eventcubes, dim='event').astype('int16')
     datacube = datacube.assign_coords(event=event_names)
-    print('--->>>>>>>>>final datacube check::: ')
+    print('>>>>>>>>>>>>final datacube check::: ')
     datacube_check(datacube)
     # save datacube to data_root
     datacube.to_netcdf(data_root / f"---datacube_v{VERSION}.nc")
