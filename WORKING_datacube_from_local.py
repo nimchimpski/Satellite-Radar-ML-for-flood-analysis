@@ -9,6 +9,7 @@ from pathlib import Path
 import netCDF4 as nc
 from osgeo import gdal
 from check_int16_exceedance import check_int16_exceedance
+# from tile_datacube import tile_datacube
 
 def check_nan_gdal(tiff_path):
     '''
@@ -53,31 +54,11 @@ def fill_nodata_with_zero(input_file):
 
 # TODO add rtc function
 
-
-def filter_nodata(tile):
-    """
-    Filter tiles based on no-data pixels.
-    Args:
-    - tile (xarray.Dataset): A subset of data representing a tile.
-    Returns:
-    - bool: True if the tile is approved, False if rejected.
-    """
-    bands_to_check = ["dem", "slope", "vv", "vh"]
-    for band in bands_to_check:
-        if int(np.isnan(tile.sel(band=band)).sum()):
-            return False
-    return True  # If both conditions pass
-
-def filter_allones(tile):
+def filter_allones(tiled_datacube):
     # Example: After tiling, you can iterate through tiles to verify them
     for i, tile in enumerate(tiled_datacube):
         if np.all(tile == 1):
             print(f"Warning: Tile {i} has all values as 1. Check mask or data integrity.")
-
-def filter_nomask(tile):
-    if (tile.sel(band='mask').sum().values.tolist() == 0):
-        return False        
-    return True  # If both conditions pass
 
 def filter_noanalysis(tile):
     '''
@@ -87,22 +68,22 @@ def filter_noanalysis(tile):
         return False
     return True
 
-def tile_datacube(eventcube, tile_size_x=1024, tile_size_y=1024):
+def tile_datacube(datacube, tile_size_x=256, tile_size_y=256):
     '''
     Tile the datacube into smaller chunks (tiles) for efficient processing.
     The tiles will have size tile_size_x x tile_size_y.
     '''
     print(f"+++ Tiling Datacube +++")
-    if not eventcube.rio.crs:
+    if not datacube.rio.crs:
         raise ValueError("The datacube is missing a CRS. Please assign one before tiling.")
 
     
     # Rechunk the datacube with the specified tile sizes
-    tiled_datacube = eventcube.chunk({'x': tile_size_x, 'y': tile_size_y, 'layer': 1})
+    tiled_datacube = datacube.chunk({'x': tile_size_x, 'y': tile_size_y, 'layer': 1})
 
     # Example: Write each tile to disk after chunking if necessary
     for tile in tiled_datacube:
-        tile_path = f"output/tile_{i}.tif"
+        tile_path = data_root / f"tile_{i}.tif"
         tile.rio.to_raster(tile_path)
 
 
@@ -253,7 +234,6 @@ def match_resolutions_with_check(event):
             # Save reprojected file (once target file is closed)
             reprojected_layer.rio.to_raster(file)
             print(f'--- Resampled raster saved to: {file}')
-
 
 def make_eventcube(data_root, event, datas):
     '''
@@ -420,29 +400,29 @@ def main():
     event_names = []  # List to hold event names
     # TODO add RTC functionality
     data_root = Path(r"Z:\1NEW_DATA\1data\2interim\TESTS\sample_s1s24326")
-    for event in data_root.iterdir():
+    for event in tqdm(data_root.iterdir()):
         # prepare the images
         # check if file is .nc
-        if event.suffix == '.nc':
+        if event is_file() and event.suffix == '.nc':
             continue
-        if event.is_dir():
+        if event.is_dir() and any(event.iterdir()):
             print(f">>>Preprocessing event: {event.name}")
 
             # Check all files for NaNs and fill with 0 if necessary
-            # for file in event.iterdir():
-            #     if file.suffix == '.tif':
-            #         print('>>>checking for NANs= ', file.name)
-            #         filestr = str(file)
-            #         output_file = str(file.with_name(f'{file.stem}_nonans.tif'))
-            #         check_nan_gdal(filestr)
-            #         if file.name.endswith('slope.tif'):
-            #             # if nans exist, replace with 0
-            #             print('>>>----filling nans in slope.tiff----------------')
-            #             fill_nodata_with_zero(filestr)
-            #             print('>>>cheking nans in filled slope.tiff')
-            #             check_nan_gdal(filestr)
-            #         # split image into seperate vv and vh tiffs
-            #         create_vv_and_vh_tifs(file)
+            for file in event.iterdir():
+                if file.suffix == '.tif':
+                    print('>>>checking for NANs= ', file.name)
+                    filestr = str(file)
+                    # output_file = str(file.with_name(f'{file.stem}_nonans.tif'))
+                    check_nan_gdal(filestr)
+                    if file.name.endswith('slope.tif'):
+                        # if nans exist, replace with 0
+                        print('>>>----filling nans in slope.tiff----------------')
+                        fill_nodata_with_zero(filestr)
+                        print('>>>cheking nans in filled slope.tiff')
+                        check_nan_gdal(filestr)
+                    # split image into seperate vv and vh tiffs
+                    create_vv_and_vh_tifs(file)
             print('>>>will now match resolutions')
             # reproject everything to match higher resolution - needs to loop through whole event folder to find the vv.tif as reference
             match_resolutions_with_check(event)     
