@@ -465,10 +465,12 @@ def main():
     print('>>>>>>>>>>>>final datacube check::: ')
     datacube_check(datacube)
     # save datacube to data_root
+    print(f"Saving datacube to: {data_root / f'---datacube_v{VERSION}.nc'}")
+
     datacube.to_netcdf(data_root / f"---datacube_v{VERSION}.nc")
+    print('---saved_datacube')
     check_int16_exceedance(datacube)
 
 if __name__ == "__main__":
     main()
 
-    # TODO add checks for failed eventdatacubes
