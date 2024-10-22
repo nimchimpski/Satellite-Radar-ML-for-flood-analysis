@@ -1,39 +1,44 @@
 import xarray as xr
-from pathlib import Path
 
-def check_int16_exceedance(datacube_input):
-    print('++++in check_int16_exceedance')
-    # Load the datacube (assuming it's a NetCDF or Zarr format)
-    if isinstance(datacube_input, Path):
-        print(f"---Loading dataset from file: {datacube_input}")
+# Define the threshold for excess values, e.g., int16 limits (-32768 to 32767)
 
-        datacube = xr.open_dataset(datacube_input)  # Use xr.open_zarr(datacube_path) if in Zarr format
-    else:
-        print(f"---Loading dataset from in memory object")
-        datacube = datacube_input
-    # Define the valid int16 range
-    int16_min = -32768
-    int16_max = 32767
+
+def check_int16_exceedance(datacube):
+    """
+    Check for values exceeding the int16 limits in a dataset or data array.
+    Can handle both sub-datacubes (single events) and multi-event datacubes.
+    """
+    def find_exceedances(data_array, layer_name):
+        """
+        Check a DataArray for values exceeding the int16 limits and print their locations.
+        """
+        INT16_MIN = -32768
+        INT16_MAX = 32767
+        # Find where values exceed int16 limits
+        exceed_mask = (data_array < INT16_MIN) | (data_array > INT16_MAX)
+        exceed_mask = exceed_mask.compute()  # Force Dask to compute the result
     
-    # Loop through each layer in the datacube
-    for layer_name in datacube.data_vars:  # Assuming each layer is a separate variable
-        print(f"---Checking layer: {layer_name}")
-        layer = datacube[layer_name]
-        
-        # Find where values are outside the int16 range
-        invalid_values = ((layer < int16_min) | (layer > int16_max))
-        
-        # Count the number of invalid values
-        count_invalid = invalid_values.sum().item()
-        
-        if count_invalid > 0:
-            print(f"---Layer '{layer_name}' has {count_invalid} values exceeding int16 limits.")
-            
-            # Optionally, print the indices where invalid values are located
-            invalid_indices = layer.where(invalid_values, drop=True)
-            print(f"---Excessive values are located at:\n{invalid_indices}")
+        if exceed_mask.any():
+            # If there are any exceedances, print or return their locations
+            exceed_indices = exceed_mask.nonzero()  # Get the indices where the condition is true
+            print(f"Exceedances found in {layer_name} at locations: {exceed_indices}")
         else:
-            print(f"---Layer '{layer_name}' has no values exceeding int16 limits.")
-    
-    datacube.close()
+            print(f"No exceedances found in {layer_name}.")
+
+
+    if isinstance(datacube, xr.Dataset):
+        print(f"Checking Dataset with {len(datacube.data_vars)} variables")
+        # If it's a Dataset, loop through all the layers/variables
+        for layer_name, data_array in datacube.data_vars.items():
+            print(f"Checking layer: {layer_name}")
+            find_exceedances(data_array, layer_name)
+    elif isinstance(datacube, xr.DataArray):
+        print(f"Checking single DataArray")
+        # If it's a DataArray, check the single array
+        find_exceedances(datacube, "single layer")
+    else:
+        raise TypeError("Expected xarray.Dataset or xarray.DataArray, got something else.")
+
+
+
 
