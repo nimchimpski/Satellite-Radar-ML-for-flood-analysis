@@ -8,6 +8,7 @@ def check_int16_exceedance(datacube):
     Check for values exceeding the int16 limits in a dataset or data array.
     Can handle both sub-datacubes (single events) and multi-event datacubes.
     """
+    print('+++in exceedance check fn+++')
     def find_exceedances(data_array, layer_name):
         """
         Check a DataArray for values exceeding the int16 limits and print their locations.
@@ -21,23 +22,23 @@ def check_int16_exceedance(datacube):
         if exceed_mask.any():
             # If there are any exceedances, print or return their locations
             exceed_indices = exceed_mask.nonzero()  # Get the indices where the condition is true
-            print(f"Exceedances found in {layer_name} at locations: {exceed_indices}")
+            print(f"---Exceedances found in {layer_name} at locations: {exceed_indices}")
         else:
-            print(f"No exceedances found in {layer_name}.")
+            print(f"---No exceedances found in {layer_name}.")
 
 
     if isinstance(datacube, xr.Dataset):
-        print(f"Checking Dataset with {len(datacube.data_vars)} variables")
+        print(f"---Checking Dataset with {len(datacube.data_vars)} variables")
         # If it's a Dataset, loop through all the layers/variables
         for layer_name, data_array in datacube.data_vars.items():
-            print(f"Checking layer: {layer_name}")
+            print(f"---Checking layer: {layer_name}")
             find_exceedances(data_array, layer_name)
     elif isinstance(datacube, xr.DataArray):
-        print(f"Checking single DataArray")
+        print(f"---Checking single DataArray")
         # If it's a DataArray, check the single array
         find_exceedances(datacube, "single layer")
     else:
-        raise TypeError("Expected xarray.Dataset or xarray.DataArray, got something else.")
+        raise TypeError("---Expected xarray.Dataset or xarray.DataArray, got something else.")
 
 
 
