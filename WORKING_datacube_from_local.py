@@ -403,7 +403,7 @@ def main():
     for event in tqdm(data_root.iterdir()):
         # prepare the images
         # check if file is .nc
-        if event is_file() and event.suffix == '.nc':
+        if event.is_file() and event.suffix == '.nc':
             continue
         if event.is_dir() and any(event.iterdir()):
             print(f">>>Preprocessing event: {event.name}")
