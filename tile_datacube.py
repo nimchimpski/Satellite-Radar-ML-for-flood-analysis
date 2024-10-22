@@ -3,27 +3,59 @@ import numpy as np
 import xarray as xr
 import rasterio
 from rasterio.enums import ColorInterp
+import rioxarray as rxr 
+from pathlib import Path
 
 
-def tile_to_dir(stack, path, tile_size, stride, event):
+def tile_to_dir(datacube, save_path, tile_size=256, stride, event):
     """
-    Function to tile a multi-dimensional imagery stack while filtering out
+    Function to tile a multi-dimensional imagery datacube while filtering out
     tiles with high cloud coverage or no-data pixels.
 
     Args:
-    - stack (xarray.Dataset): The input multi-dimensional imagery stack.
+    - datacube (xarray.Dataset): The input multi-dimensional imagery datacube.
     - date (str): Date string yyyy-mm-dd
     - mgrs (str): MGRS Tile id
-    - bucket(str): AWS S3 bucket to write tiles to
     """
-    print(f"Writing tempfiles to {path}")
-    os.makedirs(path, exist_ok=True)
+
+    def filter_nodata(tile):
+        """
+        Filter tiles based on no-data pixels.
+        Args:
+        - tile (xarray.Dataset): A subset of data representing a tile.
+        Returns:
+        - bool: True if the tile is approved, False if rejected.
+        """
+        bands_to_check = ["dem", "slope", "vv", "vh"]
+        for band in bands_to_check:
+            if int(np.isnan(tile.sel(band=band)).sum()):
+                return False
+        return True  # If both conditions pass
+    
+    def filter_nomask(tile):
+        if (tile.sel(band='mask').sum().values.tolist() == 0):
+            return False        
+        return True  # If both conditions pass
+
+    def filter_noanalysis(tile):
+        '''
+        Filters out tiles without analysis extent (in this case, using valid.tiff as analysis_extent).
+        '''
+        if 0 in tile.sel(band='analysis_extent').values:
+            return False
+        return True
+
+
+
+
+    print('+++++++in tile_to_dir fn++++++++'))
+
 
     # Calculate the number of full tiles in x and y directions
-    # num_x_tiles = stack[0].x.size // tile_size
-    # num_y_tiles = stack[0].y.size // tile_size
-    num_x_tiles = max(stack[0].x.size + stride - 1, 0) // stride + 1
-    num_y_tiles = max(stack[0].y.size + stride - 1, 0) // stride + 1
+    # num_x_tiles = datacube[0].x.size // tile_size
+    # num_y_tiles = datacube[0].y.size // tile_size
+    num_x_tiles = max(datacube[0].x.size + stride - 1, 0) // stride + 1
+    num_y_tiles = max(datacube[0].y.size + stride - 1, 0) // stride + 1
 
     counter = 0
     counter_valid = 0
@@ -34,18 +66,18 @@ def tile_to_dir(stack, path, tile_size, stride, event):
             # for the current tile
             # x_start = x_idx * tile_size
             # y_start = y_idx * tile_size
-            # x_end = min(stride * x_idx + tile_size, stack[0].x.size)
-            # y_end = min(stride * y_idx + tile_size, stack[0].y.size)
+            # x_end = min(stride * x_idx + tile_size, datacube[0].x.size)
+            # y_end = min(stride * y_idx + tile_size, datacube[0].y.size)
 
             x_start = x_idx * stride
             y_start = y_idx * stride
-            x_end = min(x_start + tile_size, stack[0].x.size)
-            y_end = min(y_start + tile_size, stack[0].y.size)
+            x_end = min(x_start + tile_size, datacube[0].x.size)
+            y_end = min(y_start + tile_size, datacube[0].y.size)
             x_start = max(x_end - tile_size, 0)
             y_start = max(y_end - tile_size, 0)
 
             # Select the subset of data for the current tile
-            parts = [part['band_data'][:, y_start:y_end, x_start:x_end] for part in stack]
+            parts = [part['band_data'][:, y_start:y_end, x_start:x_end] for part in datacube]
 
             tile = xr.concat(parts, dim="band").rename("tile")
 
@@ -88,3 +120,23 @@ def tile_to_dir(stack, path, tile_size, stride, event):
                 # rst.update_tags(date=VERSION)
 
     return counter, counter_valid, counter_nomask
+
+def main():
+    datacube_name = 'datacube_vWebb.nc'
+    data_root = Path(r"Z:\1NEW_DATA\1data\2interim\TESTS\sample_s1s24326")
+    datacube = rxr.open_rasterio(Path(data_root,datacube_name ))
+    save_path = Path(data_root, 'tiles')
+    print(f"Writing tempfiles to {save_path}")
+    os.makedirs(save_path, exist_ok=True)
+    '''
+    tiles are normalised at this point.
+    The tiles are saved in the format: tile_{event}_{date?}_num.tif, in event folders.
+    TODO add further SEPERATE function to make trian test val split + txts
+    
+    '''
+
+    # TODO iterate through datacube events
+    # TODO grab the event name
+    # TODO add the name to the saved tilename
+    num_tiles, num_valid_tiles, num_nomask_tiles = tile_to_dir((datacube, save_path), tile_size=256, stride=256, event=event))
+    tile_statistics[event] = [num_tiles, num_valid_tiles, num_nomask_tiles]
