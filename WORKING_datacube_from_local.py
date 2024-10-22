@@ -431,7 +431,7 @@ def main():
             # Check all files for NaNs and fill with 0 if necessary
             for file in event.iterdir():
                 if file.suffix == '.tif':
-                    print('>>>checking= ', file.name)
+                    print('>>>checking for NANs= ', file.name)
                     filestr = str(file)
                     output_file = str(file.with_name(f'{file.stem}_nonans.tif'))
                     check_nan_gdal(filestr)
