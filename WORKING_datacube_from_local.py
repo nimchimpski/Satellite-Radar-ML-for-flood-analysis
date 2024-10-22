@@ -448,7 +448,7 @@ def main():
         eventcube = make_eventcube(data_root, event, datas)
         print('--->>>>>>>>eventcube made for= ',event.name, '\n')
         # check the eventcube for excess int16 values 
-        check_int16_exceedance2(eventcube)
+        check_int16_exceedance(eventcube)
         all_eventcubes.append(eventcube)
         event_names.append(event.name)
 
