@@ -214,7 +214,7 @@ def match_resolutions_with_check(event):
     Match the resolution and dimensions of the target raster to the reference raster
     only if they differ.
     """
-    print('+++ in match_resolutions_with_check fn')
+    print('+++++++in match_resolutions_with_check fn')
 
     # Find the reference file (vv.tif)
     reference_path = None
@@ -413,8 +413,8 @@ def datacube_check(datacube):
 
 def main():
 
-    VERSION = "Webb1"
-    TRACKING = "id_Webb1"
+    VERSION = "Webb"
+    TRACKING = "id_Webb"
 
     all_eventcubes = []  # List to hold datacubes for each event
     event_names = []  # List to hold event names
@@ -429,21 +429,21 @@ def main():
             print(f">>>Preprocessing event: {event.name}")
 
             # Check all files for NaNs and fill with 0 if necessary
-            for file in event.iterdir():
-                if file.suffix == '.tif':
-                    print('>>>checking for NANs= ', file.name)
-                    filestr = str(file)
-                    output_file = str(file.with_name(f'{file.stem}_nonans.tif'))
-                    check_nan_gdal(filestr)
-                    if file.name.endswith('slope.tif'):
-                        # if nans exist, replace with 0
-                        print('>>>----filling nans in slope.tiff----------------')
-                        fill_nodata_with_zero(filestr)
-                        print('>>>cheking nans in filled slope.tiff')
-                        check_nan_gdal(filestr)
-                    # split image into seperate vv and vh tiffs
-                    create_vv_and_vh_tifs(file)
-
+            # for file in event.iterdir():
+            #     if file.suffix == '.tif':
+            #         print('>>>checking for NANs= ', file.name)
+            #         filestr = str(file)
+            #         output_file = str(file.with_name(f'{file.stem}_nonans.tif'))
+            #         check_nan_gdal(filestr)
+            #         if file.name.endswith('slope.tif'):
+            #             # if nans exist, replace with 0
+            #             print('>>>----filling nans in slope.tiff----------------')
+            #             fill_nodata_with_zero(filestr)
+            #             print('>>>cheking nans in filled slope.tiff')
+            #             check_nan_gdal(filestr)
+            #         # split image into seperate vv and vh tiffs
+            #         create_vv_and_vh_tifs(file)
+            print('>>>will now match resolutions')
             # reproject everything to match higher resolution - needs to loop through whole event folder to find the vv.tif as reference
             match_resolutions_with_check(event)     
         # Get the datas info from the folder
@@ -467,7 +467,7 @@ def main():
     # save datacube to data_root
     print(f"Saving datacube to: {data_root / f'---datacube_v{VERSION}.nc'}")
 
-    datacube.to_netcdf(data_root / f"---datacube_v{VERSION}.nc")
+    datacube.to_netcdf(data_root / f"datacube_v{VERSION}.nc")
     print('---saved_datacube')
     check_int16_exceedance(datacube)
 
