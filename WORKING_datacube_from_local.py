@@ -9,8 +9,6 @@ from pathlib import Path
 import netCDF4 as nc
 from osgeo import gdal
 from check_int16_exceedance import check_int16_exceedance
-from check_int16_exceedance2 import check_int16_exceedance2
-from check_int16_exceedance2 import find_exceedances
 
 def check_nan_gdal(tiff_path):
     '''
@@ -54,55 +52,7 @@ def fill_nodata_with_zero(input_file):
     dataset = None  # Close the file
 
 # TODO add rtc function
-def custom_normalize(array, lower_percentile=2, upper_percentile=98, clip_range=(0, 1)):
-    """
-    Normalizes a given array by scaling values between the given percentiles
-    and clipping to the specified range.
 
-    Args:
-    - array: Input data (xarray.DataArray or NumPy array)
-    - lower_percentile: The lower bound for normalization (default 2)
-    - upper_percentile: The upper bound for normalization (default 98)
-    - clip_range: Tuple specifying the range to clip the normalized data (default (0, 1))
-
-    Returns:
-    - normalized_array: The normalized data array (same type as input)
-    """
-    print('+++in custom_normalize fn')
-    print('---array type',type(array))
-    
-    # Check if the input is an xarray.DataArray
-    if isinstance(array, xr.DataArray):
-        print('---array is xarray.DataArray')
-
-        # Rechunk 'y' dimension into a single chunk, leave other dimensions unchanged
-        array = array.chunk({'y': -1})  
-
-        # Apply normalization while preserving metadata
-        min_val = array.quantile(lower_percentile / 100.0)
-        max_val = array.quantile(upper_percentile / 100.0)
-
-        # Normalize the array
-        normalized_array = (array - min_val) / (max_val - min_val)
-
-        # Clip values to the specified range
-        normalized_array = normalized_array.clip(min=clip_range[0], max=clip_range[1])
-        normalized_array = normalized_array.astype('float32')
-        return normalized_array
-
-    else:
-        print('---array is not xarray.DataArray')
-        # Handle as a NumPy array if not xarray.DataArray
-        min_val = np.nanpercentile(array, lower_percentile)
-        max_val = np.nanpercentile(array, upper_percentile)
-        
-        # Normalize the array
-        normalized_array = (array - min_val) / (max_val - min_val)
-        
-        # Clip values to the specified range
-        normalized_array = np.clip(normalized_array, clip_range[0], clip_range[1])
-
-        return normalized_array
 
 def filter_nodata(tile):
     """
@@ -254,6 +204,52 @@ def matchresolutions(event):
 
     else:
         print('---Error: reference vv.tif not found.')
+
+def match_resolutions_with_check(event):
+    """
+    Match the resolution and dimensions of the target raster to the reference raster
+    only if they differ.
+    """
+    print('+++ in match_resolutions_with_check fn')
+
+    # Find the reference file (vv.tif)
+    reference_path = None
+    for file in event.iterdir():
+        if 'vv.tif' in file.name:
+            reference_path = file
+            break
+    
+    if not reference_path:
+        print('--- No reference vv.tif file found.')
+        return
+    
+    # Open the reference layer to get its resolution
+    with rxr.open_rasterio(reference_path) as reference_layer:
+        reference_resolution = reference_layer.rio.resolution()
+        print(f'--- Reference file {reference_path.name} resolution: {reference_resolution}')
+    
+    # Loop through other files to check and reproject if necessary
+    for file in event.iterdir():
+        if 'vv.tif' not in file.name and 'vh.tif' not in file.name:
+            print(f'--- Found file to reproject = {file.name}')
+
+            # Open the target layer to compare resolutions
+            with rxr.open_rasterio(file) as target_layer:
+                target_resolution = target_layer.rio.resolution()
+                print(f'--- Target file {file.name} resolution: {target_resolution}')
+
+                # Compare resolutions with a small tolerance
+                if abs(reference_resolution[0] - target_resolution[0]) < 1e-10 and \
+                   abs(reference_resolution[1] - target_resolution[1]) < 1e-10:
+                    print(f"--- Skipping {file.name} (resolution already matches)")
+                    continue
+
+                # Reproject target file to match reference
+                reprojected_layer = target_layer.rio.reproject_match(reference_layer)
+            # Save reprojected file (once target file is closed)
+            reprojected_layer.rio.to_raster(file)
+            print(f'--- Resampled raster saved to: {file}')
+
 
 def make_eventcube(data_root, event, datas):
     '''
@@ -445,7 +441,7 @@ def main():
                     create_vv_and_vh_tifs(file)
 
             # reproject everything to match higher resolution - needs to loop through whole event folder to find the vv.tif as reference
-            matchresolutions(event)     
+            match_resolutions_with_check(event)     
         # Get the datas info from the folder
         datas = make_datas(event)
         # Create the eventcube
@@ -466,7 +462,7 @@ def main():
     datacube_check(datacube)
     # save datacube to data_root
     datacube.to_netcdf(data_root / f"---datacube_v{VERSION}.nc")
-    check_int16_exceedance2(datacube)
+    check_int16_exceedance(datacube)
 
 if __name__ == "__main__":
     main()
