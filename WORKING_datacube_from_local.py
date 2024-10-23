@@ -399,11 +399,12 @@ def main():
     all_eventcubes = []  # List to hold datacubes for each event
     event_names = []  # List to hold event names
     # TODO add RTC functionality
-    data_root = Path(r"Z:\1NEW_DATA\1data\2interim\TESTS\sample_s1s24326")
-    for event in tqdm(data_root.iterdir()):
+    data_root = Path(r"\\cerndata100\AI_files\Users\AI_flood_service\1NEW_DATA\1data\2interim\TESTS\sample_s1s24326")
+    for event in data_root.iterdir():
         # prepare the images
         # check if file is .nc
         if event.is_file() and event.suffix == '.nc':
+            print(f"Skipping file: {event.name}")
             continue
         if event.is_dir() and any(event.iterdir()):
             print(f">>>Preprocessing event: {event.name}")
@@ -430,11 +431,13 @@ def main():
         datas = make_datas(event)
         # Create the eventcube
         eventcube = make_eventcube(data_root, event, datas)
-        print('>>>>>>>>>>>eventcube made for= ',event.name, '\n')
+        print('>>>>>>>>>>>checking exceedence for= ',event.name )
         # check the eventcube for excess int16 values 
         check_int16_exceedance(eventcube)
         all_eventcubes.append(eventcube)
         event_names.append(event.name)
+        print(f'>>>>>>>>>>>  eventcube finished for= {event.name} >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n')
+
 
     print('>>>finished all events\n')
     print('>>>event_names= ',event_names)
