@@ -48,7 +48,7 @@ def tile_to_dir(datacube, save_path, tile_size=256, stride, event):
 
 
 
-    print('+++++++in tile_to_dir fn++++++++'))
+    print('+++++++in tile_to_dir fn++++++++')
 
 
     # Calculate the number of full tiles in x and y directions
@@ -136,7 +136,10 @@ def main():
     '''
 
     # TODO iterate through datacube events
+
+
+
     # TODO grab the event name
     # TODO add the name to the saved tilename
-    num_tiles, num_valid_tiles, num_nomask_tiles = tile_to_dir((datacube, save_path), tile_size=256, stride=256, event=event))
+    num_tiles, num_valid_tiles, num_nomask_tiles = tile_to_dir((datacube, save_path), tile_size=256, stride=256, event=event)
     tile_statistics[event] = [num_tiles, num_valid_tiles, num_nomask_tiles]
