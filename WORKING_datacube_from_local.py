@@ -9,7 +9,7 @@ from pathlib import Path
 import netCDF4 as nc
 from osgeo import gdal
 from check_int16_exceedance import check_int16_exceedance
-# from tile_datacube import tile_datacube
+# from tile_datacube import tile_datacube c
 
 def check_nan_gdal(tiff_path):
     '''
@@ -393,8 +393,8 @@ def datacube_check(datacube):
 
 def main():
 
-    VERSION = "Webb"
-    TRACKING = "id_Webb"
+    VERSION = "alex"
+    TRACKING = "id_alex"
 
     all_eventcubes = []  # List to hold datacubes for each event
     event_names = []  # List to hold event names
