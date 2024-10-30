@@ -9,28 +9,28 @@ from pathlib import Path
 import netCDF4 as nc
 from osgeo import gdal
 from check_int16_exceedance import check_int16_exceedance
+from modules.helpers import nan_check   
 # from tile_datacube import tile_datacube c
+'''
+- will overwrite existing .nc files in the event folders.
+- expects each event folder to have the following files:
+    elevation.tif
+    slope.tif
+    msk.tif
+    valid.tif
 
-def check_nan_gdal(tiff_path):
-    '''
-    Use GDAL to load and check TIFF for NaNs.
-    '''
-    dataset = gdal.Open(tiff_path)
-    print(f"+++ in check_nan_gdal  +++")
-    
-    for band in range(1, dataset.RasterCount + 1):
-        band_data = dataset.GetRasterBand(band).ReadAsArray()
-        
-        nan_count = np.isnan(band_data).sum()
-        print(f"Band {band} NaN count: {nan_count}")
-        
-        nodata_value = dataset.GetRasterBand(band).GetNoDataValue()
-        masked_values = np.count_nonzero(band_data == nodata_value)
-        print(f"Band {band} Masked (nodata) count: {masked_values}")
-    
-    return dataset
+TODO check process in place to organise the dataroot / input files such as they are correct for this script.
+TODO THERE IS A PERSISTANT HIDDEN PROBLEM WITH WRONG VALUES AFTER CASTING.
+- 
+'''
+
+
+# TODO add rtc function
+
 
 def fill_nodata_with_zero(input_file):
+    print('+++in fill_nodata_with_zero fn')
+    input_file = str(input_file)
     # Open the input raster file
     dataset = gdal.Open(input_file, gdal.GA_Update)
     band = dataset.GetRasterBand(1)
@@ -43,6 +43,7 @@ def fill_nodata_with_zero(input_file):
 
     # Replace nodata values with 0
     if nodata_value is not None:
+        print('---found nans')
         data[data == nodata_value] = 0
     
     # Write the modified array back to the raster
@@ -51,8 +52,6 @@ def fill_nodata_with_zero(input_file):
     # Flush and close the file
     band.FlushCache()
     dataset = None  # Close the file
-
-# TODO add rtc function
 
 def filter_allones(tiled_datacube):
     # Example: After tiling, you can iterate through tiles to verify them
@@ -118,12 +117,8 @@ def check_layers(layers, layer_names):
         else:
             print("---No coordinate information available.")
 
-        missing_values = np.isnan(layer.values).sum()
-        print(f"--- Missing Values (NaN): {missing_values}")
-
-        # Check for Inf values
-        inf_values = np.isinf(layer.values).sum()
-        print(f"---Infinite Values (Inf): {inf_values}")
+        # Check for NaN or Inf values in the layer
+        check_invalid_values(layer)
 
         print("\n")  # Separate the output for each layer
 
@@ -159,37 +154,6 @@ def create_vv_and_vh_tifs(file):
             # delete original image using unlink() method
     print('---finished create_vv_and_vh_tifs fn')
 
-def matchresolutions(event):
-    """Match the resolution and dimensions of the target raster to the reference raster."""
-    print('+++in matchresolutions fn')
-    reference_path = None
-    
-    # Find the reference file (vv.tif)
-    for file in event.iterdir():
-        if 'vv.tif' in file.name:
-            reference_path = file
-            print(f'---vv reference_path= {reference_path}')
-            break  # Stop after finding the reference path
-    
-    if reference_path:
-        # Loop through files and reproject all except the vv and vh files
-        for file in event.iterdir():
-            print('----arse')
-            if  file.name not in ['vv.tif', 'vh.tif'] and file.suffix != '.nc':
-                print(f'---found file to reproject = {file.name}')
-                # print(f'---target reference_path= {reference_path.name}')
-                
-                # Open the reference and target rasters inside `with` blocks
-                with rxr.open_rasterio(reference_path) as reference_layer, rxr.open_rasterio(file) as target_layer:
-                    # Reproject the target raster to match the reference raster
-                    reprojected_layer = target_layer.rio.reproject_match(reference_layer)
-
-                # Now that both files are closed, save the reprojected layer directly
-                reprojected_layer.rio.to_raster(file)
-                print(f'---Resampled raster saved to: {file}')
-
-    else:
-        print('---Error: reference vv.tif not found.')
 
 def match_resolutions_with_check(event):
     """
@@ -216,7 +180,7 @@ def match_resolutions_with_check(event):
     
     # Loop through other files to check and reproject if necessary
     for file in event.iterdir():
-        if 'vv.tif' not in file.name and 'vh.tif' not in file.name:
+        if file.is_file() and file.name not in ['vv.tif', 'vh.tif'] and file.suffix != '.nc':
             print(f'--- Found file to reproject = {file.name}')
 
             # Open the target layer to compare resolutions
@@ -238,7 +202,9 @@ def match_resolutions_with_check(event):
 
 def make_eventcube(data_root, event, datas):
     '''
-    Loop through each dataset  and load into xarray datacube (stacked on a new dimension)
+    MAKES AN XARRAY 'DATASET' (!!!)
+    THIS MEANS 1ST DIMENSION IS A VARIABLE NAME. DEFAULT = '--xarray_dataarray_variable--'
+    THIS MEANS FURTHER VARIABLES CAN BE ADDED - EG TIME SERIES DATA FOR SAME AREA
     'Event' is a single folder conatining flood event data    
     'satck' is an Xarray DataArray 
     '''   
@@ -256,9 +222,11 @@ def make_eventcube(data_root, event, datas):
             # Check if stack is created successfully
             if stack is None:
                 print(f"---Error: Stack for {tif_file} is None")
-            # else:
-            #     # Print basic info about the stack
-            #     print(f"---Successfully loaded stack for {tif_file}")
+            else:
+                # Print basic info about the stack
+                nan_check(stack)
+
+                # print(f"---Successfully loaded stack for {tif_file}")
                 # print(f"---Stack type: {type(stack)}")  # Should be an xarray.DataArray
                 # print(f"---Stack dimensions: {stack.dims}")
                 # print(f"---Stack shape: {stack.shape}")  # Check the shape of the array
@@ -285,8 +253,7 @@ def make_eventcube(data_root, event, datas):
     print('---length layers= ',len(layers), '\n')         
     print(f'---layer_names= {layer_names}\n')
     if layers:
-        
-        # Convert layers to float32, except for 'mask' and 'valid' layers
+        layers = [layer.broadcast_like(layers[0]) for layer in layers]
 
         check_layers(layers, layer_names)
         print('---layers checked ok')
@@ -294,12 +261,16 @@ def make_eventcube(data_root, event, datas):
         eventcube = xr.concat(layers, dim='layer').astype('int16')
         print('---eventcube made ok')
 
+        check_invalid_values(eventcube)
+
         # Assign the layer names (e.g., ['vv', 'vh', 'dem', 'slope']) to the 'layer' dimension
         eventcube = eventcube.assign_coords(layer=layer_names)
         print('---layer names assigned ok')
         # Rechunk the final datacube for optimal performance
         eventcube = eventcube.chunk({'x': 1024, 'y': 1024, 'layer': 1})
         print('---Rechunked datacube')
+
+        check_invalid_values(eventcube) 
 
         # If the 'band' dimension is unnecessary (e.g., single-band layers), squeeze it out
         if 'band' in eventcube.dims and eventcube.sizes['band'] == 1:
@@ -327,7 +298,7 @@ def make_datas(event):
             datas[file.name] = 'mask'   
         elif 'valid.tif' in file.name:
             # print(f'---valid file found {file}')    
-            datas[file.name] = 'analysis_extent'
+            datas[file.name] = 'valid'
         elif 'vv.tif' in file.name:
             # print(f'---image vv file found {file}') 
             datas[file.name] = 'vv'
@@ -388,8 +359,34 @@ def datacube_check(datacube):
     print("\n--- Checking Memory Usage ---")
     memory_usage = datacube.nbytes / (1024**3)  # Convert to GB
     print(f"---Datacube Memory Usage: {memory_usage:.2f} GB")
+
+    # check invlaid values
+    check_invalid_values(datacube)
+
     
     print("\n+++ Datacube Health Check Completed +++")
+
+def check_invalid_values(dataarray):
+    print("\n+++ Checking for Invalid Values +++")
+    
+    # Check for NaN values
+    nan_check(dataarray)
+
+    
+    # Check for infinite values
+    if np.isinf(dataarray).any():
+        print("---Warning: Infinite values found in the data.")
+
+    # Check for values outside the int16 range
+    int16_min, int16_max = np.iinfo(np.int16).min, np.iinfo(np.int16).max
+    if (dataarray < int16_min).any() or (dataarray > int16_max).any():
+        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
+
+    # Optional: Replace NaN and Inf values if necessary
+    # dataarray = dataarray.fillna(0)  # Replace NaN with 0 or another appropriate value
+    # dataarray = dataarray.where(~np.isinf(dataarray), 0)  # Replace Inf with 0 or appropriate value
+
+    return dataarray
 
 
 
@@ -407,8 +404,8 @@ def main():
     for event in data_root.iterdir(): # CREATES ITERABLE FO FILE PATHS 
 
         # IGNORE .NC FILES
-        if event.suffix == '.nc':
-            print(f"Skipping file: {event.name}")
+        if event.suffix == '.nc' or event.name in ['tiles']:
+            # print(f"Skipping file: {event.name}")
             continue
 
         if event.is_dir() and any(event.iterdir()):
@@ -416,23 +413,16 @@ def main():
 
             # LOOP FILES IN EACH FOLDER
             for file in event.iterdir():
-                if file.suffix in {'.xml', '.json', '.nc'} or '_s2_' in file.name or 'epsg4326' not in file.name:
-                    print(f"Skipping file: {file.name}")
+                if not file.is_dir() or file.suffix in {'.xml', '.json', '.nc'} or '_S2_' in file.name or 'epsg4326' not in file.name:
+                    # print(f"Skipping file: {file.name}")
                     continue
 
                 # DO WORK ON THE TIFS
-                if file.suffix == '.tif':
-                    print('>>>checking for NANs= ', file.name)
-                    filestr = str(file)
-                    # output_file = str(file.with_name(f'{file.stem}_nonans.tif'))
-                    check_nan_gdal(filestr)
 
-                    # SLOPE OFTEN HAS NANS, FILL WITH 0
-                    if file.name.endswith('slope.tif'):
-                        print('>>>----filling nans in slope.tiff----------------')
-                        fill_nodata_with_zero(filestr)
-                        print('>>>cheking nans in filled slope.tiff')
-                        check_nan_gdal(filestr)
+                if file.name.endswith('slope.tif'):
+                    print('>>>----filling nans in slope.tiff----------------')
+                    fill_nodata_with_zero(file)
+                    print('>>>cheking nans in filled slope.tiff')
 
                     # EXTRACT THE VV AND VH BANDS FROM THE IMAGE FILE
                     create_vv_and_vh_tifs(file)
@@ -454,8 +444,12 @@ def main():
         # save datacube to data_root
         print(f"---Saving event datacube to: {event / f'datacube_{event.name}_{VERSION}.nc'}")
         eventcube.to_netcdf(event / f"datacube_{event.name}{VERSION}.nc")
+        check_invalid_values(eventcube)
         print(f'>>>>>>>>>>>  eventcube finished for= {event.name} >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n')
 
+        # TILE THE EVENT DATACUBE
+        save_path = Path(event)
+        # tile_datacube(eventcube, event, tile_size_x=256, tile_size_y=256 stride=256)
 
     print('>>>finished all events\n')
     print('>>>event_names= ',event_names)
