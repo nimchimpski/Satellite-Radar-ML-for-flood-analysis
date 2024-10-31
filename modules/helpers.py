@@ -41,5 +41,24 @@ def remove_nodata_from_tiff(input_tiff, output_tiff):
         
     print(f"Saved new TIFF without NoData to {output_tiff}")
 
+def nan_check(input):
+    if np.isnan(input).any():
+        print("----Warning: NaN values found in the data.")
+        return False
+    else:
+        print("----NO NANS FOUND")
+        return True
+    
+def check_int16_range(dataarray):
+    # Check for values outside the int16 range
+    #print("+++in small int16 range check fn+++")
+    int16_min, int16_max = np.iinfo(np.int16).min, np.iinfo(np.int16).max
+    if (dataarray < int16_min).any() or (dataarray > int16_max).any():
+        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
+    else:
+        print(f"---no exceedances int16.")
 
+    # Optional: Replace NaN and Inf values if necessary
+    # dataarray = dataarray.fillna(0)  # Replace NaN with 0 or another appropriate value
+    # dataarray = dataarray.where(~np.isinf(dataarray), 0)  # Replace Inf with 0 or appropriate value
     
