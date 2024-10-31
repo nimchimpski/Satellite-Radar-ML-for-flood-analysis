@@ -60,7 +60,11 @@ def tile_datacube(datacube, event, tile_size=256, stride=256):
     tile_path = Path(event, 'tiles') 
     os.makedirs(tile_path, exist_ok=True)
     # check new tiles dir exists
-    
+    print('---datacube= ', datacube)
+    datacube = rxr.open_rasterio(datacube)
+    # print datacube crs
+
+
     #print('---loaded datacube= ', datacube)
     print('---opened datacube crs = ', datacube.rio.crs)
 
