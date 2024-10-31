@@ -64,11 +64,15 @@ def tile_datacube(datacube, event, tile_size=256, stride=256):
     os.makedirs(tile_path, exist_ok=True)
     # check new tiles dir exists
     
-    print('---datacube= ', datacube)
-    print('============')
-    print('---datacube= ', datacube)
-    num_x_tiles = max(datacube.x.size + stride - 1, 0) // stride + 1
-    num_y_tiles = max(datacube.y.size + stride - 1, 0) // stride + 1
+    print('---loaded datacube= ', datacube)
+    print('==============================')
+    # num_x_tiles = max(datacube.x.size + stride - 1, 0) // stride + 1
+    # num_y_tiles = max(datacube.y.size + stride - 1, 0) // stride + 1
+
+    num_x_tiles = 1
+
+    num_y_tiles = 1
+
 
     counter = 0
     counter_valid = 0
@@ -87,14 +91,19 @@ def tile_datacube(datacube, event, tile_size=256, stride=256):
             # Select the subset of data for the current tile
             tile = datacube.sel(y=slice(y_start, y_end), x=slice(x_start, x_end))
             print('--- tile as dataset= ', tile)
+            print('===================================================')
+
+            
             counter += 1
             num_novalid = 0
             num_nomask = 0
+            num_nodata = 0
             if counter % 250 == 0:
                 print(f"Counted {counter} tiles")
 
             # set the criterion here.
             if contains_nodata(tile):
+                num_nodata += 1
                 continue
 
             if has_no_valid(tile):
@@ -106,7 +115,6 @@ def tile_datacube(datacube, event, tile_size=256, stride=256):
                 continue
 
             name = f"tile_{event.name}_{x_idx}_{y_idx}.tif"
-            print(f"---Saving tile {name}")
             save_path = Path(tile_path, name)
             print('---save_path= ', save_path)
 
@@ -121,6 +129,8 @@ def tile_datacube(datacube, event, tile_size=256, stride=256):
                 save_path.unlink()
 
             # Save the multi-band GeoTIFF with layer names in metadata
+            print(f"---Saving tile {name}")
+
             with rasterio.open(
                 save_path,
                 "w",
@@ -143,9 +153,9 @@ def tile_datacube(datacube, event, tile_size=256, stride=256):
 
 
             counter_valid += 1
-            break
+            # break
 
-        break
+        # break
 
     return counter, counter_valid, counter_nomask
 
@@ -171,3 +181,4 @@ def main():
     
 if __name__ == '__main__':
     main()
+
