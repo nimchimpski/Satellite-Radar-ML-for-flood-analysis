@@ -50,11 +50,19 @@ def nan_check(input):
         return True
     
 def check_int16_range(dataarray):
-    # Check for values outside the int16 range
+    # TAKES A DATAARRAY NOT A DATASET
     #print("+++in small int16 range check fn+++")
     int16_min, int16_max = np.iinfo(np.int16).min, np.iinfo(np.int16).max
     if (dataarray < int16_min).any() or (dataarray > int16_max).any():
         print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
+        # Calculate actual min and max values in the array
+        actual_min = dataarray.min().item()
+        actual_max = dataarray.max().item()
+        
+        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
+        print(f"---Minimum value found: {actual_min}")
+        print(f"---Maximum value found: {actual_max}")
+    
     else:
         print(f"---no exceedances int16.")
 
