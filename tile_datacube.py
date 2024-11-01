@@ -7,14 +7,15 @@ import rioxarray as rxr
 from pathlib import Path
 from tqdm import tqdm
 
-def tile_datacube(datacube, event, tile_size=256, stride=256):
+def tile_datacube(datacube_path, event, tile_size=256, stride=256):
     """
     Tile a datacube and save to 'tiles' dir in same location.
-    'ARG event is a Path object
+    'ARGs:
+      event is a Path object: datacube is a xarray object
     play with the stride and tile_size to get the right size of tiles.
     TODO add date etc to saved tile name?
     """
-    print('\n+++++++in tile_to_dir fn++++++++')
+    print('\n+++++++in tile_datacube fn ++++++++')
 
     def contains_nans(tile):
         """
@@ -22,7 +23,7 @@ def tile_datacube(datacube, event, tile_size=256, stride=256):
         Returns True if NaNs are found, along with the count of NaNs per band.
         Returns False if no NaNs are found.
         """
-        bands_to_check = ["dem", "slope", "vv", "vh"]
+        bands_to_check = ["dem", "slope", "vv", "vh", 'valid','mask']
         contains_nan = False  # Flag to track if any NaNs are found
 
         for band in bands_to_check:
@@ -53,35 +54,31 @@ def tile_datacube(datacube, event, tile_size=256, stride=256):
         '''
         return 'mask' not in tile.coords['layer'].values
     
-
     print('---making tiles dir  in event dir')
-    print('---event= ', event)
+    print('---event= ', event.name)
 
     tile_path = Path(event, 'tiles') 
     os.makedirs(tile_path, exist_ok=True)
     # check new tiles dir exists
-    print('---datacube= ', datacube)
-    datacube = rxr.open_rasterio(datacube)
-    # print datacube crs
+    print('---datacube_path= ', datacube_path)
+    datacube = rxr.open_rasterio(datacube_path)
+    # print('==============================')
+    # print('---opened datacube= ', datacube)
+    # print('==============================')
 
-
-    #print('---loaded datacube= ', datacube)
     print('---opened datacube crs = ', datacube.rio.crs)
 
-    print('==============================')
-    num_x_tiles = max(datacube.x.size + stride - 1, 0) // stride + 1
-    num_y_tiles = max(datacube.y.size + stride - 1, 0) // stride + 1
-
-    #num_x_tiles = 10
-    #num_y_tiles = 10
-
+    #num_x_tiles = max(datacube.x.size + stride - 1, 0) // stride + 1
+    #num_y_tiles = max(datacube.y.size + stride - 1, 0) // stride + 1
+    num_x_tiles = 10
+    num_y_tiles = 10
 
     total_num_tiles = 0
     num_has_nans = 0
     num_nomask = 0
     num_saved = 0
     num_novalid = 0
-    for y_idx in tqdm(range(num_y_tiles),desc="---Processing tiles by row"):
+    for y_idx in tqdm(range(num_y_tiles),desc="### Processing tiles by row"):
 
         for x_idx in range(num_x_tiles):
 
@@ -94,6 +91,14 @@ def tile_datacube(datacube, event, tile_size=256, stride=256):
 
             # Select the subset of data for the current tile
             tile = datacube['__xarray_dataarray_variable__'].sel(y=slice(y_start, y_end), x=slice(x_start, x_end))
+
+            # Skip empty tiles
+            if tile.sizes["x"] == 0 or tile.sizes["y"] == 0:
+                print("Empty tile encountered; skipping.")
+                continue
+            print('==============================')
+            print('---TILE= ', tile)
+            print('==============================')
             # print('--- 1 tile as dataarray before saving= ', tile)
 
             total_num_tiles += 1
