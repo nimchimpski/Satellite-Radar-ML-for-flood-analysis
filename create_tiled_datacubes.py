@@ -40,7 +40,7 @@ def fill_nodata_with_zero(input_file):
 
     # Replace nodata values with 0
     if nodata_value is not None:
-        print('---replacing nans with 0 in ',input_file.name)
+        #print('---replacing nans with 0 in ',input_file.name)
         data[data == nodata_value] = 0
     
     # Write the modified array back to the raster
@@ -100,15 +100,14 @@ def create_vv_and_vh_tifs(file):
             meta.update(count=1)
             # Save the vv band as a separate TIFF
             vv_newname = file.name.rsplit('_', 1)[0]+'_vv.tif'
-            print('---vv_newname= ',vv_newname)
             with rasterio.open(file.parent / vv_newname, 'w', **meta) as destination:
                 destination.write(vv_band, 1)  # Write band 1 (vv)
             # Save the vh band as a separate TIFF
             vh_newname = file.name.rsplit('_', 1)[0]+'_vh.tif'
             with rasterio.open(file.parent / vh_newname, 'w', **meta) as destination:
                 destination.write(vh_band, 1)  # Write band 2 (vh)
-        #print('---DELETING ORIGINAL IMAGE FILE')
-        #file.unlink()  # Delete the original image file  
+        print('---DELETING ORIGINAL IMAGE FILE')
+        file.unlink()  # Delete the original image file  
     else:
         print(f'---NO IMAGE FOUND !!!!!= {file.name}')
 
@@ -163,7 +162,7 @@ def match_resolutions_with_check(event):
                 reprojected_layer.rio.to_raster(file)
                 #print(f'--- Resampled raster saved to: {file.name}')
 
-def make_single_eventcube(data_root, event, datas):
+def make_ds(data_root, event, datas):
     '''
     MAKES AN XARRAY 'DATASET' (!!!)
     THIS MEANS 1ST DIMENSION IS A VARIABLE NAME. DEFAULT = '--xarray_dataarray_variable--'
@@ -171,74 +170,80 @@ def make_single_eventcube(data_root, event, datas):
     'Event' is a single folder conatining flood event data    
     'satck' is an Xarray DataArray 
     '''   
-    print(f"++++ in single Eventcube fn")      
+    print(f"++++ in single ds fn")      
     layers = []
     layer_names = []
     # CREATE THE DATACUBE
-    for tif_file, band_name in tqdm(datas.items(), desc='making cubes'):
+    # TODO SKIP XML's etc to avoid error
+    for tif_file, band_name in tqdm(datas.items(), desc='making da cubes from bands in "datas"'):
         try:
             #print(f"\n---Loading {tif_file}-------------------------------------------")
+            # 'da'  IS A DATA ARRAY
 
-            stack = rxr.open_rasterio(Path(data_root, event, tif_file))
-            # Check if stack is created successfully
-            if stack is None:
-                print(f"---Error: Stack for {tif_file} is None")
-            else:
-                # Print basic info about the stack
-                #nan_check(stack)
+            # CREATE A DATA ARRAY FROM THE TIF FILE
+            da = rxr.open_rasterio(Path(data_root, event, tif_file))
+            # Check if da is created successfully
+            if da is None:
+                print(f"---Error: da for {tif_file} is None")
 
-                #print(f"---Successfully loaded stack for {tif_file}")
-                # print(f"---Stack type: {type(stack)}")  # Should be an xarray.DataArray
-                # print(f"---Stack dimensions: {stack.dims}")
-                #print(f"---Stack shape: {stack.shape}")  # Check the shape of the array
-                # print(f"---Stack data type: {stack.dtype}")  # Check the data type of the array
-                # print(f"---Stack chunk sizes: {stack.chunks}")
-                # # Print the first few coordinate values for x and y
-                #print(f"---X Coordinates: {stack.coords['x'].values[:5]}")  # First 5 x-coordinates
-                #print(f"---Y Coordinates: {stack.coords['y'].values[:5]}")  # First 5 y-coordinates
-                pass
         except Exception as e:
-            print(f"---Error loading {tif_file}: {e}")
+            print(f"eee-Error loading {tif_file}: {e}")
             continue  # Skip this file if there is an issue loading
         # Handle multi-band image data (e.g., VV, VH bands)
     
         try:
             #print(f"---Processing single-band layer: {band_name}")
-            layers.append(stack)
+            layers.append(da)
             layer_names.append(band_name)
             #print(f"---Successfully processed layer with band name: {band_name}")
         except Exception as e:
-            print(f"---Error creating layers for {tif_file}: {e}")
+            print(f"eee-Error creating layers for {tif_file}: {e}")
             continue
+    if len(layers) != 6:
+        print('---length layers= {len(layers)} not 6')         
+    #print(f'---layer_names= {layer_names}')
     print(f'---finished {event.name}\n'  )   
-    print('---length layers= ',len(layers), '\n')         
-    print(f'---layer_names= {layer_names}\n')
+
     if layers:
-        #layers = [layer.broadcast_like(layers[0]) for layer in layers]
-        layers = tqdm([layer.rio.reproject_match(layers[0]) for layer in layers], desc='reprojecting')
+        # REPROJECT ALL LAYERS TO MATCH THE FIRST LAYER
+        reprojected_layers = []
+        for layer in tqdm(layers, desc='reprojecting'):
+            reprojected_layer = layer.rio.reproject_match(layers[0])
+            reprojected_layers.append(reprojected_layer)
 
-        #check_layers(layers, layer_names)
-        print('---layers checked ok')
-        # Concatenate all layers along a new dimension called 'layer' or 'band'
-        eventcube = xr.concat(layers, dim='layer').astype('int16')
-        print(' ')
-        print('---eventcube made ok')
-
+        # CONCATENATE THE LAYERS ALONG A NEW DIMENSION CALLED 'layer'
+        ds = xr.concat(layers, dim='layer').astype('int16')
 
         # Assign the layer names (e.g., ['vv', 'vh', 'dem', 'slope']) to the 'layer' dimension
-        eventcube = eventcube.assign_coords(layer=layer_names)
+        ds = ds.assign_coords(layer=layer_names)
         print('---layer names assigned ok')
+
+        # MAKE da INTO A DATASET !!!!!!!!!!!!
+        ds = ds.to_dataset(name="data1")  # Replace with a suitable name
+
         # Rechunk the final datacube for optimal performance
-        eventcube = eventcube.chunk({'x': 1024, 'y': 1024, 'layer': 1})
+        ds = ds.chunk({'x': 1024, 'y': 1024, 'layer': 1})
         print('---Rechunked datacube')
+
+        # Check if layers[0] has a CRS
+        if layers[0].rio.crs is None:
+            print("---Warning: layers[0] does not have a CRS. Assigning a default CRS.")
+            # Optionally assign a default CRS, like EPSG:4326
+            layers[0].rio.write_crs("EPSG:4326", inplace=True)
+        else:
+            print(f"---CRS for layers[0]: {layers[0].rio.crs}")
+
+        ds.rio.write_crs(layers[0].rio.crs, inplace=True)
 
 
         # If the 'band' dimension is unnecessary (e.g., single-band layers), squeeze it out
-        if 'band' in eventcube.dims and eventcube.sizes['band'] == 1:
-            eventcube = eventcube.squeeze('band')
-            print('---Squeezed out single-band dimension')
+        if 'band' in ds.dims and ds.sizes['band'] == 1:
+            ds = ds.squeeze('band')
+            #print('---Squeezed out single-band dimension')
 
-        return eventcube
+        print(f'---ds {event.name} made ok')
+
+        return ds
     else:
         print('---No layers found')
         return None 
@@ -286,72 +291,100 @@ def create_event_datacubes(data_root, VERSION="v1"):
     for event in data_root.iterdir(): # CREATES ITERABLE FO FILE PATHS 
 
         # IGNORE .NC FILES
-        if event.suffix == '.nc' or event.name in ['tiles']:
+        if event.suffix == '.nc' or event.name in ['tiles'] or not event.is_dir():
             # print(f"Skipping file: {event.name}")
             continue
 
         if event.is_dir() and any(event.iterdir()):
-            print(f"############## PREPARING TIFS ########################: {event.name}")
+            print(f"############## {event.name}   PREPARING TIFS ########################: ")
+            # DO WORK ON THE TIFS
+
+            # TODO FIX THIS MESS:
 
             # LOOP FILES + PREPARE THEM FOR DATA CUBE
             for file in event.iterdir():
-                if not (not file.is_file() or file.suffix in {'.xml', '.json', '.nc'} or '_S2_' in file.name or 'epsg4326' not in file.name):
+                if 'epsg4326' in file.name and '_s2_' not in file.name:
+                    if file.name.endswith('slope.tif') :
+                            fill_nodata_with_zero(file)
+
+            for file in event.iterdir():
+                if '_s2_' not in file.name and 'epsg4326'  in file.name:
                     if file.name.endswith('img.tif'):
-                        print('---found image file= ',file)
-                        #check crs
-                        #with rasterio.open(file) as src:
-                        #    print('---original crs= ',src.crs)
                         # EXTRACT THE VV AND VH BANDS FROM THE IMAGE FILE
+                        # TODO this is getting called twice - check if file gets/needs deleting 
                         create_vv_and_vh_tifs(file)
 
-                    # DO WORK ON THE TIFS
-                    if file.name.endswith('slope.tif'):
-                        fill_nodata_with_zero(file)
 
-            # reproject everything to match higher resolution - needs to loop through whole event folder to find the vv.tif as reference
-            print('>>>will now match resolutions')
-            match_resolutions_with_check(event)     
 
         # Get the datas info from the folder
         datas = make_datas(event)
 
         print('##################### MAKING SINGLE CUBE ##############################')
-        # Create the eventcube
-        eventcube = make_single_eventcube(data_root, event, datas)
+        # Create the ds
+        ds = make_ds(data_root, event, datas)
+        print('################### CRS CHECK ##############################')
+        crs = ds.rio.crs
+        print('---ds crs = ',crs)
 
-        crs = eventcube.rio.crs
-        print('---eventcube crs = ',crs)
-
-        # check the eventcube for excess int16 values 
+        # check the ds for excess int16 values 
         #print('>>>>>>>>>>>checking exceedence for= ',event.name )
-        check_int16_range(eventcube)
+        
+            # Iterate over each variable in the dataset
+        for var_name, dataarray in ds.data_vars.items():
+            print(f"Checking variable: {var_name}")
+            check_int16_range(dataarray)
 
-        # assign the  crs to the eventcube !!!!
-        eventcube['crs'] = xr.DataArray(0, attrs={
+        # Ensure CRS is applied to the dataset using `rio.write_crs`
+        ds.rio.write_crs(crs, inplace=True)
+   
+        print('---ds crs = ',ds.rio.crs)
+
+
+        # assign the  crs to the ds !!!!
+        ds['spatial_ref'] = xr.DataArray(0, attrs={
             'grid_mapping_name': 'latitude_longitude',
-            'epsg_code': eventcube.rio.crs.to_epsg(),
-            'crs_wkt': eventcube.rio.crs.to_wkt()
+            'epsg_code': crs.to_epsg(),
+            'crs_wkt': ds.rio.crs.to_wkt()
             })  
+        
+        # # Link the CRS to the main data variable
+        # ds['data1'].attrs['grid_mapping'] = 'spatial_ref'
+
+
         # save datacube to data_root
-        print(f"---Saving event datacube to: {event / f'datacube_{event.name}_{VERSION}.nc'}")
-        eventcube.to_netcdf(event / f"datacube_{event.name}{VERSION}.nc")
-        nan_check(eventcube)
-        check_int16_range(eventcube)
-        print(f'>>>>>>>>>>>  eventcube saved for= {event.name} >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n')
+        print(f"---Saving event datacube : {f'datacube_{event.name}_{VERSION}.nc'}")
+        output_path = event / f"datacube_{event.name}{VERSION}.nc"
+        ds.to_netcdf(output_path, mode='w', format='NETCDF4', engine='netcdf4')
+
+        # Check CRS after reopening
+        with xr.open_dataset(output_path) as datacube:
+            # print('============================================================')
+            # print('---datacube= ',datacube)
+            # print('============================================================')
+
+            print("---CRS after reopening:", datacube.rio.crs)
+            # TODO STILL NO CRS IN THE REOPENED DATACUBE
+        nan_check(ds)
+        check_int16_range(ds)
+        print(f'>>>>>>>>>>>  ds saved for= {event.name} >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n')
 
 
     print('>>>finished all events\n')
 
 def main():
     data_root = Path(r"\\cerndata100\AI_files\Users\AI_flood_service\1NEW_DATA\1data\2interim\TESTS\sample_s1s24326")
-    #create_event_datacubes(data_root)
+    create_event_datacubes(data_root)
 
-    for event in data_root.iterdir():
-        if event.is_dir() and any(event.iterdir()):
-            for file in tqdm(event.iterdir(), desc=':::::looping files'):
-                if file.suffix == '.nc':
-                    print(f"############## TILING {event.name}########################: ")
-                    tile_datacube(data_root / event / file.name, event, tile_size=256, stride=256)
+    #for event in data_root.iterdir():
+    #    if event.is_dir() and any(event.iterdir()): # select event folders
+    #        for file in tqdm(event.iterdir(), desc=':::::iterate files in event folders'):
+    #            if file.suffix == '.nc':
+    #                print('>>>found nc file= ',file.name)   
+    #                datacube = xr.open_dataset(file)
+    #                print('---datacube= ',datacube)
+    #                return 
+    #                print(f"############## TILING {event.name}########################: ")
+    #                tile_datacube(data_root / event / file.name, event, tile_size=256, stride=256)
 
 if __name__ == "__main__":
     main()
