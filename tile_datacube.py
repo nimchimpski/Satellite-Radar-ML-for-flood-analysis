@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 def tile_datacube(datacube_path, event, tile_size=256, stride=256):
     """
-    Tile a datacube and save to 'tiles' dir in same location.
+    Tile a DATASET (from which the dataarray is selected) and save to 'tiles' dir in same location.
     'ARGs:
       event is a Path object: datacube is a xarray object
     play with the stride and tile_size to get the right size of tiles.
@@ -41,11 +41,19 @@ def tile_datacube(datacube_path, event, tile_size=256, stride=256):
         return False = ok
         '''
         # Ensure 'valid' layer exists
-        if 'valid' not in tile.coords['layer'].values:
-            print("Warning: 'valid' layer not found in tile.")
+        if 'valid' not in tile.coords['layer']:
+            print("---Warning: 'valid' layer not found in tile.")
             return True  # If 'valid' layer is missing, treat as no valid data
 
-        return 1 not in tile.sel(layer='valid').values
+        if 1 not in tile.sel(layer='valid').values:
+            print("---Warning: No valid data found in tile.")
+            #print("Unique values in 'valid' layer:", np.unique(datacube.sel(layer='valid').values))
+            #print("Values in 'valid' layer for tile:", tile.sel(layer='valid').values)
+
+
+            return True  # If no valid data is found, treat as no valid data
+        
+        return False  # If valid data is found, return False
     
     def has_no_mask(tile):
         '''
@@ -54,24 +62,30 @@ def tile_datacube(datacube_path, event, tile_size=256, stride=256):
         '''
         return 'mask' not in tile.coords['layer'].values
     
-    print('---making tiles dir  in event dir')
-    print('---event= ', event.name)
+    #print('---making tiles dir  in event dir')
+    #print('---event= ', event.name)
 
     tile_path = Path(event, 'tiles') 
     os.makedirs(tile_path, exist_ok=True)
     # check new tiles dir exists
-    print('---datacube_path= ', datacube_path)
     datacube = rxr.open_rasterio(datacube_path)
-    # print('==============================')
-    # print('---opened datacube= ', datacube)
-    # print('==============================')
+    print('==============================')
+    print('---opened datacube= ', datacube)
+    print('==============================')
 
     print('---opened datacube crs = ', datacube.rio.crs)
 
-    #num_x_tiles = max(datacube.x.size + stride - 1, 0) // stride + 1
-    #num_y_tiles = max(datacube.y.size + stride - 1, 0) // stride + 1
-    num_x_tiles = 10
-    num_y_tiles = 10
+    # Select the 'valid' layer within 'data1'
+    valid_values = datacube['data1'].sel(layer='valid').values
+
+    # Check unique values in the 'valid' layer
+    unique_valid_values = np.unique(valid_values)
+    print("---Unique values in 'valid' layer for 'data1':", unique_valid_values)
+
+    num_x_tiles = max(datacube.x.size + stride - 1, 0) // stride + 1
+    num_y_tiles = max(datacube.y.size + stride - 1, 0) // stride + 1
+    # num_x_tiles = 100
+    # num_y_tiles = 100
 
     total_num_tiles = 0
     num_has_nans = 0
@@ -90,15 +104,19 @@ def tile_datacube(datacube_path, event, tile_size=256, stride=256):
             y_start = max(y_end - tile_size, 0)
 
             # Select the subset of data for the current tile
-            tile = datacube['__xarray_dataarray_variable__'].sel(y=slice(y_start, y_end), x=slice(x_start, x_end))
+            try:
+                tile = datacube['data1'].sel(y=slice(y_start, y_end), x=slice(x_start, x_end))
+            except KeyError:
+                print("eee-Error: 'data1' not found in datacube.")
+                return
 
             # Skip empty tiles
             if tile.sizes["x"] == 0 or tile.sizes["y"] == 0:
                 print("Empty tile encountered; skipping.")
                 continue
-            print('==============================')
-            print('---TILE= ', tile)
-            print('==============================')
+            # print('==============================')
+            # print('---TILE= ', tile)
+            # print('==============================')
             # print('--- 1 tile as dataarray before saving= ', tile)
 
             total_num_tiles += 1
@@ -109,14 +127,17 @@ def tile_datacube(datacube_path, event, tile_size=256, stride=256):
             # set the criterion here.
             if contains_nans(tile):
                 num_has_nans += 1
+                print('---tile has nans')
                 continue
 
             if has_no_valid(tile):
                 num_novalid += 1
+
                 continue
 
             if has_no_mask(tile):
                 num_nomask +=1
+                print('---tile has no mask')
                 continue
 
             name = f"tile_{event.name}_{x_idx}_{y_idx}.tif"
@@ -147,9 +168,9 @@ def main():
 
     print(f'>>>>total num of tiles: {total_num_tiles}')
     print(f'>>>>num of saved tiles: {num_saved}')
-    print(f'>>>num witno valid data/analysis extent layer: {num_has_nans}')
+    print(f'>>>num with NANs: {num_has_nans}')
     print(f'>>>num with no mask : {num_nomask}')
-    print(f'>>>num with no valid layer : {num_novalid}')
+    print(f'>>>num with no valid layer or pixels : {num_novalid}')
 
     # check layers in tile
     tile_dir = Path(event, 'tiles') 

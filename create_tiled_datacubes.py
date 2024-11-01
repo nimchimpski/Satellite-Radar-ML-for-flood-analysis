@@ -175,7 +175,7 @@ def make_ds(data_root, event, datas):
     layer_names = []
     # CREATE THE DATACUBE
     # TODO SKIP XML's etc to avoid error
-    for tif_file, band_name in tqdm(datas.items(), desc='making da cubes from bands in "datas"'):
+    for tif_file, band_name in tqdm(datas.items(), desc='---making da cubes from bands in "datas"'):
         try:
             #print(f"\n---Loading {tif_file}-------------------------------------------")
             # 'da'  IS A DATA ARRAY
@@ -207,7 +207,7 @@ def make_ds(data_root, event, datas):
     if layers:
         # REPROJECT ALL LAYERS TO MATCH THE FIRST LAYER
         reprojected_layers = []
-        for layer in tqdm(layers, desc='reprojecting'):
+        for layer in tqdm(layers, desc='---reprojecting'):
             reprojected_layer = layer.rio.reproject_match(layers[0])
             reprojected_layers.append(reprojected_layer)
 
@@ -296,7 +296,7 @@ def create_event_datacubes(data_root, VERSION="v1"):
             continue
 
         if event.is_dir() and any(event.iterdir()):
-            print(f"############## {event.name}   PREPARING TIFS ########################: ")
+            print(f"***************** {event.name}   PREPARING TIFS *****************: ")
             # DO WORK ON THE TIFS
 
             # TODO FIX THIS MESS:
@@ -331,12 +331,11 @@ def create_event_datacubes(data_root, VERSION="v1"):
         
             # Iterate over each variable in the dataset
         for var_name, dataarray in ds.data_vars.items():
-            print(f"Checking variable: {var_name}")
+            print(f"---Checking variable: {var_name}")
             check_int16_range(dataarray)
 
         # Ensure CRS is applied to the dataset using `rio.write_crs`
-        ds.rio.write_crs(crs, inplace=True)
-   
+        ds.rio.write_crs("EPSG:4326", inplace=True)   
         print('---ds crs = ',ds.rio.crs)
 
 
@@ -350,6 +349,7 @@ def create_event_datacubes(data_root, VERSION="v1"):
         # # Link the CRS to the main data variable
         # ds['data1'].attrs['grid_mapping'] = 'spatial_ref'
 
+        print('################### SAVING DS ##############################')
 
         # save datacube to data_root
         print(f"---Saving event datacube : {f'datacube_{event.name}_{VERSION}.nc'}")
@@ -358,14 +358,17 @@ def create_event_datacubes(data_root, VERSION="v1"):
 
         # Check CRS after reopening
         with xr.open_dataset(output_path) as datacube:
-            # print('============================================================')
-            # print('---datacube= ',datacube)
-            # print('============================================================')
-
             print("---CRS after reopening:", datacube.rio.crs)
             # TODO STILL NO CRS IN THE REOPENED DATACUBE
-        nan_check(ds)
-        check_int16_range(ds)
+        
+        # TODO COLLAPSE THESE FUNCTIONS
+        for var_name, dataarray in ds.data_vars.items():
+            print(f"Checking variable: {var_name}")
+            nan_check(dataarray)
+        for var_name, dataarray in ds.data_vars.items():
+            print(f"Checking variable: {var_name}")
+            check_int16_range(dataarray)
+
         print(f'>>>>>>>>>>>  ds saved for= {event.name} >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n')
 
 
@@ -375,16 +378,21 @@ def main():
     data_root = Path(r"\\cerndata100\AI_files\Users\AI_flood_service\1NEW_DATA\1data\2interim\TESTS\sample_s1s24326")
     create_event_datacubes(data_root)
 
-    #for event in data_root.iterdir():
-    #    if event.is_dir() and any(event.iterdir()): # select event folders
-    #        for file in tqdm(event.iterdir(), desc=':::::iterate files in event folders'):
-    #            if file.suffix == '.nc':
-    #                print('>>>found nc file= ',file.name)   
-    #                datacube = xr.open_dataset(file)
-    #                print('---datacube= ',datacube)
-    #                return 
-    #                print(f"############## TILING {event.name}########################: ")
-    #                tile_datacube(data_root / event / file.name, event, tile_size=256, stride=256)
+    for event in data_root.iterdir():
+       if event.is_dir() and any(event.iterdir()): # select event folders
+           print(f"############## {event.name}   TILING ########################: ")
+           for file in tqdm(event.iterdir(), desc=':::::iterate files in event folders'):
+               if file.suffix == '.nc':
+                   #datacube = xr.open_dataset(file)
+                   #print('---datacube= ',datacube)
+                   print(f">>>>>>>>>>>>>>>>>>>>>>> TILING {event.name}<<<<<<<<<<<<<<<<: ")
+                   total_num_tiles, num_saved, num_has_nans, num_novalid, num_nomask = tile_datacube(file, event, tile_size=256, stride=256)
+
+    print(f'>>>>total num of tiles: {total_num_tiles}')
+    print(f'>>>>num of saved tiles: {num_saved}')
+    print(f'>>>num witno valid data/analysis extent layer: {num_has_nans}')
+    print(f'>>>num with no mask : {num_nomask}')
+    print(f'>>>num with no valid layer : {num_novalid}')
 
 if __name__ == "__main__":
     main()
