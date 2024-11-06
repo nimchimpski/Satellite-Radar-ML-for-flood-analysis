@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import json
 import time
+import shutil
 
 def remove_characters_from_foldername(base_path):
     '''
@@ -73,9 +74,7 @@ def remove_word_from_filename(file_path, word):
             new_file_path = file_path.parent / new_folder_name 
             print(f"Renaming: {file_path} -> {new_file_path}")
             file_path.rename(new_file_path)
-
-
-    
+ 
 # Function to rename the folder based on the country name
 def rename_folder_based_on_country(folder_path, tiff_path):
     # Get the CRS from the TIFF file
@@ -100,7 +99,6 @@ def rename_folder_based_on_country(folder_path, tiff_path):
     except Exception as e:
         print(f"---Error renaming folder: {e}")
         return None
-    
 
 
 def update_asset_jsons(old_folder_name, new_folder_path):
@@ -173,3 +171,21 @@ def update_catalogue_json(old_folder_name, base_path, new_folder_path):
     with stac_catalogue_path.open('w') as f:
         json.dump(stac_data, f, indent=4)
         print(f"---Updated STAC CATALOGUE JSON: {stac_catalogue_path}")
+
+def collect_images(root_path, new_folder_path):
+    """
+    Collect all images from the specified root path and move them to the new folder path.
+    
+    :param root_path: The root path where the images are currently located.
+    :param new_folder_path: The new folder path where the images will be moved.
+    """
+    # Create the new folder path if it does not exist
+    new_folder_path.mkdir(parents=True, exist_ok=True)
+    
+    # Move all images from the root path to the new folder path
+    for image_path in root_path.glob("**/*"):
+        if image_path.is_file() and 'epsg4326' in image_path.name and '_s1_' in image_path.name and image_path.name.endswith( "img.tif"):
+            print(f"---copying image: {image_path}")
+            new_image_path = new_folder_path / image_path.name
+            shutil.copy(image_path, new_image_path) 
+            print(f"Moved image: {image_path} -> {new_image_path}")

@@ -46,7 +46,7 @@ def nan_check(input):
         print("----Warning: NaN values found in the data.")
         return False
     else:
-        print("----NO NANS FOUND")
+        #print("----NO NANS FOUND")
         return True
     
 def check_int16_range(dataarray):
@@ -63,8 +63,8 @@ def check_int16_range(dataarray):
         print(f"---Minimum value found: {actual_min}")
         print(f"---Maximum value found: {actual_max}")
     
-    else:
-        print(f"---no exceedances int16.")
+    # else:
+    #     print(f"---no exceedances int16.")
 
     # Optional: Replace NaN and Inf values if necessary
     # dataarray = dataarray.fillna(0)  # Replace NaN with 0 or another appropriate value

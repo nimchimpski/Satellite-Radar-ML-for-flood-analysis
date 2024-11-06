@@ -8,21 +8,14 @@ from tqdm import tqdm
 from pathlib import Path
 import netCDF4 as nc
 from osgeo import gdal
-from check_int16_exceedance import check_int16_exceedance
+import shutil
+import re
+# MODULES
+# from check_int16_exceedance import check_int16_exceedance
 from modules.helpers import *
 from tile_datacube import tile_datacube 
-'''
-- will overwrite existing .nc files in the event folders.
-- expects each event folder to have the following files:
-    elevation.tif
-    slope.tif
-    msk.tif
-    valid.tif
+from modules.renaming_module import collect_images
 
-TODO check process in place to organise the dataroot / input files such as they are correct for this script.
-TODO THERE IS A PERSISTANT HIDDEN PROBLEM WITH WRONG VALUES AFTER CASTING.
-TODO add rtc function 
-'''
 
 def fill_nodata_with_zero(input_file):
     print('+++in fill_nodata_with_zero fn')
@@ -249,6 +242,9 @@ def make_ds(data_root, event, datas):
         return None 
     
 def make_datas(event):
+    '''
+    iterates through the files in the event folder and returns a dict of the datas
+    '''
     datas = {}
     for file in event.iterdir():
         # print(f'---file {file}')
@@ -374,26 +370,43 @@ def create_event_datacubes(data_root, VERSION="v1"):
 
     print('>>>finished all events\n')
 
-def main():
-    data_root = Path(r"\\cerndata100\AI_files\Users\AI_flood_service\1NEW_DATA\1data\2interim\TESTS\sample_s1s24326")
-    create_event_datacubes(data_root)
+def process_terraSARx_data(data_root):
+    '''
+    makes a 'datacube_files' folder in each event folder and copies the necessary files to it
+    '''
+    print('+++in process_terraSARx_data fn')
+    #image = list(Path('.').rglob("IMAGE_HH_*"))
+    #print('---image= ',image)
+
+    target_filename = "DEM_MAP.tif"
 
     for event in data_root.iterdir():
-       if event.is_dir() and any(event.iterdir()): # select event folders
-           print(f"############## {event.name}   TILING ########################: ")
-           for file in tqdm(event.iterdir(), desc=':::::iterate files in event folders'):
-               if file.suffix == '.nc':
-                   #datacube = xr.open_dataset(file)
-                   #print('---datacube= ',datacube)
-                   print(f">>>>>>>>>>>>>>>>>>>>>>> TILING {event.name}<<<<<<<<<<<<<<<<: ")
-                   total_num_tiles, num_saved, num_has_nans, num_novalid, num_nomask = tile_datacube(file, event, tile_size=256, stride=256)
+        if event.is_dir() and any(event.iterdir()):
+            print(f"******* {event.name}   PREPARING TIFS ********")
+            datacube_files_path = event / 'datacube_files'
+            if datacube_files_path.exists() :
+                shutil.rmtree(datacube_files_path)  # Delete the directory and all its contents
 
-    print(f'>>>>total num of tiles: {total_num_tiles}')
-    print(f'>>>>num of saved tiles: {num_saved}')
-    print(f'>>>num witno valid data/analysis extent layer: {num_has_nans}')
-    print(f'>>>num with no mask : {num_nomask}')
-    print(f'>>>num with no valid layer : {num_novalid}')
+    
+            datacube_files_path.mkdir(parents=True, exist_ok=True)
+            pattern = re.compile(f'^{re.escape(target_filename)}$')
+            # STEP THROUGH FILENAMES WE WANT 
+            filename_parts = ['DEM_MAP', 'IMAGE_HH']
+            for i in filename_parts:
+                # print(f'---looking for files starting with {i}')
+                pattern = re.compile(f'^{re.escape(i)}')  
+                # COPY THEM TO THE EVENT DATA CUBE FOLDER
+                for file_path in Path(event).rglob("*"):
+                    if file_path.suffixes == ['.tif'] and pattern.match(file_path.name):
+                    # if file_path.suffix != '.aux.xml'and file_path.name == target_filename:
+                    # if True:    
+                        target = datacube_files_path / file_path.name
+                        # if Path(target).exists():
+                        #     print('---file already exists') 
+                        #     continue
+                        shutil.copy(file_path, target)
+            
 
-if __name__ == "__main__":
-    main()
+
+
 

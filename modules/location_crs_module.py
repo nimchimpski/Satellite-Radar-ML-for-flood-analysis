@@ -88,4 +88,4 @@ def reproject_to_epsg4326(tile_path, utm_crs):
                     dst_crs=dst_crs,
                     resampling=Resampling.nearest)
 
-    print(f"---Reprojected tile saved as: {output_file.name}")
+    print(f"---Reprojected file saved as: {output_file.name}")
