@@ -3,7 +3,7 @@
 from modules.check_int16_exceedance import check_int16_exceedance
 from modules.helpers import *
 from tile_datacube import tile_datacube 
-from modules.organise_directory import collect_images
+from modules.organise_folders import collect_images
 from modules.preprocess_tiffs import create_event_datacubes, process_terraSARx_data
 from modules.reproject_tifs_to_4326 import reproject_tifs_to_4326
 '''

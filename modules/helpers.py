@@ -7,9 +7,6 @@ import json
 import time
 import numpy as np
 
-
-
-    
 def check_novalues(path_to_tiff):
     with rasterio.open(path_to_tiff) as src:
         # Read the data from the first band
