@@ -5,12 +5,12 @@ import os
 from pathlib import Path
 import json
 import time
-from helpers import get_central_coordinate_from_tiff
-from helpers import get_crs_from_tiff
-from renaming_module import rename_folder_based_on_country
-from renaming_module import get_country_name
-from renaming_module import update_asset_jsons
-from renaming_module import update_catalogue_json
+from modules.helpers import get_central_coordinate_from_tiff
+from modules.helpers import get_crs_from_tiff
+from modules.organise_directory import rename_folder_based_on_country
+from modules.organise_directory import get_country_name
+from modules.organise_directory import update_asset_jsons
+from modules.organise_directory import update_catalogue_json
 '''
 Countryname grabbed from Nominatim.
 Iterates through a folder and subfolders to find a tiff file and rename the folder based on the country name.

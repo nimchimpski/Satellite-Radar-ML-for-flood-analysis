@@ -9,6 +9,16 @@ import json
 import time
 import shutil
 
+def clearfolders(event):
+    delnorm = event / 'tiles_norm'
+    delnormbck = event / 'tiles_norm_bck'
+    if delnorm.exists():
+        print(f"---deleting {delnorm.name}")
+        shutil.rmtree(delnorm)
+    if delnormbck.exists():
+        print(f"---deleting {delnormbck.name}")
+        shutil.rmtree(delnormbck)
+
 def remove_characters_from_foldername(base_path):
     '''
     rename folders by removing everything apart from digits between 1 and 99
@@ -173,6 +183,7 @@ def update_catalogue_json(old_folder_name, base_path, new_folder_path):
         print(f"---Updated STAC CATALOGUE JSON: {stac_catalogue_path}")
 
 def collect_images(root_path, new_folder_path):
+
     """
     Collect all images from the specified root path and move them to the new folder path.
     
@@ -189,3 +200,81 @@ def collect_images(root_path, new_folder_path):
             new_image_path = new_folder_path / image_path.name
             shutil.copy(image_path, new_image_path) 
             print(f"Moved image: {image_path} -> {new_image_path}")
+
+def delete_unnecessary_files(file_name):
+    """
+    This function iterates through all subfile_names in the root directory
+    and deletes any .xml files and files that start with 'sentinel12'.
+    Args:
+    - root_dir (str or Path): The root directory to start the search.
+    """
+    # Iterate through all subdirectories and files in the root directory
+    if file_name.is_file():
+        # Delete .xml files
+        if file_name.suffix == '.xml':
+            print(f"Deleting {file_name}")
+            file_name.unlink()  # Remove the file
+            
+        # Delete files that start with 'sentinel12'
+        elif file_name.suffix != '.json':
+            if file_name.name.startswith('sentinel12'):
+                print(f"Deleting {file_name}")
+                file_name.unlink()  # Remove the file
+            elif 'sentinel12_s2' in file_name.name:
+                print(f"Deleting {file_name}")
+                file_name.unlink()  # Remove the file
+
+
+'''
+Countryname grabbed from Nominatim.
+Iterates through a folder and subfolders to find a tiff file and rename the folder based on the country name.
+INDIVIDUAL FILE NAMES ARE NOT CHANGED, JUST THE FOLDER NAME AND THE PATHS INSIDE THE JSON FILES.
+'''
+
+# Initialize the geolocator for reverse geocoding
+geolocator = Nominatim(user_agent="floodai")
+
+# Process dataset folders: Renaming and STAC JSON updates
+def main(base_path):
+    """
+    Traverse dataset folders and update their STAC JSON files with new folder names.
+
+    :param base_path: Base path where the renamed folders are located.
+    """
+    base_path_root = r"X:\1NEW_DATA\1data\2interim"
+    base_path = Path(base_path_root) / "dataset_DLR_S1S2_bycountry"
+    # print("---Processing dataset folders in:", base_path)
+    # print(f"----Checking path: {base_path}")
+
+    for folder_path in base_path.iterdir():
+        if folder_path.is_dir():
+            print(f"---Processing folder: {folder_path}")
+
+            tiff_files = list(folder_path.glob("*img.tif"))  # Looks for any file ending with img.tif
+                
+            if tiff_files:
+                # Use the first TIFF file found
+                tiff_path = tiff_files[0]
+                # Get the original folder name before renaming
+                old_folder_name = folder_path.name
+                print(f"---old_folder_name: {old_folder_name}")
+                # Proceed with renaming using the  TIFF file to get the CRS
+                new_folder_path = rename_folder_based_on_country(folder_path, tiff_path)
+                print(f"---new_folder_path: {new_folder_path}")
+
+                if new_folder_path:
+                    # Update the STAC JSON file with the new folder name
+                    update_asset_jsons(old_folder_name, new_folder_path) 
+
+            else:
+                    print(f"---No suitable TIFF file found in {folder_path}") 
+        
+    update_catalogue_json(old_folder_name, base_path, new_folder_path) 
+
+
+base_path_root = r"X:\1NEW_DATA\1data\2interim"
+base_path = Path(base_path_root) / "dataset_DLR_S1S2_bycountry"
+# print("---Processing dataset folders in:", base_path)
+# print(f"----Checking path: {base_path}")
+if __name__ == "__main__":
+    main(base_path)

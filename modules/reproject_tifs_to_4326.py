@@ -6,10 +6,10 @@ import sys
 # # Add this path to Python's search path (sys.path)
 # sys.path.append(str(module_path))
 
-from modules.location_crs_module import get_central_coordinate_from_tiff
-from modules.location_crs_module import get_crs_from_tiff
-from modules.location_crs_module import reverse_geolocate_country_utmzone
-from modules.location_crs_module import reproject_to_epsg4326
+from modules.location_crs import get_central_coordinate_from_tiff
+from modules.location_crs import get_crs_from_tiff
+from modules.location_crs import reverse_geolocate_country_utmzone
+from modules.location_crs import reproject_to_epsg4326
 
 base_path = Path(r"Z:\1NEW_DATA\1data\2interim\all dlr waterset\dataset_DLR_S1S2_bycountry_utmz_copy") 
 '''
