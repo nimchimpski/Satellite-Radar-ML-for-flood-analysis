@@ -31,3 +31,5 @@ configs/secrets.yaml
 wandb/
 # ignore checkpoint files
 *.ckpt
+
+*.code-workspace
