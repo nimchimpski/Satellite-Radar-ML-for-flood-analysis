@@ -33,3 +33,7 @@ wandb/
 *.ckpt
 
 *.code-workspace
+
+1raw/
+2interim/
+3final/
