@@ -1,0 +1,39 @@
+
+
+# Ignore Python virtual environments
+venv/
+
+# Ignore compiled Python files
+__pycache__/
+*.py[cod]
+
+# Ignore Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+
+# Ignore OS-specific files (macOS)
+.DS_Store
+
+# Ignore log files
+*.log
+
+.env
+tiles/
+ignore/
+
+data/
+datacopy/
+oldcode.py
+
+# Ignore specific config or sensitive files
+configs/secrets.yaml
+
+wandb/
+# ignore checkpoint files
+*.ckpt
+
+*.code-workspace
+
+1raw/
+2interim/
+3final/
