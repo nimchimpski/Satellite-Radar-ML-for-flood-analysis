@@ -42,3 +42,5 @@ oldcode.py
 #DVC
 # Track .dvc files in 1data and all subdirectories
 !1data/**/*.dvc
+
+ignoretest/
