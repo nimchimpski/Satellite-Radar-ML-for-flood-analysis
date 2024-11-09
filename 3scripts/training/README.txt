@@ -1,1 +1,0 @@
-traiing scripts (repo) is on C/users/floodai

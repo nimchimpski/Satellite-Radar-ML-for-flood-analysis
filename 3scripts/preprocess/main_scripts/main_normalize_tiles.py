@@ -1,10 +1,11 @@
 from pathlib import Path
-from tqdm import tqdm
-from shutil import copyfile
-import numpy as np
-import rasterio
-from normalize_tiles import custom_normalize, normalise_a_tile, process_tiles_newdir
 import sys
+from scripts.preprocess.modules.normalize_tiles import process_tiles_newdir
+import os
+
+# Add the parent directory of the current file to the system path
+sys.path.append(Path(__file__).resolve().parent.parent)
+
 
 
 # Get the parent directory of the current file
