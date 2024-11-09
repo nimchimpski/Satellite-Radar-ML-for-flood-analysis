@@ -76,9 +76,13 @@ def normalise_a_tile(file_path, output_path):
                     if band_name in ['vv','vh','grd','dem','slope' ] and np.min(data) != np.max(data) :
                         normalized_data = (data - np.min(data)) / (np.max(data) - np.min(data))
                         dst.write(normalized_data.astype('float32'), band)
+                        # print(f"---band {band_name} to be normalized")
                     else:
                         dst.write(data, band)
+                        # print(f"---band {band_name} not normalized")
                     dst.set_band_description(band, band_name)
+
+
                 except Exception as e:
                     print(f"---Error normalizing band {band}: {e}")
                     dst.write(data, band)
@@ -115,7 +119,7 @@ def process_tiles_newdir(tile_path, normalized_tiles_path):
                     j = 0
                     for tile in tiles_folder.iterdir():
                         if tile.is_file():
-                            print(f"---Normalizing tile {j}")
+                            # print(f"---Normalizing tile {j}")
                             normalise_a_tile(tile, normalized_tiles_folder)
                             print(f"---tile: {j}. Finished {done} of {num_events} events")
                             j += 1
