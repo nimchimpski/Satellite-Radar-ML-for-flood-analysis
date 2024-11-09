@@ -1,6 +1,6 @@
 from pathlib import Path
 import sys
-from scripts.preprocess.modules.normalize_tiles import process_tiles_newdir
+from modules.normalize_tiles import process_tiles_newdir
 import os
 
 # Add the parent directory of the current file to the system path
