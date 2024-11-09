@@ -21,8 +21,6 @@ __pycache__/
 tiles/
 ignore/
 
-
-
 # Ignore specific config or sensitive files
 configs/secrets.yaml
 
@@ -36,10 +34,12 @@ wandb/
 data/
 datacopy/
 oldcode.py
-1data/
-1raw/
-2interim/
-3final/
+
+1data/1raw/
+1data/interim/
+1data/final/
 
 #DVC
-!data/**/*.dvc
+# Track .dvc files in 1data and all subdirectories
+!1data/
+!1data/**/*.dvc
