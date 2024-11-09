@@ -32,6 +32,14 @@ wandb/
 
 *.code-workspace
 
+# DATA
+data/
+datacopy/
+oldcode.py
+1data/
 1raw/
 2interim/
 3final/
+
+#DVC
+!data/**/*.dvc
