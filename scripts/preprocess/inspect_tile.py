@@ -6,7 +6,7 @@ import os
 
 def main():
     # tiles_path = Path(r"Z:\1NEW_DATA\1data\2interim\TESTS\tile_norm_testdata\FL_20210102_MOZ3333/tiles")
-    tiles_path = Path(r"C:\Users\floodai\floodai_newtrainingcode_python311\data\tiles_complete_setv2_nonorm\test")
+    tiles_path = Path(r"1data/2interim/Flai_v2_minmaxnormed/FL_20200730_MMR1C48/normalized_minmax_tiles")
 
     for tile in tiles_path.iterdir():
         print('---tile:', tile)

@@ -1,4 +1,3 @@
-from osgeo import gdal
 import numpy as np
 import rasterio
 from pathlib import Path

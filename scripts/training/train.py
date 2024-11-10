@@ -31,7 +31,7 @@ import wandb
 from pytorch_lightning import seed_everything
 from dotenv import load_dotenv
 from wandb import Artifact # ***ADDED****
-from torchsummary import summary
+# from torchsummary import summary
 #  pl.utilities.seed.seed_everything(seed=42, workers=False)  *****CHANGED****
 '''
 local modules 
@@ -53,7 +53,6 @@ os.environ["WANDB_NETRC"] = "0"  # Disable .netrc usage
 
 
 pl.seed_everything(42, workers=True, verbose = False)
-
 
 D = Union[Image.Image, np.ndarray, Tensor]
 
@@ -231,35 +230,38 @@ def create_subset(file_list, datacube_tile_root, stage, inputs=None, bs=32):
 @click.command()
 @click.option('--test', is_flag=True, show_default=False)
 @click.option('--reproduce', is_flag=True, show_default=False)
-def main(test, reproduce):
 
+def main(test=None, reproduce=None):
+    print('---in main')
     project = "floodai_new_model"
     dataset_name = 'floodai_datacube'
     dataset_version = 'v1'
 
+
+
     if not reproduce:
-        # ****EDIT*****  adresses - to use Pathlib
-        datacube_tile_root = Path(r"\\cerndata100\AI_Files\Users\AI_Flood_Service\datacube\tiles\unosat_ai_v2\tiles")
+        print('---here')
+        datacube_tile_root = Path(r"Z\1data\2interim\TESTS\tile_norm_testdata _\FL_20210102_MOZ3333\tiles")
         train_list = Path("texts/train_list.txt").resolve() # converts to absolute path with resolve
         test_list = Path("texts/test_list.txt").resolve()
         val_list = Path("texts/val_list.txt").resolve()
 
-        with wandb.init(project=project, job_type="data-process", name='load-data', mode="disabled") as run:
-            data_artifact = wandb.Artifact(
-                dataset_name, type="dataset",
-                description="{} dataset for FloodAI training".format(dataset_name),
-                metadata={"train_list": train_list,
-                        "test_list": test_list,
-                        "val_list": val_list})
-            # data_artifact.add_reference(name="train_list", uri=str(train_list)) ****CHANGED*****
-            # Convert to absolute path and correct URI format
-            absolute_train_list_path = train_list.resolve()
-            uri_path = absolute_train_list_path.as_uri()           # Debug print to check the formatted path
-            print(f"Formatted path: {uri_path}")
-            # Create an artifact and add the reference
-            data_artifact = Artifact(name="dataset_name", type="dataset")
-            data_artifact.add_reference(name="train_list", uri=uri_path)
-            run.log_artifact(data_artifact, aliases=[dataset_version, dataset_name])
+        # with wandb.init(project=project, job_type="data-process", name='load-data', mode="disabled") as run:
+        #     data_artifact = wandb.Artifact(
+        #         dataset_name, type="dataset",
+        #         description="{} dataset for FloodAI training".format(dataset_name),
+        #         metadata={"train_list": train_list,
+        #                 "test_list": test_list,
+        #                 "val_list": val_list})
+        #     # data_artifact.add_reference(name="train_list", uri=str(train_list)) ****CHANGED*****
+        #     # Convert to absolute path and correct URI format
+        #     absolute_train_list_path = train_list.resolve()
+        #     uri_path = absolute_train_list_path.as_uri()           # Debug print to check the formatted path
+        #     print(f"Formatted path: {uri_path}")
+        #     # Create an artifact and add the reference
+        #     data_artifact = Artifact(name="dataset_name", type="dataset")
+        #     data_artifact.add_reference(name="train_list", uri=uri_path)
+        #     run.log_artifact(data_artifact, aliases=[dataset_version, dataset_name])
     else:
         artifact_dataset_name = 'unosat_emergencymapping-United Nations Satellite Centre/{}/{}:{}'.format(project, dataset_name, dataset_name)
         
@@ -283,7 +285,7 @@ def main(test, reproduce):
 
     bs = 32
     max_epoch = 2
-    inputs = ['vv', 'vh', 'dem' , 'slope', 'mask'] 
+    inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask', 'analysis extent'] 
     in_channels = len(inputs) 
 
     """
@@ -306,11 +308,9 @@ def main(test, reproduce):
     wandb_logger = WandbLogger(
         project="floodai_retrain",
         name=experiment_name)
-    
-    drd_rawstring = r"\\cerndata100\AI_files\Users\Jiakun\FloodAI\scripts\flood-55\scripts\model\train\experiments"
-    # drd_rawstring = r"experiments"
-    
 
+    
+    print('---trainer')
     trainer= pl.Trainer(
         logger=wandb_logger,
         max_epochs=max_epoch,
@@ -320,20 +320,22 @@ def main(test, reproduce):
         num_sanity_val_steps=0,
         #****CHANGED*****
         # default_root_dir=r"Y:\Users\Jiakun\FloodAI\scripts\flood-55\scripts\model\train\experiments")   ****CHANGED*****
-        default_root_dir = Path(drd_rawstring)
+        default_root_dir = Path(r'Z:\1NEW_DATA\1data\2interim\TESTS')
 
     )
 
     if not test:
+        print('---not test ')
         training_loop = Segmentation_training_loop(model)
         trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl,)
         # trainer.test(model=training_loop, dataloaders=test_dl, ckpt_path='best')
         
     else:
+        print('---val????')
         threshold = 0.9
         #****CHANGED*****
         # ckpt = r"Y:\Users\Jiakun\FloodAI\scripts\flood-55\scripts\model\train\experiments\floodai_retrain\7q0o34u1\checkpoints\epoch=9-step=19239.ckpt"
-        ckpt_rawstring = r"\\cerndata100\AI_Files\Users\AI_Flood_Service\datacube\scripts\model\experiments\floodai_retrain\7q0o34u1\checkpoints\epoch=9-step=19239.ckpt"
+        ckpt_rawstring = r"Z:/1NEW_DATA/1data/2interim/TESTS/lightning_logs/version_0/checkpoints/epoch=1-step=19239.ckpt"
         ckpt = Path(ckpt_rawstring)
 
         training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
