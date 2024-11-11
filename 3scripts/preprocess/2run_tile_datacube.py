@@ -1,3 +1,8 @@
+from pathlib import Path
+import rioxarray as rxr
+import numpy as np
+
+
 def main():
     print('>>>>>in main')
     datacube_name = 'datacube_Vietnam_11alex.nc'

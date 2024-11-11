@@ -3,7 +3,7 @@ import shutil
 import random
 from pathlib import Path
 
-def split_dataset(source_dir, dest_dir, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15):
+def train_test_val_split(source_dir, dest_dir, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15):
     # Ensure the ratios sum to 1.0
     assert train_ratio + val_ratio + test_ratio == 1.0, "Ratios must sum to 1.0"
 

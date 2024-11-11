@@ -4,6 +4,7 @@ from pathlib import Path
 import shutil
 from tqdm import tqdm
 import shutil
+import random
 
 
 
@@ -128,14 +129,27 @@ def process_tiles_newdir(tile_path, normalized_tiles_path):
 
                     done += 1
                 print(f"---Processed {done} of {num_events} events")
-          
-def train_test_val_split(source_dir, dest_dir, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15):
+
+
+def compress_geotiff_rasterio(input_tile_path, output_tile_path, compression="lzw"):
+    with rasterio.open(input_tile_path) as src:
+        profile = src.profile
+        profile.update(compress=compression)
+
+        with rasterio.open(output_tile_path, "w", **profile) as dst:
+            dst.write(src.read())
+
+# Example usage
+compress_geotiff_rasterio("tile.tif", "tile_compressed.tif", compression="lzw")
+
+
+def train_split_folder(source_dir, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15):
     # Ensure the ratios sum to 1.0
     assert train_ratio + val_ratio + test_ratio == 1.0, "Ratios must sum to 1.0"
 
     # Paths
     source_dir = Path(source_dir)
-    dest_dir = Path(dest_dir)
+    dest_dir = source_dir.parent 
 
     # Create destination folders
     train_dir = dest_dir / "train"
@@ -145,9 +159,10 @@ def train_test_val_split(source_dir, dest_dir, train_ratio=0.7, val_ratio=0.15, 
     val_dir.mkdir(parents=True, exist_ok=True)
     test_dir.mkdir(parents=True, exist_ok=True)
 
-    with open("train.txt", "w") as train,  open("val.txt", "w") as val,  open("test.txt", "w") as test:
+    with open(dest_dir / "train.txt", "w") as train,  open(dest_dir / "val.txt", "w") as val,  open(dest_dir / "test.txt", "w") as test:
         # Get a list of all files in the source directory
         files = list(source_dir.glob('*'))  # Modify '*' if you want a specific file extension
+
         random.shuffle(files)  # Shuffle files for random split
 
         # Calculate split indices
@@ -163,21 +178,37 @@ def train_test_val_split(source_dir, dest_dir, train_ratio=0.7, val_ratio=0.15, 
         for file in train_files:
             shutil.copy(file, train_dir / file.name)
             # Write file paths to txt file
-            train.write(f"{file}\n")
+            # print(f"---file name: {file.name}")
+            train.write(f"{file.name}\n")
+
         for file in val_files:
             shutil.copy(file, val_dir / file.name)
             # Write file paths to txt file
-            val.write(f"{file}\n")
+            # print(f"---file name: {file.name}")            
+            val.write(f"{file.name}\n")
+
         for file in test_files:
             shutil.copy(file, test_dir / file.name)
             # Write file paths to txt file
-            test.write(f"{file}\n")
+            # print(f"---file name: {file.name}")
+            test.write(f"{file.name}\n")
 
-        print(f"---Total files: {len(files)}")
-        print(f"---Train files: {len(train_files)}")
-        print(f'---train.txt length: {len(train_files)}')
-        print(f"---Validation files: {len(val_files)}")
-        print(f'---val.txt length: {len(val_files)}')
-        print(f"---Test files: {len(test_files)}")
+        # print(f"---Total files: {len(files)}")
+        # print(f"---Train files: {len(train_files)}")
+        # print(f'---Test files: {len(test_files)}')
+        # print(f"---Validation files: {len(val_files)}")
+        assert len(train_files) + len(val_files) + len(test_files) == len(files), "Files not split correctly"
+
+        # with open("train.txt", "r") as tra, open("val.txt", "r") as val, open("test.txt", "r") as tes:
+        with open("train.txt", "r") as tra, open("val.txt", "r") as val, open("test.txt", "r") as tes:
+            if len(tra.readlines()) != len(train_files):
+                print('---train.txt not created successfully')
+                print(f'---{tra.readlines()}')
+            if len(val.readlines()) != len(val_files):
+                print('---val.txt not created successfully')
+                print('---val.txt', val.readlines())
+            if len(tes.readlines()) != len(test_files):
+                print('---test.txt not created successfully')
+                print('---test.txt', tes.readlines())
 
 
