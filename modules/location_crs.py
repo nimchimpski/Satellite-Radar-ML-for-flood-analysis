@@ -7,7 +7,8 @@ import time
 from rasterio.crs import CRS
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 
-
+def location_to_crs(location, crs):
+    
     # Define target CRS as EPSG:4326
     dst_crs = CRS.from_epsg(4326)  # WGS84 EPSG:4326
     
