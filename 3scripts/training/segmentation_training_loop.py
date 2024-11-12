@@ -61,10 +61,10 @@ class Segmentation_training_loop(pl.LightningModule):
         iou = smp.metrics.iou_score(tp, fp, fn, tn)
 
         # Log results to accumulate for `on_validation_epoch_end`
-        self.validation_outputs.append({
-            "loss": flood_loss.item(),
-            "iou": iou.mean().item()
-        })
+        # self.validation_outputs.append({
+        #     "loss": flood_loss.item(),
+        #     "iou": iou.mean().item()
+        # })
 
         self.log('val_loss', flood_loss, prog_bar=True)
         self.log('iou', iou.mean(), prog_bar=True)
