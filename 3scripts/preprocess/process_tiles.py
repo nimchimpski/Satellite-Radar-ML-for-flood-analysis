@@ -140,10 +140,11 @@ def compress_geotiff_rasterio(input_tile_path, output_tile_path, compression="lz
             dst.write(src.read())
 
 # Example usage
-compress_geotiff_rasterio("tile.tif", "tile_compressed.tif", compression="lzw")
+#compress_geotiff_rasterio("tile.tif", "tile_compressed.tif", compression="lzw")
 
 
 def train_split_folder(source_dir, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15):
+    print('+++IN TRAIN SPLIT FOLDER')
     # Ensure the ratios sum to 1.0
     assert train_ratio + val_ratio + test_ratio == 1.0, "Ratios must sum to 1.0"
 
@@ -175,22 +176,22 @@ def train_split_folder(source_dir, train_ratio=0.7, val_ratio=0.15, test_ratio=0
         test_files = files[val_end:]
 
         # Copy files to their respective folders
-        for file in train_files:
+        for file in tqdm(train_files, desc="Copying train files"):
+            # print(f"---train file name: {file.name}")
             shutil.copy(file, train_dir / file.name)
             # Write file paths to txt file
-            # print(f"---file name: {file.name}")
             train.write(f"{file.name}\n")
 
-        for file in val_files:
+        for file in tqdm(val_files, desc="Copying validation files"):
+            # print(f"---val file name: {file.name}")
             shutil.copy(file, val_dir / file.name)
             # Write file paths to txt file
-            # print(f"---file name: {file.name}")            
             val.write(f"{file.name}\n")
 
-        for file in test_files:
+        for file in tqdm(test_files, desc="Copying test files"):
+            # print(f"---test file name: {file.name}")
             shutil.copy(file, test_dir / file.name)
             # Write file paths to txt file
-            # print(f"---file name: {file.name}")
             test.write(f"{file.name}\n")
 
         # print(f"---Total files: {len(files)}")
@@ -198,17 +199,19 @@ def train_split_folder(source_dir, train_ratio=0.7, val_ratio=0.15, test_ratio=0
         # print(f'---Test files: {len(test_files)}')
         # print(f"---Validation files: {len(val_files)}")
         assert len(train_files) + len(val_files) + len(test_files) == len(files), "Files not split correctly"
-
         # with open("train.txt", "r") as tra, open("val.txt", "r") as val, open("test.txt", "r") as tes:
-        with open("train.txt", "r") as tra, open("val.txt", "r") as val, open("test.txt", "r") as tes:
-            if len(tra.readlines()) != len(train_files):
-                print('---train.txt not created successfully')
-                print(f'---{tra.readlines()}')
-            if len(val.readlines()) != len(val_files):
-                print('---val.txt not created successfully')
-                print('---val.txt', val.readlines())
-            if len(tes.readlines()) != len(test_files):
-                print('---test.txt not created successfully')
-                print('---test.txt', tes.readlines())
+    with open(dest_dir / "train.txt", "r") as train,  open(dest_dir / "val.txt", "r") as val,  open(dest_dir / "test.txt", "r") as test:
+
+        # print('---len(train.txt)', len(train.readlines()))
+
+        if len(train.readlines()) != len(train_files):
+            print('---train.txt not created successfully')
+            print(f'---{train.readlines()}')
+        if len(val.readlines()) != len(val_files):
+            print('---val.txt not created successfully')
+            print('---val.txt', val.readlines())
+        if len(test.readlines()) != len(test_files):
+            print('---test.txt not created successfully')
+            print('---test.txt', test.readlines())
 
 

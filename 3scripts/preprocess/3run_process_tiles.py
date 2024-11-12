@@ -2,6 +2,7 @@ from pathlib import Path
 import sys
 import os
 from process_tiles import process_tiles_newdir, train_split_folder
+from tqdm import tqdm
 
 # Add the parent directory of the current file to the system path
 # Get the root directory and add it to sys.path
@@ -11,18 +12,20 @@ sys.path.insert(0, str(root_dir))
 
 
 def main():
-
     base_path = Path(r"Z:\1NEW_DATA\1data\2interim")
-    tiles_path = base_path / "UNOSAT_FloodAI_Dataset_v2"
+    # process_tiles_newdir(tiles_path, normalized_tiles_path)
+    # tiles_path = base_path / "UNOSAT_FloodAI_Dataset_v2"
+
+
+    # SERIOUS RUN
     normalized_tiles_path = base_path / "UNOSAT_FloodAI_Dataset_v2_norm"
 
-    # process_tiles_newdir(tiles_path, normalized_tiles_path)
-    
-    for folder in  normalized_tiles_path.rglob('normalized_minmax_tiles'):
+    # FOR TESTS
+    # normalized_tiles_path = base_path / "tests" / "tile_norm_testdata_norm"
+
+    recursive_list = list(normalized_tiles_path.rglob('normalized_minmax_tiles'))
+    for folder in  tqdm(recursive_list, desc="Processing folders"):
         
-
-
-
         print(f"---Processing folder: {folder.name}")
         train_split_folder(folder, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15)
 
