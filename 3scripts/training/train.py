@@ -229,6 +229,7 @@ def create_subset(file_list, event, stage, inputs=None, bs=32, subset_fraction=0
 
 checkpoint_callback = ModelCheckpoint(
     dirpath="4results/checkpoints",  # Save checkpoints locally in this directory
+    filename="best-checkpoint-{epoch:02d}-{val_loss:.2f}",  # Custom filename format
     monitor="val_loss",              # Monitor validation loss
     mode="min",                      # Save the model with the lowest validation loss
     save_top_k=1                     # Only keep the best model
@@ -321,6 +322,7 @@ def main(test=None, reproduce=None):
         project="floodai_v2",
         name=experiment_name)
     
+    # DEFINE THE TRAINER
     print('---trainer')
     trainer= pl.Trainer(
         logger=wandb_logger,
@@ -335,6 +337,7 @@ def main(test=None, reproduce=None):
     if not test:
         print('---not test ')
         training_loop = Segmentation_training_loop(model)
+
         trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl,)
         # RUN A TRAINER.TEST HERE FOR A SIMPLE ONE RUN TRAIN/TEST CYCLE        
         # trainer.test(model=training_loop, dataloaders=test_dl, ckpt_path='best')
@@ -343,7 +346,7 @@ def main(test=None, reproduce=None):
         print('---test')
         threshold = 0.9
 
-        ckpt = Path(r"Z:\1NEW_DATA\4results\PLtrainer")
+        ckpt = Path(r"Z:\1NEW_DATA\4results\checkpoints")
 
         training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
         training_loop = training_loop.cuda()
