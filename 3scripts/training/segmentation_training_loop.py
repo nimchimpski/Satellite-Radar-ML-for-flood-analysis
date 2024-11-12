@@ -82,6 +82,7 @@ class Segmentation_training_loop(pl.LightningModule):
 
     def configure_optimizers(self):
         params = [x for x in self.model.parameters() if x.requires_grad]
-        self.optimizer = torch.optim.AdamW(params, lr=1e-3)
+        
         scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[8, ], gamma=0.1)
+        self.optimizer = torch.optim.AdamW(params, lr=1e-3)
         return {"optimizer": self.optimizer, "lr_scheduler": scheduler}
