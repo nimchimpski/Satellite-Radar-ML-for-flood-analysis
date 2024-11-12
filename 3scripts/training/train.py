@@ -220,7 +220,7 @@ def one_hot(label, n_classes, requires_grad=True):
 
     return one_hot_label
 
-def create_subset(file_list, datacube_tile_root, stage, inputs=None, bs=32):
+def create_subset(file_list, datacube_tile_root, stage, inputs=None, bs=32, subset_fraction=0.05):
     dataset = FloodDataset(file_list, datacube_tile_root, stage=stage, inputs=inputs)    
     subset_indices = random.sample(range(len(dataset)), int(subset_fraction * len(dataset)))
     subset = Subset(dataset, subset_indices)
@@ -233,15 +233,15 @@ def create_subset(file_list, datacube_tile_root, stage, inputs=None, bs=32):
 
 def main(test=None, reproduce=None):
     print('---in main')
-    project = "floodai_new_model"
-    dataset_name = 'floodai_datacube'
+    project = "floodai_v2"
+    dataset_name = 'UNOSAT_FloodAI_Dataset_v2_norm'
     dataset_version = 'v1'
 
 
 
     if not reproduce:
-        print('---here')
-        datacube_tile_root = Path(r"Z\1data\2interim\TESTS\tile_norm_testdata _\FL_20210102_MOZ3333\tiles")
+        print('---start train')
+        datacube_tile_root = Path(r"UNOSAT_FloodAI_Dataset_v2_norm")
         train_list = Path("texts/train_list.txt").resolve() # converts to absolute path with resolve
         test_list = Path("texts/test_list.txt").resolve()
         val_list = Path("texts/val_list.txt").resolve()
@@ -294,9 +294,9 @@ def main(test=None, reproduce=None):
     # Define the fraction of the dataset you want to use
     subset_fraction = 0.05  # Use 10% of the dataset for quick experiments
 
-    train_dl = create_subset(train_list, datacube_tile_root, 'train', inputs=inputs)
-    test_dl = create_subset(test_list, datacube_tile_root, 'test', inputs=inputs)   
-    val_dl = create_subset(val_list, datacube_tile_root, 'val', inputs=inputs)  
+    train_dl = create_subset(train_list, datacube_tile_root, 'train' , subset_fraction, inputs=inputs)
+    test_dl = create_subset(test_list, datacube_tile_root, 'test', subset_fraction, inputs=inputs)   
+    val_dl = create_subset(val_list, datacube_tile_root, 'val',  subset_fraction, inputs=inputs)  
 
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=2, pretrained=True)
     # Instantiate the model
@@ -306,7 +306,7 @@ def main(test=None, reproduce=None):
     experiment_name = 'unet_unosat-ai-dataset_grd-{}_epoch-{}_{}'.format(in_channels, max_epoch, 'crossentropy')
     print('[{}]'.format(experiment_name))
     wandb_logger = WandbLogger(
-        project="floodai_retrain",
+        project="floodai_v2",
         name=experiment_name)
 
     
@@ -318,8 +318,7 @@ def main(test=None, reproduce=None):
         devices=1, 
         fast_dev_run=False,
         num_sanity_val_steps=0,
-        #****CHANGED*****
-        # default_root_dir=r"Y:\Users\Jiakun\FloodAI\scripts\flood-55\scripts\model\train\experiments")   ****CHANGED*****
+
         default_root_dir = Path(r'Z:\1NEW_DATA\1data\2interim\TESTS')
 
     )
