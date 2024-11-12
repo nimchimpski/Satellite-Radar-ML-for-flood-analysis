@@ -42,7 +42,7 @@ class Segmentation_training_loop(pl.LightningModule):
         return total_loss
 
     def _get_current_lr(self):
-        lr = [x["lr"] for x in self.optimizer.param_groups]
+        lr = [x["lr"] for x in self.optimizers().param_groups]
         return torch.Tensor([lr]).cuda()
     
     # def _get_current_lr(self):
@@ -60,23 +60,11 @@ class Segmentation_training_loop(pl.LightningModule):
         tp, fp, fn, tn = smp.metrics.get_stats(logits[:, 1:], mask.long(), mode='binary', threshold=0.5)
         iou = smp.metrics.iou_score(tp, fp, fn, tn)
 
-        # Log results to accumulate for `on_validation_epoch_end`
-        # self.validation_outputs.append({
-        #     "loss": flood_loss.item(),
-        #     "iou": iou.mean().item()
-        # })
-
         self.log('val_loss', flood_loss, prog_bar=True)
         self.log('iou', iou.mean(), prog_bar=True)
         return {"loss": flood_loss, "iou": iou.mean()}
 
-    def on_validation_epoch_end(self):
-        # Compute average IoU over all batches in this epoch
-        avg_iou = sum([x['iou'] for x in self.validation_outputs]) / len(self.validation_outputs)
-        self.log('avg_val_iou', avg_iou, prog_bar=True)
-        
-        # Clear the list for the next epoch
-        self.validation_outputs.clear()
+
 
     def test_step(self, batch, batch_idx):
         image, mask, dist = batch
@@ -86,15 +74,18 @@ class Segmentation_training_loop(pl.LightningModule):
         # test logic here
         return {"results": None}
 
-    # def configure_optimizers(self):
-    #     params = [x for x in self.model.parameters() if x.requires_grad]
-    #     self.optimizer = torch.optim.AdamW(params, lr=1e-3)
-    #     scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[8, ], gamma=0.1)
-    #     return {"optimizer": self.optimizer, "lr_scheduler": scheduler}
-
+    
     def configure_optimizers(self):
         params = [x for x in self.model.parameters() if x.requires_grad]
-        self.optimizer = torch.optim.AdamW(params, lr=1e-3)
+        optimizer = torch.optim.AdamW(params, lr=1e-3)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[8], gamma=0.1)
 
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[8], gamma=0.1)
-        return [self.optimizer], [scheduler]  # Return as tuple/list
+        # Return as a list of dictionaries with `scheduler` and `interval` specified
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",  # or "step" if you want to step every batch
+                "frequency": 1
+            }
+        }
