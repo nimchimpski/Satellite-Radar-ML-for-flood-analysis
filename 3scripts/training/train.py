@@ -18,10 +18,8 @@ os.environ["WANDB_DISABLE_CODE"] = "true"
 
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.utils.data import Dataset
-from torch.utils.data import DataLoader
+from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.dataloader import default_collate
-from torch.utils.data import Subset # ***ADDED****
 from torchvision.transforms import functional as Func
 from torchvision import transforms
 from torch import Tensor, einsum
@@ -44,29 +42,16 @@ from wandb import Artifact
 from segmentation_training_loop import Segmentation_training_loop
 from boundaryloss import BoundaryLoss
 from train_helpers import *
-
-'''
-expects that the data is in tile_root, with 3 tile_lists for train, test and val
-'''
-# start timing
-start = time.time()
-
-load_dotenv()
-os.environ["WANDB_API_KEY"] = os.getenv("WANDB_API_KEY")
-os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
-os.environ["WANDB_NETRC"] = "0"  # Disable .netrc usage
-wandb_log_dir = os.getenv("WAND_LOG_DIR")
-if wandb_log_dir is None:
-    print("Warning: `WAND_LOG_DIR` not set in .env. Using default WandB log directory.")
-
-torch.set_float32_matmul_precision('medium')  # TODO try high
-
-pl.seed_everything(42, workers=True, verbose = False)
-
-D = Union[Image.Image, np.ndarray, Tensor]
+from train_classes import FloodDataset, UnetModel, SimpleCNN, SurfaceLoss
 
 
-
+# load_dotenv()
+# os.environ["WANDB_API_KEY"] = os.getenv("WANDB_API_KEY")
+# os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
+# os.environ["WANDB_NETRC"] = "0"  # Disable .netrc usage
+# wandb_log_dir = os.getenv("WAND_LOG_DIR")
+# if wandb_log_dir is None:
+#     print("Warning: `WAND_LOG_DIR` not set in .env. Using default WandB log directory.")
 
 
 #TODO add DICE , NSD, IOU, PRECISION, RECALL metrics
@@ -78,52 +63,67 @@ D = Union[Image.Image, np.ndarray, Tensor]
 #########################################################################
 
 def main(test=None, reproduce=None):
-
-    wandb.init(
-    project="floodai_v2",
-    name="experiment_name",
-    dir=Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results")
-)
-
+    '''
+    expects that the data is in tile_root, with 3 tile_lists for train, test and val
+    ***NAVIGATE IN TERMINAL TO THE UNMAPPED ADRESS TO RUN THIS SCRIPT.***
+    //cerndata100/AI_files/users/ai_flood_service/1new_data/3scripts/training
+    '''
     print('---in main')
-    project = "floodai_v2"
+    start = time.time()
+
+    # os.chdir(r"//cerndata100/AI_Files/Users/AI_flood_Service/1NEW_DATA/3scripts/training")
+    print(f'---changed dir to : {(os.getcwd())}')
+
+    base_path = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\1data\2interim")
     dataset_name = 'UNOSAT_FloodAI_Dataset_v2_norm'
+    dataset_path  = base_path / dataset_name
+    if not dataset_path.exists():
+        print('---base path not exists')
+
+    torch.set_float32_matmul_precision('medium')  # TODO try high
+    pl.seed_everything(42, workers=True, verbose = False)
+
+    project = "floodai_v2"
     dataset_version = 'v1'
 
-    base_path = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\1data\2interim\UNOSAT_FloodAI_Dataset_v2_norm")
-
-    if not base_path.exists():
-        print('---base path not exists')
-    else:
-        print('---base path exists')
+    WANDB_API_KEY = '948125a6af830c246d470a68171bb16c3a38b002'
+    WANDB_DISABLE_CODE = "true"
 
     # iterate through events
-    event = base_path / "FL_20200730_MMR1C48"
+    event = dataset_path / "FL_20200730_MMR1C48"
 
     if not reproduce:
         print('---start train')
-        
         # itereate through events here 
         train_list = event / "train.txt" # converts to absolute path with resolve
         test_list = event / "test.txt"
         val_list  = event / "val.txt"
-
-        """         with wandb.init(project=project, job_type="data-process", name='load-data', mode="disabled") as run:
+        # WANDB INITIALISATION
+        with wandb.init(project=project, 
+                        job_type="data-process", 
+                        name='load-data', 
+                        mode="online",
+                        dir=str(Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results")), 
+                        settings=wandb.Settings(program=__file__)
+                        ) as run:
+                print('---initialising Wandb')
+                # ARTIFACT CREATION
                 data_artifact = wandb.Artifact(
-                    dataset_name, type="dataset",
-                    description="{} dataset for FloodAI training".format(dataset_name),
-                    metadata={"train_list": train_list,
-                            "test_list": test_list,
-                            "val_list": val_list})
+                    dataset_name, 
+                    type="dataset",
+                    description=f"{dataset_name} dataset for FloodAI training",
+                    metadata={"train_list": str(train_list),
+                            "test_list": str(test_list),
+                            "val_list": str(val_list)})
                 # data_artifact.add_reference(name="train_list", uri=str(train_list)) ****CHANGED*****
-                # Convert to absolute path and correct URI format
-                absolute_train_list_path = train_list.resolve()
-                uri_path = absolute_train_list_path.as_uri()           # Debug print to check the formatted path
-                print(f"Formatted path: {uri_path}")
+                # Convert to absolute path and correct URI format    
+                train_list_path = str(train_list).replace("\\", "/")
+                train_list_uri = f"file:////{train_list_path}"
+                print(f"---uri path: {train_list_uri}")
                 # Create an artifact and add the reference
                 data_artifact = Artifact(name="dataset_name", type="dataset")
-                data_artifact.add_reference(name="train_list", uri=uri_path)
-                run.log_artifact(data_artifact, aliases=[dataset_version, dataset_name]) """
+                data_artifact.add_reference(train_list_uri, name="train_list")
+                run.log_artifact(data_artifact, aliases=[dataset_version, dataset_name])
     else:
         print('---reproduce')
         artifact_dataset_name = 'unosat_emergencymapping-United Nations Satellite Centre/{}/{}:{}'.format(project, dataset_name, dataset_name)
@@ -135,17 +135,8 @@ def main(test=None, reproduce=None):
             print("Current Artifact Metadata:", metadata_data)
             train_list = Path(metadata_data['train_list'])
             test_list = Path(metadata_data['test_list'])
-            val_list = Path(metadata_data['val_list'])
-            # train_list = Path("texts/train_list.txt").resolve()
-            # test_list = Path("texts/test_list.txt").resolve()
-            # val_list = Path("texts/val_list.txt").resolve()
-            #****CHANGED*****
-            # dataset = r'Y:\Users\Jiakun\FloodAI\scripts\flood-55\scripts\unosat_ai_v2\tiles' ****CHANGED*****
-            
-    
-            dataset = Path(r"\\cerndata100\AI_Files\Users\AI_Flood_Service\datacube\tiles\unosat_ai_v2\tiles")
-            if not dataset.exists():
-                print('---dataset path not exists in reproduce')
+            val_list = Path(metadata_data['val_list'])    
+
 
     bs = 32
     max_epoch = 2
@@ -193,7 +184,7 @@ def main(test=None, reproduce=None):
         callbacks = [checkpoint_callback]
     )
     print('---trainer done')
-    
+
     if not test:
         print('---not test ')
         training_loop = Segmentation_training_loop(model)
