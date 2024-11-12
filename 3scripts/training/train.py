@@ -220,48 +220,63 @@ def one_hot(label, n_classes, requires_grad=True):
 
     return one_hot_label
 
-def create_subset(file_list, datacube_tile_root, stage, inputs=None, bs=32, subset_fraction=0.05):
-    dataset = FloodDataset(file_list, datacube_tile_root, stage=stage, inputs=inputs)    
+def create_subset(file_list, event, stage, inputs=None, bs=32, subset_fraction=0.05):
+    dataset = FloodDataset(file_list, event, stage=stage, inputs=inputs)    
     subset_indices = random.sample(range(len(dataset)), int(subset_fraction * len(dataset)))
     subset = Subset(dataset, subset_indices)
     dl = DataLoader(subset, batch_size=bs, num_workers=12, persistent_workers=True,  shuffle = (stage == 'train'))
     return dl
 
+checkpoint_callback = ModelCheckpoint(
+    dirpath="4results/checkpoints",  # Save checkpoints locally in this directory
+    monitor="val_loss",              # Monitor validation loss
+    mode="min",                      # Save the model with the lowest validation loss
+    save_top_k=1                     # Only keep the best model
+)
+
+#TODO add DICE , NSD, IOU, PRECISION, RECALL metrics
+
 @click.command()
 @click.option('--test', is_flag=True, show_default=False)
 @click.option('--reproduce', is_flag=True, show_default=False)
 
+#########################################################################
+
 def main(test=None, reproduce=None):
+
     print('---in main')
     project = "floodai_v2"
     dataset_name = 'UNOSAT_FloodAI_Dataset_v2_norm'
     dataset_version = 'v1'
 
-
+    base_path = Path(r"Z:\1NEW_DATA\1data\2interim\UNOSAT_FloodAI_Dataset_v2_norm")
+    # iterate through events
+    event = base_path / "FL_20200730_MMR1C48"
 
     if not reproduce:
         print('---start train')
-        datacube_tile_root = Path(r"UNOSAT_FloodAI_Dataset_v2_norm")
-        train_list = Path("texts/train_list.txt").resolve() # converts to absolute path with resolve
-        test_list = Path("texts/test_list.txt").resolve()
-        val_list = Path("texts/val_list.txt").resolve()
+        
+        # itereate through events here 
+        train_list = (event / "train.txt").resolve() # converts to absolute path with resolve
+        test_list = (event / "test.txt").resolve()
+        val_list = (event / "val.txt").resolve()
 
-        # with wandb.init(project=project, job_type="data-process", name='load-data', mode="disabled") as run:
-        #     data_artifact = wandb.Artifact(
-        #         dataset_name, type="dataset",
-        #         description="{} dataset for FloodAI training".format(dataset_name),
-        #         metadata={"train_list": train_list,
-        #                 "test_list": test_list,
-        #                 "val_list": val_list})
-        #     # data_artifact.add_reference(name="train_list", uri=str(train_list)) ****CHANGED*****
-        #     # Convert to absolute path and correct URI format
-        #     absolute_train_list_path = train_list.resolve()
-        #     uri_path = absolute_train_list_path.as_uri()           # Debug print to check the formatted path
-        #     print(f"Formatted path: {uri_path}")
-        #     # Create an artifact and add the reference
-        #     data_artifact = Artifact(name="dataset_name", type="dataset")
-        #     data_artifact.add_reference(name="train_list", uri=uri_path)
-        #     run.log_artifact(data_artifact, aliases=[dataset_version, dataset_name])
+        """         with wandb.init(project=project, job_type="data-process", name='load-data', mode="disabled") as run:
+                data_artifact = wandb.Artifact(
+                    dataset_name, type="dataset",
+                    description="{} dataset for FloodAI training".format(dataset_name),
+                    metadata={"train_list": train_list,
+                            "test_list": test_list,
+                            "val_list": val_list})
+                # data_artifact.add_reference(name="train_list", uri=str(train_list)) ****CHANGED*****
+                # Convert to absolute path and correct URI format
+                absolute_train_list_path = train_list.resolve()
+                uri_path = absolute_train_list_path.as_uri()           # Debug print to check the formatted path
+                print(f"Formatted path: {uri_path}")
+                # Create an artifact and add the reference
+                data_artifact = Artifact(name="dataset_name", type="dataset")
+                data_artifact.add_reference(name="train_list", uri=uri_path)
+                run.log_artifact(data_artifact, aliases=[dataset_version, dataset_name]) """
     else:
         artifact_dataset_name = 'unosat_emergencymapping-United Nations Satellite Centre/{}/{}:{}'.format(project, dataset_name, dataset_name)
         
@@ -270,33 +285,30 @@ def main(test=None, reproduce=None):
             data_artifact = run.use_artifact(artifact_dataset_name)
             metadata_data = data_artifact.metadata
             print("Current Artifact Metadata:", metadata_data)
-            # train_list = Path(metadata_data['train_list'])
-            # test_list = Path(metadata_data['test_list'])
-            # val_list = Path(metadata_data['val_list'])
-            train_list = Path("texts/train_list.txt").resolve()
-            test_list = Path("texts/test_list.txt").resolve()
-            val_list = Path("texts/val_list.txt").resolve()
+            train_list = Path(metadata_data['train_list'])
+            test_list = Path(metadata_data['test_list'])
+            val_list = Path(metadata_data['val_list'])
+            # train_list = Path("texts/train_list.txt").resolve()
+            # test_list = Path("texts/test_list.txt").resolve()
+            # val_list = Path("texts/val_list.txt").resolve()
             #****CHANGED*****
-            # datacube_tile_root = r'Y:\Users\Jiakun\FloodAI\scripts\flood-55\scripts\unosat_ai_v2\tiles' ****CHANGED*****
+            # dataset = r'Y:\Users\Jiakun\FloodAI\scripts\flood-55\scripts\unosat_ai_v2\tiles' ****CHANGED*****
             
-            datacube_tile_root_raw = r"\\cerndata100\AI_Files\Users\AI_Flood_Service\datacube\tiles\unosat_ai_v2\tiles"
-            # datacube_tile_root_raw = r"data\tiles"
-            datacube_tile_root = Path(datacube_tile_root_raw)
+            dataset_raw = r"\\cerndata100\AI_Files\Users\AI_Flood_Service\datacube\tiles\unosat_ai_v2\tiles"
+            # dataset_raw = r"data\tiles"
+            dataset = Path(dataset_raw)
 
     bs = 32
     max_epoch = 2
     inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask', 'analysis extent'] 
     in_channels = len(inputs) 
 
-    """
-    create a subset for testing purposes
-    """
     # Define the fraction of the dataset you want to use
     subset_fraction = 0.05  # Use 10% of the dataset for quick experiments
 
-    train_dl = create_subset(train_list, datacube_tile_root, 'train' , subset_fraction, inputs=inputs)
-    test_dl = create_subset(test_list, datacube_tile_root, 'test', subset_fraction, inputs=inputs)   
-    val_dl = create_subset(val_list, datacube_tile_root, 'val',  subset_fraction, inputs=inputs)  
+    train_dl = create_subset(train_list, event, 'train' , subset_fraction, inputs=inputs)
+    test_dl = create_subset(test_list, event, 'test', subset_fraction, inputs=inputs)   
+    val_dl = create_subset(val_list, event, 'val',  subset_fraction, inputs=inputs)  
 
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=2, pretrained=True)
     # Instantiate the model
@@ -308,7 +320,6 @@ def main(test=None, reproduce=None):
     wandb_logger = WandbLogger(
         project="floodai_v2",
         name=experiment_name)
-
     
     print('---trainer')
     trainer= pl.Trainer(
@@ -316,31 +327,28 @@ def main(test=None, reproduce=None):
         max_epochs=max_epoch,
         accelerator='gpu', 
         devices=1, 
-        fast_dev_run=False,
+        fast_dev_run=True,
         num_sanity_val_steps=0,
-
-        default_root_dir = Path(r'Z:\1NEW_DATA\1data\2interim\TESTS')
-
+        callbacks = [checkpoint_callback]
     )
 
     if not test:
         print('---not test ')
         training_loop = Segmentation_training_loop(model)
         trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl,)
+        # RUN A TRAINER.TEST HERE FOR A SIMPLE ONE RUN TRAIN/TEST CYCLE        
         # trainer.test(model=training_loop, dataloaders=test_dl, ckpt_path='best')
         
     else:
-        print('---val????')
+        print('---test')
         threshold = 0.9
-        #****CHANGED*****
-        # ckpt = r"Y:\Users\Jiakun\FloodAI\scripts\flood-55\scripts\model\train\experiments\floodai_retrain\7q0o34u1\checkpoints\epoch=9-step=19239.ckpt"
-        ckpt_rawstring = r"Z:/1NEW_DATA/1data/2interim/TESTS/lightning_logs/version_0/checkpoints/epoch=1-step=19239.ckpt"
-        ckpt = Path(ckpt_rawstring)
+
+        ckpt = Path(r"Z:\1NEW_DATA\4results\PLtrainer")
 
         training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
         training_loop = training_loop.cuda()
         training_loop.eval()
-                
+
         # trainer.test(model=training_loop, dataloaders=test_dl)
 
         preds, gts = [], []
