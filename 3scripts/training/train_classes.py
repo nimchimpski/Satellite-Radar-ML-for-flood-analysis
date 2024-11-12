@@ -1,4 +1,22 @@
-
+import torch.nn as nn
+import torch.nn.functional as F
+from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.dataloader import default_collate
+from torchvision.transforms import functional as Func
+from torchvision import transforms
+from torch import Tensor, einsum
+from pytorch_lightning import seed_everything
+import segmentation_models_pytorch as smp
+import pytorch_lightning as pl
+from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.callbacks import ModelCheckpoint,EarlyStopping
+from iglovikov_helper_functions.dl.pytorch.lightning import find_average
+from surface_distance.metrics import compute_surface_distances, compute_surface_dice_at_tolerance
+from torch.utils.data import DataLoader
+import torch
+import torch.nn as nn
+from pathlib import Path
+import tifffile as tiff
 
 class FloodDataset(Dataset):
     def __init__(self, tile_list, tile_root, stage='train', inputs=None):
@@ -7,11 +25,11 @@ class FloodDataset(Dataset):
         self.sample_list = [t[:-1] for t in sample_list]
         
         if stage == 'train':
-            self.tile_root = osp.join(tile_root, 'train')
+            self.tile_root = Path(tile_root, 'train')
         elif stage == 'test':
-            self.tile_root = osp.join(tile_root, 'test')
+            self.tile_root = Path(tile_root, 'test')
         elif stage == 'val':
-            self.tile_root = osp.join(tile_root, 'val')
+            self.tile_root = Path(tile_root, 'val')
     
         if inputs is None:
             # self.inputs = ['vv', 'vh', 'dem']
@@ -43,7 +61,7 @@ class FloodDataset(Dataset):
     # This returns given an index the i-th sample and label
     def __getitem__(self, idx):
         filename = self.sample_list[idx]
-        tile = tiff.imread(osp.join(self.tile_root, filename))
+        tile = tiff.imread(Path(self.tile_root, filename))
 
 ################### SPECIFY THE INPUTS HERE ##############################
 

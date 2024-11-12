@@ -1,18 +1,24 @@
 from torchvision.transforms import functional as Func
 from torchvision import transforms
-from functools import partial
-from operator import itemgetter, mul
+from torch.utils.data import Subset 
+from torch.utils.data import Dataset, DataLoader
+from torch.utils.data.dataloader import default_collate
+from torch import Tensor, einsum
 from surface_distance.metrics import compute_surface_distances, compute_surface_dice_at_tolerance
 from torch.utils.data import DataLoader
-from train_classes import FloodDataset
-
-
-
-import wandb
 import torch
 import torch.nn as nn
 
+from functools import partial
+from operator import itemgetter, mul
 
+from typing import Tuple, Callable, List, TypeVar, Any
+import wandb
+import numpy as np
+import random
+
+
+from train_classes import FloodDataset
 
 
 
@@ -53,24 +59,25 @@ def create_numpy_array(img):
     return np.array(img)[...]
 
 #NOT IN TRAIN
-def gt_transform(resolution: Tuple[float, ...], K: int) -> Callable[[D], Tensor]:
-        return transforms.Compose([
-                # lambda img: np.array(img)[...],
-                partial(create_numpy_array),
-                lambda nd: torch.tensor(nd, dtype=torch.int64)[None, ...],  # Add one dimension to simulate batch
-                partial(class2one_hot, K=K),
-                itemgetter(0)  # Then pop the element to go back to img shape
-        ])
+# D = Union[Image.Image, np.ndarray, Tensor]
+# def gt_transform(resolution: Tuple[float, ...], K: int) -> Callable[[D], Tensor]:
+#         return transforms.Compose([
+#                 # lambda img: np.array(img)[...],
+#                 partial(create_numpy_array),
+#                 lambda nd: torch.tensor(nd, dtype=torch.int64)[None, ...],  # Add one dimension to simulate batch
+#                 partial(class2one_hot, K=K),
+#                 itemgetter(0)  # Then pop the element to go back to img shape
+#         ])
 
 #NOT IN TRAIN
-def dist_map_transform(resolution: Tuple[float, ...], K: int) -> Callable[[D], Tensor]:
-        return transforms.Compose([
-                gt_transform(resolution, K),
+# def dist_map_transform(resolution: Tuple[float, ...], K: int) -> Callable[[D], Tensor]:
+#         return transforms.Compose([
+#                 gt_transform(resolution, K),
 
-                lambda t: t.cpu().numpy(),
-                partial(one_hot2dist, resolution=resolution),
-                lambda nd: torch.tensor(nd, dtype=torch.float32)
-        ])
+#                 lambda t: t.cpu().numpy(),
+#                 partial(one_hot2dist, resolution=resolution),
+#                 lambda nd: torch.tensor(nd, dtype=torch.float32)
+#         ])
 
 def acc_background(input, target, threshold=0.5):
     'define pixel-level accuracy just for background'
