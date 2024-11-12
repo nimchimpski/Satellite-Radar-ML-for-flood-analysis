@@ -10,7 +10,7 @@ from boundaryloss import BoundaryLoss
 class Segmentation_training_loop(pl.LightningModule):
     def __init__(self, model):
         super().__init__()
-        self.model = model.to('cuda')
+        self.model = model
         self.save_hyperparameters(ignore = ['model'])   
         self.boundary_loss = BoundaryLoss()
         self.cross_entropy = nn.CrossEntropyLoss()
@@ -44,6 +44,12 @@ class Segmentation_training_loop(pl.LightningModule):
     def _get_current_lr(self):
         lr = [x["lr"] for x in self.optimizer.param_groups]
         return torch.Tensor([lr]).cuda()
+    
+    # def _get_current_lr(self):
+    #     # Access the optimizer through self.optimizers() in PyTorch Lightning
+    #     optimizer = self.optimizers()
+    #     lr = [param_group["lr"] for param_group in optimizer.param_groups]
+    #     return lr
 
     def validation_step(self, batch, batch_idx):
         image, mask = batch
@@ -80,9 +86,15 @@ class Segmentation_training_loop(pl.LightningModule):
         # test logic here
         return {"results": None}
 
+    # def configure_optimizers(self):
+    #     params = [x for x in self.model.parameters() if x.requires_grad]
+    #     self.optimizer = torch.optim.AdamW(params, lr=1e-3)
+    #     scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[8, ], gamma=0.1)
+    #     return {"optimizer": self.optimizer, "lr_scheduler": scheduler}
+
     def configure_optimizers(self):
         params = [x for x in self.model.parameters() if x.requires_grad]
-        
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[8, ], gamma=0.1)
         self.optimizer = torch.optim.AdamW(params, lr=1e-3)
-        return {"optimizer": self.optimizer, "lr_scheduler": scheduler}
+
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(self.optimizer, milestones=[8], gamma=0.1)
+        return [self.optimizer], [scheduler]  # Return as tuple/list
