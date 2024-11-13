@@ -56,13 +56,15 @@ def main(test=None, reproduce=None):
     '''
     expects that the data is in tile_root, with 3 tile_lists for train, test and val
     ***NAVIGATE IN TERMINAL TO THE UNMAPPED ADRESS TO RUN THIS SCRIPT.***
+
     cd //cerndata100/AI_files/users/ai_flood_service/1new_data/3scripts/training
     '''
     print('---in main')
     start = time.time()
 
-    base_path = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\1data\2interim")
-    dataset_name = 'UNOSAT_FloodAI_Dataset_v2_norm'
+    base_path = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\1data\3final")
+    # dataset_name = 'UNOSAT_FloodAI_Dataset_v2_norm'
+    dataset_name = 'ds_v2_selection'
     dataset_path  = base_path / dataset_name
     if not dataset_path.exists():
         print('---base path not exists')
@@ -75,21 +77,19 @@ def main(test=None, reproduce=None):
     dataset_version = 'v1'
     bs = 32
     max_epoch = 1
-    inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask', 'analysis extent'] 
+    inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
     in_channels = len(inputs) 
-    subset_fraction = 0.1  # Use 10% of the dataset for quick experiments
-    DEVRUN = False
+    subset_fraction = 0.05  # Use n% of the dataset for quick experiments
+    DEVRUN = True
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-
-    # iterate through events
-    event = dataset_path / "FL_20200730_MMR1C48"
 
     if not reproduce:
         print('---start train')
-        # itereate through events here 
-        train_list = event / "train.txt" # converts to absolute path with resolve
-        test_list = event / "test.txt"
-        val_list  = event / "val.txt"
+        # itereate through dataset_paths here 
+        train_list = dataset_path / "train.txt" # converts to absolute path with resolve
+        test_list = dataset_path / "test.txt"
+        val_list  = dataset_path / "val.txt"
+
         # WANDB INITIALISATION
         with wandb.init(project=project, 
                         job_type="data-process", 
@@ -98,27 +98,23 @@ def main(test=None, reproduce=None):
                         dir=str(Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results")), 
                         settings=wandb.Settings(program=__file__)
                         ) as run:
-                print('---initialising Wandb')
                 # ARTIFACT CREATION
                 data_artifact = wandb.Artifact(
                     dataset_name, 
                     type="dataset",
-                    description=f"{dataset_name} dataset for FloodAI training",
+                    description=f"{dataset_name} all tiles from unosat original dataset",
                     metadata={"train_list": str(train_list),
                             "test_list": str(test_list),
                             "val_list": str(val_list)})
-                # data_artifact.add_reference(name="train_list", uri=str(train_list)) ****CHANGED*****
-                # Convert to absolute path and correct URI format    
+                # TODO check the uri - only uri accepted? may work in Z: now
                 train_list_path = str(train_list).replace("\\", "/")
                 train_list_uri = f"file:////{train_list_path}"
-                print(f"---uri path: {train_list_uri}")
-                # Create an artifact and add the reference
-                data_artifact = Artifact(name="dataset_name", type="dataset")
+                # ADDING REFERENCES
                 data_artifact.add_reference(train_list_uri, name="train_list")
                 run.log_artifact(data_artifact, aliases=[dataset_version, dataset_name])
     else:
         print('---reproduce')
-        artifact_dataset_name = 'unosat_emergencymapping-United Nations Satellite Centre/{}/{}:{}'.format(project, dataset_name, dataset_name)
+        artifact_dataset_name = f'unosat_emergencymapping-United Nations Satellite Centre/{project}/{dataset_name}/ {dataset_name}'
         
         print("---initialising Wandb")
         with wandb.init(project=project, job_type="reproduce", name='reproduce', mode="disabled") as run:
@@ -128,22 +124,23 @@ def main(test=None, reproduce=None):
             train_list = Path(metadata_data['train_list'])
             test_list = Path(metadata_data['test_list'])
             val_list = Path(metadata_data['val_list'])    
+    # TODO check the path chains here
+    train_dl = create_subset(train_list, dataset_path, 'train' , subset_fraction, inputs, bs)
+    test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs)   
+    val_dl = create_subset(val_list, dataset_path, 'val',  subset_fraction, inputs, bs)  
 
-    train_dl = create_subset(train_list, event, 'train' , subset_fraction, inputs, bs)
-    test_dl = create_subset(test_list, event, 'test', subset_fraction, inputs, bs)   
-    val_dl = create_subset(val_list, event, 'val',  subset_fraction, inputs, bs)  
-
-    model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=2, pretrained=True)
-    # Instantiate the model
+    # MAKE MODEL
     # model = SimpleCNN(in_channels=in_channels, classes=2)
+    model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=2, pretrained=True)
+
     
     # check model location
     model = model.to('cuda')  # Ensure the model is on GPU
     device = next(model.parameters()).device
     print(f'---model location: {device}')
 
-    experiment_name = 'unet_unosat-ai-dataset_grd-{}_epoch-{}_{}'.format(in_channels, max_epoch, 'crossentropy')
-    print('---EXPERIMENT NAME= {}'.format(experiment_name))
+    experiment_name = f'ds_v2_complete. channels:{in_channels}_epoch:{max_epoch}_{"crossentropy"}'
+    print(f'---EXPERIMENT NAME= {experiment_name}')
     wandb_logger = WandbLogger(
         project="floodai_v2",
         name=experiment_name)
@@ -166,7 +163,7 @@ def main(test=None, reproduce=None):
         devices=1, 
         precision='16-mixed',
         fast_dev_run=DEVRUN,
-        num_sanity_val_steps=0,
+        num_sanity_val_steps=2,
         callbacks = [checkpoint_callback]
     )
     print('---trainer done')
@@ -255,9 +252,6 @@ def main(test=None, reproduce=None):
 
     # Ensure the model is on GPU
     model = model.to('cuda')
-
-    # Now print the summary, but with the input_size explicitly indicating it's on the GPU
-    # summary(model, input_size=(3, 256, 256), device="cuda")
 
     if wandb.run:
         wandb.finish()  # Properly finish the W&B run
