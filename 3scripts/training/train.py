@@ -42,15 +42,7 @@ from boundaryloss import BoundaryLoss
 from train_helpers import *
 from train_classes import FloodDataset, UnetModel, SimpleCNN, SurfaceLoss
 
-
 load_dotenv()
-# os.environ["WANDB_API_KEY"] = os.getenv("WANDB_API_KEY")
-# os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
-# os.environ["WANDB_NETRC"] = "0"  # Disable .netrc usage
-# wandb_log_dir = os.getenv("WAND_LOG_DIR")
-# if wandb_log_dir is None:
-#     print("Warning: `WAND_LOG_DIR` not set in .env. Using default WandB log directory.")
-
 
 #TODO add DICE , NSD, IOU, PRECISION, RECALL metrics
 
@@ -64,13 +56,10 @@ def main(test=None, reproduce=None):
     '''
     expects that the data is in tile_root, with 3 tile_lists for train, test and val
     ***NAVIGATE IN TERMINAL TO THE UNMAPPED ADRESS TO RUN THIS SCRIPT.***
-    //cerndata100/AI_files/users/ai_flood_service/1new_data/3scripts/training
+    cd //cerndata100/AI_files/users/ai_flood_service/1new_data/3scripts/training
     '''
     print('---in main')
     start = time.time()
-
-    # os.chdir(r"//cerndata100/AI_Files/Users/AI_flood_Service/1NEW_DATA/3scripts/training")
-    print(f'---changed dir to : {(os.getcwd())}')
 
     base_path = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\1data\2interim")
     dataset_name = 'UNOSAT_FloodAI_Dataset_v2_norm'
@@ -83,9 +72,6 @@ def main(test=None, reproduce=None):
 
     project = "floodai_v2"
     dataset_version = 'v1'
-
-    # WANDB_API_KEY = '948125a6af830c246d470a68171bb16c3a38b002'
-    # WANDB_DISABLE_CODE = "true"
 
     # iterate through events
     event = dataset_path / "FL_20200730_MMR1C48"
@@ -137,12 +123,12 @@ def main(test=None, reproduce=None):
 
 
     bs = 32
-    max_epoch = 10
+    max_epoch = 1
     inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask', 'analysis extent'] 
     in_channels = len(inputs) 
 
     # Define the fraction of the dataset you want to use
-    subset_fraction = 0.2  # Use 10% of the dataset for quick experiments
+    subset_fraction = 0.1  # Use 10% of the dataset for quick experiments
 
     train_dl = create_subset(train_list, event, 'train' , subset_fraction, inputs, bs)
     test_dl = create_subset(test_list, event, 'test', subset_fraction, inputs, bs)   
@@ -151,8 +137,11 @@ def main(test=None, reproduce=None):
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=2, pretrained=True)
     # Instantiate the model
     # model = SimpleCNN(in_channels=in_channels, classes=2)
-    print('---check model to CUDA')
     model = model.to('cuda')  # Ensure the model is on GPU
+    # check model location
+  # Get the device of the model by checking one of its parameters
+    device = next(model.parameters()).device
+    print(f'---model location: {device}')
 
     experiment_name = 'unet_unosat-ai-dataset_grd-{}_epoch-{}_{}'.format(in_channels, max_epoch, 'crossentropy')
     print('---EXPERIMENT NAME= {}'.format(experiment_name))
@@ -162,7 +151,7 @@ def main(test=None, reproduce=None):
     
       # DEFINE THE TRAINER
     checkpoint_callback = ModelCheckpoint(
-    dirpath="4results/checkpoints",  # Save checkpoints locally in this directory
+    dirpath=r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints",  # Save checkpoints locally in this directory
     # filename="best-checkpoint-{epoch:02d}-{val_loss:.2f}",  # Custom filename format
     filename="best-checkpoint",  # Custom filename format
     monitor="val_loss",              # Monitor validation loss
@@ -177,7 +166,7 @@ def main(test=None, reproduce=None):
         accelerator='gpu', 
         devices=1, 
         precision='16-mixed',
-        fast_dev_run=False,
+        fast_dev_run=True,
         num_sanity_val_steps=0,
         callbacks = [checkpoint_callback]
     )
@@ -186,7 +175,7 @@ def main(test=None, reproduce=None):
     if not test:
         print('---not test ')
         training_loop = Segmentation_training_loop(model)
-        print('---training loop')
+        print('#################  training loop  ##################')
         trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl,)
         # RUN A TRAINER.TEST HERE FOR A SIMPLE ONE RUN TRAIN/TEST CYCLE        
         # trainer.test(model=training_loop, dataloaders=test_dl, ckpt_path='best')
@@ -273,7 +262,7 @@ def main(test=None, reproduce=None):
 
     if wandb.run:
         wandb.finish()  # Properly finish the W&B run
-
+    torch.cuda.empty_cache()
     # end timing
     end = time.time()
     print(f'>>>total time = {end - start}')  
