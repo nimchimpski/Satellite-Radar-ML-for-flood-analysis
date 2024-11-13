@@ -43,22 +43,16 @@ class FloodDataset(Dataset):
 
         # Select channels based on `inputs` list position
         input_idx = list(range(len(self.inputs)))
-        model_input = tile[:, :, input_idx]  # Extract only the first 6 channels
-               
-        # onehot = class2one_hot(torch.from_numpy(val_mask).to(torch.int64), K=2)
-        # dist = one_hot2dist(onehot.cpu().numpy().transpose(1,0,2), resolution=[1,1])
+        model_input = tile[:, :, input_idx]  # auto select the channels
 
         # TODO THIS SHOULD PROB BE DONE IN THE DATASET
         model_input = Func.to_tensor(model_input)
         model_input = model_input.cuda()
 
         # extract the mask
-        # val_mask = tile[:,:,4]
-        val_mask = tile[:,:, self.input_map_unosat['mask']]
-        val_mask = Func.to_tensor(val_mask)
-        # dist = torch.from_numpy(dist)
+        val_idx = tile[:,:, self.inputs.index('mask')]
+        val_mask = Func.to_tensor(val_idx)
 
-        # return [model_input_norm.float(), val_mask.float(), dist.float()]
         return [model_input.float(), val_mask.float()]
         # return model_input.float(), val_mask.float()
 
