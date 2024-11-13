@@ -139,12 +139,12 @@ def main(test=None, reproduce=None):
 
 
     bs = 32
-    max_epoch = 2
+    max_epoch = 10
     inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask', 'analysis extent'] 
     in_channels = len(inputs) 
 
     # Define the fraction of the dataset you want to use
-    subset_fraction = 0.05  # Use 10% of the dataset for quick experiments
+    subset_fraction = 0.2  # Use 10% of the dataset for quick experiments
 
     train_dl = create_subset(train_list, event, 'train' , subset_fraction, inputs, bs)
     test_dl = create_subset(test_list, event, 'test', subset_fraction, inputs, bs)   
