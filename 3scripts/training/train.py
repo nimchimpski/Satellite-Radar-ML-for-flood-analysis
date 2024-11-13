@@ -76,7 +76,8 @@ def main(test=None, reproduce=None):
     max_epoch = 10
     inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
     in_channels = len(inputs) 
-    subset_fraction = 0.05  # Use n% of the dataset for quick experiments
+    subset_fraction = 0.1  # Use n% of the dataset for quick experiments
+    LOGSTEPS = 10
     DEVRUN = False
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -155,7 +156,7 @@ def main(test=None, reproduce=None):
     print('---trainer')
     trainer= pl.Trainer(
         logger=wandb_logger,
-        log_every_n_steps=100,
+        log_every_n_steps=LOGSTEPS,
         max_epochs=max_epoch,
         accelerator='gpu', 
         devices=1, 
