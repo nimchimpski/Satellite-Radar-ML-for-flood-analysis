@@ -30,29 +30,7 @@ class FloodDataset(Dataset):
             self.tile_root = Path(tile_root, 'test')
         elif stage == 'val':
             self.tile_root = Path(tile_root, 'val')
-    
-        if inputs is None:
-            # self.inputs = ['vv', 'vh', 'dem']
-            self.inputs = ['vv', 'vh', 'mask']
-        else:
-            self.inputs = inputs
-
-        self.input_map_dlr = {
-            'vv':0, 'vh': 1, 'dem':2, 'slope':3, 'mask':4, 'analysis extent':5
-        }
-        self.input_map_unosat = {
-            'vv':0, 'vh': 1, 'grd':2, 'dem':3, 'slope':4, 'mask':5, 'analysis extent':6
-        }
-
-        self.mean = [-1476.4767353809093] * 4 # For dlr dataset ???which layer? should match the num layers
-        self.std = [1020.6359514352469] * 4 # as above
-        # self.mean = [mean_vv, mean_vh, mean_dem, mean_slope]
-        # self.std = [std_vv, std_vh, std_dem, std_slope]
-
-        self.imagenet_stats = [[0.485, 0.456, 0.406], [0.229, 0.224, 0.225]]
-
-        # self.dist_transform = dist_map_transform([1,1], 2)
-
+        self.inputs = inputs
 
     # This returns the total amount of samples in your Dataset
     def __len__(self):
@@ -63,22 +41,16 @@ class FloodDataset(Dataset):
         filename = self.sample_list[idx]
         tile = tiff.imread(Path(self.tile_root, filename))
 
-################### SPECIFY THE INPUTS HERE ##############################
-
-        input_idx = []
-        for input in self.inputs:
-            input_idx.append(self.input_map_unosat[input])
-
-        model_input = tile[:,:,input_idx]
-
-        
+        # Select channels based on `inputs` list position
+        input_idx = list(range(len(self.inputs)))
+        model_input = tile[:, :, input_idx]  # Extract only the first 6 channels
+               
         # onehot = class2one_hot(torch.from_numpy(val_mask).to(torch.int64), K=2)
         # dist = one_hot2dist(onehot.cpu().numpy().transpose(1,0,2), resolution=[1,1])
 
+        # TODO THIS SHOULD PROB BE DONE IN THE DATASET
         model_input = Func.to_tensor(model_input)
         model_input = model_input.cuda()
-        # TODO REDUNDANT ???
-        # model_input_norm = Func.normalize(model_input, self.mean, self.std).cuda()
 
         # extract the mask
         # val_mask = tile[:,:,4]
