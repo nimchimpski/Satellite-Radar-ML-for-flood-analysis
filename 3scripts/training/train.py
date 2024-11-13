@@ -14,8 +14,6 @@ from dotenv import load_dotenv
 
 # -------------------------------------------
 
-os.environ["WANDB_DISABLE_CODE"] = "true"
-
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
@@ -45,7 +43,7 @@ from train_helpers import *
 from train_classes import FloodDataset, UnetModel, SimpleCNN, SurfaceLoss
 
 
-# load_dotenv()
+load_dotenv()
 # os.environ["WANDB_API_KEY"] = os.getenv("WANDB_API_KEY")
 # os.environ["KMP_DUPLICATE_LIB_OK"]="TRUE"
 # os.environ["WANDB_NETRC"] = "0"  # Disable .netrc usage
@@ -86,8 +84,8 @@ def main(test=None, reproduce=None):
     project = "floodai_v2"
     dataset_version = 'v1'
 
-    WANDB_API_KEY = '948125a6af830c246d470a68171bb16c3a38b002'
-    WANDB_DISABLE_CODE = "true"
+    # WANDB_API_KEY = '948125a6af830c246d470a68171bb16c3a38b002'
+    # WANDB_DISABLE_CODE = "true"
 
     # iterate through events
     event = dataset_path / "FL_20200730_MMR1C48"
