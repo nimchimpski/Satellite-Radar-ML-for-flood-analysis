@@ -70,8 +70,16 @@ def main(test=None, reproduce=None):
     torch.set_float32_matmul_precision('medium')  # TODO try high
     pl.seed_everything(42, workers=True, verbose = False)
 
+    #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     project = "floodai_v2"
     dataset_version = 'v1'
+    bs = 32
+    max_epoch = 1
+    inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask', 'analysis extent'] 
+    in_channels = len(inputs) 
+    subset_fraction = 0.1  # Use 10% of the dataset for quick experiments
+    DEVRUN = False
+    #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     # iterate through events
     event = dataset_path / "FL_20200730_MMR1C48"
@@ -121,15 +129,6 @@ def main(test=None, reproduce=None):
             test_list = Path(metadata_data['test_list'])
             val_list = Path(metadata_data['val_list'])    
 
-
-    bs = 32
-    max_epoch = 1
-    inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask', 'analysis extent'] 
-    in_channels = len(inputs) 
-
-    # Define the fraction of the dataset you want to use
-    subset_fraction = 0.1  # Use 10% of the dataset for quick experiments
-
     train_dl = create_subset(train_list, event, 'train' , subset_fraction, inputs, bs)
     test_dl = create_subset(test_list, event, 'test', subset_fraction, inputs, bs)   
     val_dl = create_subset(val_list, event, 'val',  subset_fraction, inputs, bs)  
@@ -137,9 +136,9 @@ def main(test=None, reproduce=None):
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=2, pretrained=True)
     # Instantiate the model
     # model = SimpleCNN(in_channels=in_channels, classes=2)
-    model = model.to('cuda')  # Ensure the model is on GPU
+    
     # check model location
-  # Get the device of the model by checking one of its parameters
+    model = model.to('cuda')  # Ensure the model is on GPU
     device = next(model.parameters()).device
     print(f'---model location: {device}')
 
@@ -166,7 +165,7 @@ def main(test=None, reproduce=None):
         accelerator='gpu', 
         devices=1, 
         precision='16-mixed',
-        fast_dev_run=True,
+        fast_dev_run=DEVRUN,
         num_sanity_val_steps=0,
         callbacks = [checkpoint_callback]
     )
