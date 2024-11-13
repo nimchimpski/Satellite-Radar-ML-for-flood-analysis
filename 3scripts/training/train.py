@@ -1,6 +1,3 @@
-'''
-USE UNC PATHS AS WANDB GETS PISSED WITH MAPPED NETWORK DRIVES
-'''
 import os
 import click
 from typing import Callable, BinaryIO, Match, Pattern, Tuple, Union, Optional, List
@@ -76,11 +73,11 @@ def main(test=None, reproduce=None):
     project = "floodai_v2"
     dataset_version = 'v1'
     bs = 32
-    max_epoch = 1
+    max_epoch = 10
     inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
     in_channels = len(inputs) 
     subset_fraction = 0.05  # Use n% of the dataset for quick experiments
-    DEVRUN = True
+    DEVRUN = False
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     if not reproduce:
@@ -158,6 +155,7 @@ def main(test=None, reproduce=None):
     print('---trainer')
     trainer= pl.Trainer(
         logger=wandb_logger,
+        log_every_n_steps=100,
         max_epochs=max_epoch,
         accelerator='gpu', 
         devices=1, 
@@ -171,7 +169,6 @@ def main(test=None, reproduce=None):
     if not test:
         print('---not test ')
         training_loop = Segmentation_training_loop(model)
-        print('#################  training loop  ##################')
         trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl,)
         # RUN A TRAINER.TEST HERE FOR A SIMPLE ONE RUN TRAIN/TEST CYCLE        
         # trainer.test(model=training_loop, dataloaders=test_dl, ckpt_path='best')

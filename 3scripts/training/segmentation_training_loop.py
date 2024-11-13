@@ -27,18 +27,16 @@ class Segmentation_training_loop(pl.LightningModule):
         logits = self.forward(image)
         logits = logits.softmax(1)
         total_loss = 0
-
         class_weight = torch.ones_like(mask)
         class_weight[mask == 0] = 0.2
-
 
         # b_loss = self.boundary_loss(logits, mask.long().squeeze(1))
         b_loss = F.cross_entropy(logits, mask.squeeze(1).long(), weight=torch.Tensor([0.2, 1]).cuda())
         total_loss = b_loss
 
-        self.log('train_loss', total_loss)
+        self.log('train_loss', total_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         lr = self._get_current_lr()
-        self.log('lr', lr)
+        self.log('lr', lr, on_step=True, on_epoch=True, prog_bar=False, logger=True)
         return total_loss
 
     def _get_current_lr(self):
@@ -59,12 +57,14 @@ class Segmentation_training_loop(pl.LightningModule):
         flood_loss = F.cross_entropy(logits, mask.squeeze(1).long(), weight=torch.Tensor([0.2, 1]).cuda())
         tp, fp, fn, tn = smp.metrics.get_stats(logits[:, 1:], mask.long(), mode='binary', threshold=0.5)
         iou = smp.metrics.iou_score(tp, fp, fn, tn)
-
-        self.log('val_loss', flood_loss, prog_bar=True)
+        self.log('val_loss', flood_loss, on_epoch=True, on_step= True, prog_bar=True, logger=True)
         self.log('iou', iou.mean(), prog_bar=True)
         return {"loss": flood_loss, "iou": iou.mean()}
-
-
+        
+        # OLD WORKED
+        # self.log('val_loss', flood_loss, prog_bar=True)
+        # self.log('iou', iou.mean(), prog_bar=True)
+        # return {"loss": flood_loss, "iou": iou.mean()}
 
     def test_step(self, batch, batch_idx):
         image, mask, dist = batch
