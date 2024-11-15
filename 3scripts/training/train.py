@@ -51,10 +51,13 @@ load_dotenv()
 
 def main(test=None, reproduce=None):
     '''
+    CONDA ENVIRONMENT = 'floodenv3"
+
     expects that the data is in tile_root, with 3 tile_lists for train, test and val
     ***NAVIGATE IN TERMINAL TO THE UNMAPPED ADRESS TO RUN THIS SCRIPT.***
 
     cd //cerndata100/AI_files/users/ai_flood_service/1new_data/3scripts/training
+    TODO poss switch to ClearML (opensource)
     '''
     print('---in main')
     start = time.time()
@@ -71,14 +74,15 @@ def main(test=None, reproduce=None):
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     project = "floodai_v2"
-    dataset_version = 'v1'
+    dataset_version = 'complete'
     bs = 32
-    max_epoch = 10
+    max_epoch = 1
     inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
     in_channels = len(inputs) 
-    subset_fraction = 0.1  # Use n% of the dataset for quick experiments
-    LOGSTEPS = 10
-    DEVRUN = False
+    subset_fraction = 0.05  # Use n% of the dataset for quick experiments
+    LOGSTEPS = 10 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
+    DEVRUN = True
+    PRETRAINED = True
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     if not reproduce:
@@ -129,7 +133,7 @@ def main(test=None, reproduce=None):
 
     # MAKE MODEL
     # model = SimpleCNN(in_channels=in_channels, classes=2)
-    model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=2, pretrained=True)
+    model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=2, pretrained=PRETRAINED)
 
     
     # check model location
@@ -256,7 +260,7 @@ def main(test=None, reproduce=None):
     torch.cuda.empty_cache()
     # end timing
     end = time.time()
-    print(f'>>>total time = {end - start}')  
+    print(f'>>>total time = {(end - start)/60}')  
 
 
 if __name__ == '__main__':
