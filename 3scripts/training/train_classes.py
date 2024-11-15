@@ -72,8 +72,7 @@ class UnetModel(nn.Module):
     def forward(self,x):
         x= self.model(x)
         return x
-
-
+    
 class SurfaceLoss():
     def __init__(self, **kwargs):
         # Self.idc is used to filter out some classes of the target mask. Use fancy indexing

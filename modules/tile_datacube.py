@@ -14,6 +14,7 @@ def tile_datacube(datacube_path, event, tile_size=256, stride=256):
       event is a Path object: datacube is a xarray object
     play with the stride and tile_size to get the right size of tiles.
     TODO add date etc to saved tile name?
+    TODO add json file with metadata for each tile inv mask and anal_ext pixel count etc
     """
     print('\n+++++++in tile_datacube fn ++++++++')
 
@@ -135,6 +136,8 @@ def tile_datacube(datacube_path, event, tile_size=256, stride=256):
                 num_nomask +=1
                 print('---tile has no mask')
                 continue
+
+            # TODO mask pixel check here + add to json
 
             name = f"tile_{event.name}_{x_idx}_{y_idx}.tif"
             save_path = Path(tile_path, name)
