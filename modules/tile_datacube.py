@@ -7,6 +7,7 @@ import rioxarray as rxr
 from pathlib import Path
 from tqdm import tqdm
 
+
 def tile_datacube(datacube_path, event, tile_size=256, stride=256):
     """
     Tile a DATASET (from which the dataarray is selected) and save to 'tiles' dir in same location.
@@ -104,17 +105,20 @@ def tile_datacube(datacube_path, event, tile_size=256, stride=256):
             try:
                 tile = datacube['data1'].sel(y=slice(y_start, y_end), x=slice(x_start, x_end))
             except KeyError:
-                print("eee-Error: 'data1' not found in datacube.")
+                print("---Error: 'data1' not found in datacube.")
                 return
 
             # Skip empty tiles
             if tile.sizes["x"] == 0 or tile.sizes["y"] == 0:
-                print("Empty tile encountered; skipping.")
+                print("---Empty tile encountered; skipping.")
                 continue
             # print('==============================')
             # print('---TILE= ', tile)
             # print('==============================')
             # print('--- 1 tile as dataarray before saving= ', tile)
+
+            # CREAE A JSON FILE FOR EACH TILE
+            create_tile_json(tile, event, x_idx, y_idx, tile_path)   
 
             total_num_tiles += 1
 
