@@ -182,7 +182,7 @@ def main(test=None, reproduce=None):
         print('---test')
         threshold = 0.9
 
-        ckpt = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints\best_checkpoint")
+        ckpt = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints\ds_v2_selection_complete_0.1.ckpt")
 
         training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
         training_loop = training_loop.cuda()
