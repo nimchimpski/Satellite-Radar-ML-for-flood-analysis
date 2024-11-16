@@ -1,0 +1,6 @@
+outs:
+- md5: ad9e40adb9f510ea018d4a251f1bab4d.dir
+  size: 33139168
+  nfiles: 22
+  hash: md5
+  path: testdata_tiles_norm_TVTsplit
