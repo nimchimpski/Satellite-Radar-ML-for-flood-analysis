@@ -47,12 +47,12 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 #TODO add DICE , NSD, IOU, PRECISION, RECALL metrics
 
 @click.command()
-@click.option('--test', is_flag=True, show_default=False)
+@click.option('--test_mode', is_flag=True, show_default=False)
 @click.option('--reproduce', is_flag=True, show_default=False)
 
 #########################################################################
 
-def main(test=None, reproduce=None):
+def main(test_mode=None, reproduce=None):
     '''
     CONDA ENVIRONMENT = 'floodenv3"
 
@@ -137,6 +137,11 @@ def main(test=None, reproduce=None):
     test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs)   
     val_dl = create_subset(val_list, dataset_path, 'val',  subset_fraction, inputs, bs)  
 
+    print(f"Train List: {train_list}")
+    print(f"Test List: {test_list}")
+    print(f"Val List: {val_list}")
+    print(f"Model Name: {model_name}")
+
     # MAKE MODEL
     # model = SimpleCNN(in_channels=in_channels, classes=2)
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=2, pretrained=PRETRAINED)
@@ -177,7 +182,7 @@ def main(test=None, reproduce=None):
     )
     print('---trainer done')
 
-    if not test:
+    if not test_mode:
         print('---not test ')
         training_loop = Segmentation_training_loop(model)
         trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl,)
@@ -257,18 +262,11 @@ def main(test=None, reproduce=None):
         print("---FN percentage: {}".format(fn_perc))
         print("---NSD: {}".format(nsd_avg))
 
-
-    # Ensure the model is on GPU
-    model = model.to('cuda')
-
     if wandb.run:
         wandb.finish()  # Properly finish the W&B run
 
-    
-
-
     # Explicit cleanup
-    del model, data, output  # Free variable references
+    del model, train_dl, test_dl, val_dl  # Free variable references
     import gc
     gc.collect()             # Run garbage collection
     torch.cuda.empty_cache() # Clear unused GPU memory
@@ -277,7 +275,6 @@ def main(test=None, reproduce=None):
     # end timing
     end = time.time()
     print(f'>>>total time = {(end - start)/60:.2f} minutes')  
-
 
 if __name__ == '__main__':
     main()
