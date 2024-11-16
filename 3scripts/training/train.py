@@ -75,13 +75,14 @@ def main(test=None, reproduce=None):
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     project = "floodai_v2"
     dataset_version = 'complete'
+    run_name = 'flai_v2_complete_0.4'
     bs = 32
     max_epoch = 1
     inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
     in_channels = len(inputs) 
-    subset_fraction = 0.05  # Use n% of the dataset for quick experiments
+    subset_fraction = 0.4  # Use n% of the dataset for quick experiments
     LOGSTEPS = 10 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
-    DEVRUN = True
+    DEVRUN = False
     PRETRAINED = True
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
@@ -151,7 +152,7 @@ def main(test=None, reproduce=None):
     checkpoint_callback = ModelCheckpoint(
     dirpath=r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints",  # Save checkpoints locally in this directory
     # filename="best-checkpoint-{epoch:02d}-{val_loss:.2f}",  # Custom filename format
-    filename="best-checkpoint",  # Custom filename format
+    filename=f"model_{run_name}",  # Custom filename format
     monitor="val_loss",              # Monitor validation loss
     mode="min",                      # Save the model with the lowest validation loss
     save_top_k=1                     # Only keep the best model
