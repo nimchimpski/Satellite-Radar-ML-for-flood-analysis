@@ -37,10 +37,7 @@ oldcode.py
 
 1data/1raw/
 1data/interim/
-1data/final/
-1data
 #DVC
-# Track .dvc files in 1data and all subdirectories
-!1data/**/*.dvc
+
 
 ignoretest/
