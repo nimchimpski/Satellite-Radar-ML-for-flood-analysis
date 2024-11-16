@@ -39,7 +39,10 @@ from boundaryloss import BoundaryLoss
 from train_helpers import *
 from train_classes import FloodDataset, UnetModel, SimpleCNN, SurfaceLoss
 
+
 load_dotenv()
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  
 
 #TODO add DICE , NSD, IOU, PRECISION, RECALL metrics
 
@@ -57,37 +60,39 @@ def main(test=None, reproduce=None):
     ***NAVIGATE IN TERMINAL TO THE UNMAPPED ADRESS TO RUN THIS SCRIPT.***
 
     cd //cerndata100/AI_files/users/ai_flood_service/1new_data/3scripts/training
+
     TODO poss switch to ClearML (opensource)
     '''
     print('---in main')
     start = time.time()
 
     base_path = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\1data\3final")
-    # dataset_name = 'UNOSAT_FloodAI_Dataset_v2_norm'
-    dataset_name = 'ds_v2_selection'
-    dataset_path  = base_path / dataset_name
-    if not dataset_path.exists():
-        print('---base path not exists')
 
     torch.set_float32_matmul_precision('medium')  # TODO try high
     pl.seed_everything(42, workers=True, verbose = False)
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     project = "floodai_v2"
+    dataset_name = 'ds_v2_selection'
+    dataset_path  = base_path / dataset_name
     dataset_version = 'complete'
-    run_name = 'flai_v2_complete_0.4'
+    subset_fraction = 0.1  # Use n% of the dataset for quick experiments
+    model_name = f'{dataset_name}_{dataset_version}_{subset_fraction}'
+    test_model_name = model_name
+    artifact_description = 'artifact_desc___unfiltered'
     bs = 32
-    max_epoch = 1
+    max_epoch = 10
     inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
     in_channels = len(inputs) 
-    subset_fraction = 0.4  # Use n% of the dataset for quick experiments
     LOGSTEPS = 10 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
     DEVRUN = False
     PRETRAINED = True
+    
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 
     if not reproduce:
         print('---start train')
+        
         # itereate through dataset_paths here 
         train_list = dataset_path / "train.txt" # converts to absolute path with resolve
         test_list = dataset_path / "test.txt"
@@ -105,7 +110,7 @@ def main(test=None, reproduce=None):
                 data_artifact = wandb.Artifact(
                     dataset_name, 
                     type="dataset",
-                    description=f"{dataset_name} all tiles from unosat original dataset",
+                    description=f"{artifact_description}",
                     metadata={"train_list": str(train_list),
                             "test_list": str(test_list),
                             "val_list": str(val_list)})
@@ -117,7 +122,7 @@ def main(test=None, reproduce=None):
                 run.log_artifact(data_artifact, aliases=[dataset_version, dataset_name])
     else:
         print('---reproduce')
-        artifact_dataset_name = f'unosat_emergencymapping-United Nations Satellite Centre/{project}/{dataset_name}/ {dataset_name}'
+        artifact_dataset_name = f'UNOSAT/{project}/{dataset_name}/ {dataset_version}'
         
         print("---initialising Wandb")
         with wandb.init(project=project, job_type="reproduce", name='reproduce', mode="disabled") as run:
@@ -142,21 +147,21 @@ def main(test=None, reproduce=None):
     device = next(model.parameters()).device
     print(f'---model location: {device}')
 
-    experiment_name = f'ds_v2_complete. channels:{in_channels}_epoch:{max_epoch}_{"crossentropy"}'
+    experiment_name = f'ds_v2_selection:{subset_fraction}. channels:{in_channels}_epoch:{max_epoch}_{"crossentropy"}'
     print(f'---EXPERIMENT NAME= {experiment_name}')
     wandb_logger = WandbLogger(
-        project="floodai_v2",
+        project=project,
         name=experiment_name)
     
       # DEFINE THE TRAINER
     checkpoint_callback = ModelCheckpoint(
     dirpath=r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints",  # Save checkpoints locally in this directory
     # filename="best-checkpoint-{epoch:02d}-{val_loss:.2f}",  # Custom filename format
-    filename=f"model_{run_name}",  # Custom filename format
+    filename=model_name,  # Custom filename format
     monitor="val_loss",              # Monitor validation loss
     mode="min",                      # Save the model with the lowest validation loss
     save_top_k=1                     # Only keep the best model
-)
+    )
     
     print('---trainer')
     trainer= pl.Trainer(
@@ -183,7 +188,7 @@ def main(test=None, reproduce=None):
         print('---test')
         threshold = 0.9
 
-        ckpt = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints\best_checkpoint")
+        ckpt = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints" , f"{model_name}.ckpt")
 
         training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
         training_loop = training_loop.cuda()
@@ -216,14 +221,14 @@ def main(test=None, reproduce=None):
 
             preds.append(logits.detach().cpu().numpy())
             gts.append(mask.detach().numpy())
-            # for pd, gt in zip(logits, mask):
-            #     plt.subplot(131)
-            #     plt.imshow(pd[0])
-            #     plt.subplot(132)
-            #     plt.imshow(pd[0] > 0.8)
-            #     plt.subplot(133)
-            #     plt.imshow(gt[0].cpu())
-            #     plt.show()
+            for pd, gt in zip(logits, mask):
+                plt.subplot(131)
+                plt.imshow(pd[0])
+                plt.subplot(132)
+                plt.imshow(pd[0] > 0.8)
+                plt.subplot(133)
+                plt.imshow(gt[0].cpu())
+                plt.show()
             
         tps = torch.vstack(tps)
         fps = torch.vstack(fps)
@@ -242,15 +247,15 @@ def main(test=None, reproduce=None):
         fp_perc = fps.sum() / num_pixels * 100
         fn_perc = fns.sum() / num_pixels * 100
 
-        print("water accuracy: {}".format(water_accuracy))
-        print("IoU: {}".format(iou))
-        print("Precision: {}".format(precision))
-        print("Recall: {}".format(recall))
-        print("TP percentage: {}".format(tp_perc))
-        print("TN percentage: {}".format(tn_perc))
-        print("FP percentage: {}".format(fp_perc))
-        print("FN percentage: {}".format(fn_perc))
-        print("NSD: {}".format(nsd_avg))
+        print("---water accuracy: {}".format(water_accuracy))
+        print("---IoU: {}".format(iou))
+        print("---Precision: {}".format(precision))
+        print("---Recall: {}".format(recall))
+        print("---TP percentage: {}".format(tp_perc))
+        print("---TN percentage: {}".format(tn_perc))
+        print("---FP percentage: {}".format(fp_perc))
+        print("---FN percentage: {}".format(fn_perc))
+        print("---NSD: {}".format(nsd_avg))
 
 
     # Ensure the model is on GPU
@@ -258,11 +263,23 @@ def main(test=None, reproduce=None):
 
     if wandb.run:
         wandb.finish()  # Properly finish the W&B run
-    torch.cuda.empty_cache()
+
+    
+
+
+    # Explicit cleanup
+    del model, data, output  # Free variable references
+    import gc
+    gc.collect()             # Run garbage collection
+    torch.cuda.empty_cache() # Clear unused GPU memory
+    torch.cuda.synchronize() # Ensure GPU operations are complete
+
     # end timing
     end = time.time()
-    print(f'>>>total time = {(end - start)/60}')  
+    print(f'>>>total time = {(end - start)/60:.2f} minutes')  
 
 
 if __name__ == '__main__':
     main()
+
+torch.cuda.empty_cache()
