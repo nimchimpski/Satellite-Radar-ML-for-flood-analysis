@@ -4,12 +4,13 @@ import os
 from tqdm import tqdm
 from process_tiles_module import select_tiles_and_split
 import click
+import shutil
 
 # Add the parent directory of the current file to the system path
 # Get the root directory and add it to sys.path
 root_dir = Path(__file__).resolve().parents[2]  # Adjust level as needed to reach the root
 sys.path.insert(0, str(root_dir))
-base_path = Path(r"Z:\1NEW_DATA\1data\2interim")
+
 @click.command()
 @click.option("--test",is_flag=True)
 
@@ -22,14 +23,20 @@ def main(test):
 
     base_path = Path(r"Z:\1NEW_DATA\1data\2interim")
 
+
     if test:
-        normalized_dataset = base_path / "tests" / "testdata_tiles_norm"
+        normalized_dataset = base_path / "tests" / "testdata_tiles_norm_3deep"
     # normalized_dataset = base_path / "tests" / "testdata_tiles_norm"
     # SERIOUS RUN
     else:
         normalized_dataset = base_path / "UNOSAT_FloodAI_Dataset_v2_norm"
+    
+    dest_dir = Path(r"Z:\1NEW_DATA\1data\3final" , f'{normalized_dataset.name}_split')
+    if dest_dir.exists():
+        print(f"Destination folder already exists: {dest_dir}")
+        shutil.rmtree(dest_dir)
 
-    dest_dir = Path(r"Z:\1NEW_DATA\1data\4final" , f'{normalized_dataset.name}_TVTsplit')
+
 
     # Create destination folders
     train_dir = dest_dir / "train"
@@ -46,7 +53,7 @@ def main(test):
     for folder in  tqdm(recursive_list, desc="TOTAL FOLDERS"):
         print(f"---: {folder.name}")
         # FILTER AND SPLIT
-        foldertotal, folderrejected = select_tiles_and_split(folder, dest_dir, train_ratio=0.7, val_ratio=0.15, test_ratio=0.15)
+        foldertotal, folderrejected = select_tiles_and_split(folder, dest_dir, train_ratio=0.7, val_ratio=0.2, test_ratio=0.1)
         total += foldertotal
         rejected += folderrejected    
 
