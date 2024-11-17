@@ -57,6 +57,7 @@ def main(test=None, reproduce=None):
     ***NAVIGATE IN TERMINAL TO THE UNMAPPED ADRESS TO RUN THIS SCRIPT.***
 
     cd //cerndata100/AI_files/users/ai_flood_service/1new_data/3scripts/training
+
     TODO poss switch to ClearML (opensource)
     '''
     print('---in main')
@@ -67,19 +68,25 @@ def main(test=None, reproduce=None):
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     base_path = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\1data\3final")
-    # dataset_name = 'UNOSAT_FloodAI_Dataset_v2_norm'
     dataset_name = 'ds_v2_selection'
     dataset_path  = base_path / dataset_name
     project = "floodai_v2"
+    # DATA PARAMS
     dataset_version = 'complete'
-    bs = 32
+    subset_fraction = 0.4
+    bs = 16
     max_epoch = 5
-    inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
-    in_channels = len(inputs) 
-    subset_fraction = 0.01  # Use n% of the dataset for quick experiments
-    LOGSTEPS = 10 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
-    DEVRUN = False
+    # DATALOADER PARAMS
+    num_workers = 0
+    persistent_workers = False
+    # WANDB PARAMS
+    WBOFFLINE = True
+    LOGSTEPS = 50 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
+    # MODEL PARAMS
     PRETRAINED = True
+    inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
+    in_channels = len(inputs)
+    DEVRUN = 0
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     if not dataset_path.exists():
         print('---base path not exists')
@@ -126,35 +133,45 @@ def main(test=None, reproduce=None):
             test_list = Path(metadata_data['test_list'])
             val_list = Path(metadata_data['val_list'])    
     # TODO check the path chains here
-    train_dl = create_subset(train_list, dataset_path, 'train' , subset_fraction, inputs, bs)
-    test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs)   
-    val_dl = create_subset(val_list, dataset_path, 'val',  subset_fraction, inputs, bs)  
+    train_dl = create_subset(train_list, dataset_path, 'train' , subset_fraction, inputs, bs, num_workers, persistent_workers)
+    test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs, num_workers, persistent_workers)   
+    val_dl = create_subset(val_list, dataset_path, 'val',  subset_fraction, inputs, bs, num_workers, persistent_workers)  
 
     # MAKE MODEL
     # model = SimpleCNN(in_channels=in_channels, classes=2)
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=2, pretrained=PRETRAINED)
-
-    
-    # check model location
     model = model.to('cuda')  # Ensure the model is on GPU
     device = next(model.parameters()).device
     print(f'---model location: {device}')
 
-    experiment_name = f'ds_v2_complete. channels:{in_channels}_epoch:{max_epoch}_{"crossentropy"}'
-    print(f'---EXPERIMENT NAME= {experiment_name}')
+    run_name = f'ds_v2_complete. channels:{in_channels}_epoch:{max_epoch}_{"crossentropy"}'
+    print(f'---RUN NAME= {run_name}')
+
     wandb_logger = WandbLogger(
         project="floodai_v2",
-        name=experiment_name)
-    
-      # DEFINE THE TRAINER
+        name=run_name,
+    )
+    wandb_logger.log_metrics({"sunset fraction": subset_fraction})
+
+    # Logging additional run metadata (e.g., dataset info)
+    wandb_logger.experiment.config.update({ 
+        "dataset_name": dataset_name,
+        "max_epoch": max_epoch,
+        "subset_fraction": subset_fraction,
+        "devrun": DEVRUN,
+        "offline_mode": WBOFFLINE
+    })
+
+          # DEFINE THE TRAINER
     checkpoint_callback = ModelCheckpoint(
-    dirpath=r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints",  # Save checkpoints locally in this directory
-    # filename="best-checkpoint-{epoch:02d}-{val_loss:.2f}",  # Custom filename format
-    filename="best-checkpoint",  # Custom filename format
-    monitor="val_loss",              # Monitor validation loss
-    mode="min",                      # Save the model with the lowest validation loss
-    save_top_k=1                     # Only keep the best model
-)
+        dirpath=r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints",  # Save checkpoints locally in this directory
+        filename=f"{dataset_name} {dataset_version} {max_epoch:02d}",  # Custom filename format
+        # filename="best-checkpoint",  # Custom filename format
+        monitor="val_loss",              # Monitor validation loss
+        mode="min",                      # Save the model with the lowest validation loss
+        save_top_k=1                   # Only keep the best model
+    )
+    
     
     print('---trainer')
     trainer= pl.Trainer(
@@ -174,8 +191,14 @@ def main(test=None, reproduce=None):
         print('---not test ')
         training_loop = Segmentation_training_loop(model)
         trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl,)
+
+        best_val_loss = trainer.callback_metrics.get("val_loss", None)
+        if best_val_loss is not None:
+            wandb_logger.experiment.summary["final_val_loss"] = float(best_val_loss)
+
         # RUN A TRAINER.TEST HERE FOR A SIMPLE ONE RUN TRAIN/TEST CYCLE        
         # trainer.test(model=training_loop, dataloaders=test_dl, ckpt_path='best')
+        
         
     else:
         print('---test')
@@ -259,7 +282,7 @@ def main(test=None, reproduce=None):
     torch.cuda.empty_cache()
     # end timing
     end = time.time()
-    print(f'>>>total time = {(end - start)/60}')  
+    print(f'>>>total time = {(end - start)/60} minutes')  
 
 
 if __name__ == '__main__':
