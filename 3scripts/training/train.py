@@ -62,28 +62,27 @@ def main(test=None, reproduce=None):
     print('---in main')
     start = time.time()
 
-    base_path = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\1data\3final")
-    # dataset_name = 'UNOSAT_FloodAI_Dataset_v2_norm'
-    dataset_name = 'ds_v2_selection'
-    dataset_path  = base_path / dataset_name
-    if not dataset_path.exists():
-        print('---base path not exists')
-
     torch.set_float32_matmul_precision('medium')  # TODO try high
     pl.seed_everything(42, workers=True, verbose = False)
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    base_path = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\1data\3final")
+    # dataset_name = 'UNOSAT_FloodAI_Dataset_v2_norm'
+    dataset_name = 'ds_v2_selection'
+    dataset_path  = base_path / dataset_name
     project = "floodai_v2"
     dataset_version = 'complete'
     bs = 32
-    max_epoch = 1
+    max_epoch = 5
     inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
     in_channels = len(inputs) 
-    subset_fraction = 0.05  # Use n% of the dataset for quick experiments
+    subset_fraction = 0.01  # Use n% of the dataset for quick experiments
     LOGSTEPS = 10 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
-    DEVRUN = True
+    DEVRUN = False
     PRETRAINED = True
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    if not dataset_path.exists():
+        print('---base path not exists')
 
     if not reproduce:
         print('---start train')
