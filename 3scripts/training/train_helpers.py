@@ -103,9 +103,9 @@ def one_hot(label, n_classes, requires_grad=True):
 
     return one_hot_label
 
-def create_subset(file_list, event, stage,  subset_fraction , inputs, bs,):
+def create_subset(file_list, event, stage,  subset_fraction , inputs, bs, num_workers, persistent_workers):
     dataset = FloodDataset(file_list, event, stage=stage, inputs=inputs)    
     subset_indices = random.sample(range(len(dataset)), int(subset_fraction * len(dataset)))
     subset = Subset(dataset, subset_indices)
-    dl = DataLoader(subset, batch_size=bs, num_workers=12, persistent_workers=True,  shuffle = (stage == 'train'))
+    dl = DataLoader(subset, batch_size=bs, num_workers=num_workers, persistent_workers= persistent_workers,  shuffle = (stage == 'train'))
     return dl
