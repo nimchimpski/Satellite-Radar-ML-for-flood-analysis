@@ -7,13 +7,6 @@ import click
 import shutil
 from helpers import get_incremental_filename
 
-
-
-# Add the parent directory of the current file to the system path
-# Get the root directory and add it to sys.path
-# Add the parent directory of the current file to sys.path
-
-
 @click.command()
 @click.option("--testdata",is_flag=True)
 
@@ -31,7 +24,8 @@ def main(testdata):
     test_ratio=0.15
     analysis_threshold=1
     mask_threshold=0.5
-    MAKEFOLDER = False
+    MAKEFOLDER = True
+    ########################################
 
     print('>>>mask threshold:', mask_threshold)
     print('>>>analysis threshold:', analysis_threshold)
@@ -43,11 +37,9 @@ def main(testdata):
     if not testdata:
         dataset = base_path / main_dataset
     
-    new_dir = Path(r"Z:\1NEW_DATA\1data\3final" , f'{dataset.name}_split')
-    
+    new_dir = Path(r"Z:\1NEW_DATA\1data\3final")
     dest_dir = get_incremental_filename(new_dir, f'{dataset.name}_split')
     print(f">>>new dir name: {dest_dir}")
-
 
     # Create destination folders
     train_dir = dest_dir / "train"
@@ -74,6 +66,10 @@ def main(testdata):
         rejected += folderrejected   
         tot_missing_mask += tot_missing_mask
         tot_missing_extent += tot_missing_extent 
+        print(f">>>subtotal tiles: {total}")
+        print(f">>>subtotal Rejected tiles: {rejected}")
+        print(f">>>subtotal missing extent: {tot_missing_extent}")
+        print(f">>>subtotal missing mask: {tot_missing_mask}")
 
     print(f">>>Total tiles: {total}")
     print(f">>>Rejected tiles: {rejected}")
