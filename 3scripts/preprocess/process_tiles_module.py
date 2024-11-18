@@ -110,42 +110,65 @@ def compress_geotiff_rasterio(input_tile_path, output_tile_path, compression="lz
             dst.write(src.read())
 
 # SELECT AND SPLIT TO TRAIN, VAL, TEST
-def has_enough_valid_pixels(file_path, analysis_threshold=0.0, mask_threshold=0.2):
+def has_enough_valid_pixels(file_path, analysis_threshold, mask_threshold):
     """
-    Check if the 'mask' layer has enough valid (flood, value=1) pixels.
-    :return: True if the file meets the criteria, False otherwise.
+    has mask layer?
+    has analysis_extent layer?
+    exceeds analysis_threshold?
+    exceeds mask_threshold?
+    returns True if both conditions are met
+    defaults to False.
+    TODO not capturing miss_ext if no mask layer
     """
-    with rasterio.open(file_path) as dataset:
-        # Assuming the mask layer is identified by its name or index
-        mask_layer = None
-        analysis_extent_layer = None
+    # print('+++has_enough_valid_pixels')
+    # print('---analysis_threshold= ', analysis_threshold)
+    # print('---mask_threshold= ', mask_threshold)
 
-        for idx, desc in enumerate(dataset.descriptions):
-            if desc == "mask":  # Find the 'mask' layer by its description
-                mask_layer = idx + 1  # Bands in rasterio are 1-based
-            elif desc == "analysis_extent":
-                analysis_extent_layer = idx + 1
-        
-        if mask_layer is None:
-            print(f"---No 'mask' layer found in {file_path}")
-            return False
-        if analysis_extent_layer is None:
-            print(f"---No 'analysis_extent' layer found in {file_path}")
-# 
-        total_pixels = dataset.width * dataset.height
-        # READ MASK LAYER
-        mask_data = dataset.read(mask_layer)
-        if ((mask_data == 1).sum()) / total_pixels < mask_threshold:
-            # print(f"---MASK pixels deficit: {file_path}")
-            return False
-        
-        analysis_extent_data = dataset.read(analysis_extent_layer)
-        if ((analysis_extent_data == 1).sum()) / total_pixels < analysis_threshold:
-            # print(f"---EXTENT pixels deficit: {file_path}")
-            return False
-        return True
+    try:
+        with rasterio.open(file_path) as dataset:
+            # Assuming the mask layer is identified by its name or index
+            mask_layer = None
+            analysis_extent_layer = None
+            missing_extent = 0
+            missing_mask = 0
+            result = False
 
-def select_tiles_and_split(source_dir, dest_dir, train_ratio=0.7, val_ratio=0.2, test_ratio=0.1):
+            for idx, desc in enumerate(dataset.descriptions):
+                if desc == "mask":  # Find the 'mask' layer by its description
+                    mask_layer = idx + 1  # Bands in rasterio are 1-based
+                elif desc == "analysis_extent":
+                    analysis_extent_layer = idx + 1
+
+            total_pixels = dataset.width * dataset.height
+            # READ MASK LAYER
+
+            if not analysis_extent_layer:
+                missing_extent = 1
+            else:
+                analysis_extent_data = dataset.read(analysis_extent_layer)
+                if ((analysis_extent_data == 1).sum()) / total_pixels > analysis_threshold:
+                    # print(f"---EXTENT pixels deficit: {file_path}")
+                    result = True
+
+            if not mask_layer:
+                print(f"---No 'mask' layer found in {file_path}")
+                missing_mask = 1
+                result = False
+            else:
+                mask_data = dataset.read(mask_layer)
+                if ((mask_data == 1).sum()) / total_pixels > mask_threshold:
+                    # print(f"---MASK pixels deficit: {file_path}")
+                    result = True
+
+            return result, missing_extent, missing_mask
+    except Exception as e:
+        print(f"---Unexpected error: {e}")
+        return 0,0,0  # Handle any other exceptions
+
+
+        
+
+def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ratio, analysis_threshold, mask_threshold, MAKEFOLDER):
     print('+++select_tiles_and_split')
     # Ensure the ratios sum to 1.0
     # assert train_ratio + val_ratio + test_ratio == 1.0, "Ratios must sum to 1.0"
@@ -156,6 +179,8 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio=0.7, val_ratio=0.2,
     test_dir = dest_dir / "test"
 
     rejects = 0
+    tot_missing_extent = 0
+    tot_missing_mask = 0
 
     with open(dest_dir / "train.txt", "w") as traintxt,  open(dest_dir / "val.txt", "w") as valtxt,  open(dest_dir / "test.txt", "w") as testtxt:
         # Get a list of all files in the source directory
@@ -167,70 +192,74 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio=0.7, val_ratio=0.2,
         # filtered_tiles = [file for file in tqdm(files) if has_enough_valid_pixels(file)]
         filtered_tiles = []
         for file in tqdm(files):
-            print(f"---Checking {file.name}")
-            if not has_enough_valid_pixels(file):
-                print(f"---Rejected {file.name}")
+            # print(f"---Checking {file.name}")
+            selected, missing_extent, missing_mask = has_enough_valid_pixels(file, analysis_threshold, mask_threshold)
+            tot_missing_extent  += missing_extent
+            tot_missing_mask += missing_mask
+            if not selected:
+                # print(f"---Rejected {file.name}")
                 rejects += 1
             else:
                 filtered_tiles.append(file)
 
 
         print(f"---Rejected files: {rejects}")
-        print(f"---Filtered files: {filtered_tiles}")
+        # print(f"---Filtered files: {filtered_tiles}")
 
-        # SHUFFLE FILES
-        random.shuffle(filtered_tiles)  # Shuffle files for random split
+        if MAKEFOLDER:
+            # SHUFFLE FILES
+            random.shuffle(filtered_tiles)  # Shuffle files for random split
 
-        # Calculate split indices
-        train_end = int(len(files) * train_ratio)
-        val_end = train_end + int(len(files) * val_ratio)
+            # Calculate split indices
+            train_end = int(len(files) * train_ratio)
+            val_end = train_end + int(len(files) * val_ratio)
 
-        # Split files into train, val, and test sets
-        train_files = filtered_tiles[:train_end]
-        val_files = filtered_tiles[train_end:val_end]
-        test_files = filtered_tiles[val_end:]
+            # Split files into train, val, and test sets
+            train_files = filtered_tiles[:train_end]
+            val_files = filtered_tiles[train_end:val_end]
+            test_files = filtered_tiles[val_end:]
 
-        # Copy files to their respective folders
-        for file in tqdm(train_files, desc="Copying train files"):
-            try:
-                shutil.copy(file, train_dir / file.name)
-                traintxt.write(f"{file.name}\n")
-            except Exception as e:
-                print(f"Error copying {file}: {e}")
+            # Copy files to their respective folders
+            for file in tqdm(train_files, desc="Copying train files"):
+                try:
+                    shutil.copy(file, train_dir / file.name)
+                    traintxt.write(f"{file.name}\n")
+                except Exception as e:
+                    print(f"Error copying {file}: {e}")
 
-        for file in tqdm(val_files, desc="Copying validation files"):
-            try:
-                shutil.copy(file, val_dir / file.name)
-                valtxt.write(f"{file.name}\n")
-            except Exception as e:
-                print(f"---Error copying {file}: {e}")
+            for file in tqdm(val_files, desc="Copying validation files"):
+                try:
+                    shutil.copy(file, val_dir / file.name)
+                    valtxt.write(f"{file.name}\n")
+                except Exception as e:
+                    print(f"---Error copying {file}: {e}")
 
-        for file in tqdm(test_files, desc="Copying test files"):
-            try:
-                shutil.copy(file, test_dir / file.name)
-                testtxt.write(f"{file.name}\n")
-            except Exception as e:
-                print(f"---Error copying {file}: {e}")
+            for file in tqdm(test_files, desc="Copying test files"):
+                try:
+                    shutil.copy(file, test_dir / file.name)
+                    testtxt.write(f"{file.name}\n")
+                except Exception as e:
+                    print(f"---Error copying {file}: {e}")
 
-        # print(f"---Total files: {len(files)}")
-        # print(f"---Train files: {len(train_files)}")
-        # print(f'---Test files: {len(test_files)}')
-        # print(f"---Validation files: {len(val_files)}")
-        assert abs(len(train_files) + len(val_files) + len(test_files) == len(files)) < 1e-6, "Files not split correctly"
-        # with open("train.txt", "r") as tra, open("val.txt", "r") as val, open("test.txt", "r") as tes:
-    with open(dest_dir / "train.txt", "r") as traintxt,  open(dest_dir / "val.txt", "r") as valtxt,  open(dest_dir / "test.txt", "r") as testtxt:
-        
-        # FINAL CHECK
-        if len(traintxt.readlines()) != len(train_files):
-            print('---train.txt not created successfully')
-            print(f'---{traintxt.readlines()}')
-        if len(valtxt.readlines()) != len(val_files):
-            print('---val.txt not created successfully')
-            print('---val.txt', valtxt.readlines())
-        if len(testtxt.readlines()) != len(test_files):
-            print('---test.txt not created successfully')
-            print('---test.txt', testtxt.readlines())
-    return total_files, rejects
+            # print(f"---Total files: {len(files)}")
+            # print(f"---Train files: {len(train_files)}")
+            # print(f'---Test files: {len(test_files)}')
+            # print(f"---Validation files: {len(val_files)}")
+            assert abs(len(train_files) + len(val_files) + len(test_files) == len(files)) < 1e-6, "Files not split correctly"
+            # with open("train.txt", "r") as tra, open("val.txt", "r") as val, open("test.txt", "r") as tes:
+            with     open(dest_dir / "train.txt", "r") as traintxt,  open(dest_dir / "val.txt", "r") as valtxt,  open(dest_dir / "test.txt", "r") as testtxt:
+            
+                    # FINAL CHECK
+                    if len(traintxt.readlines()) != len(train_files):
+                        print('---train.txt not created successfully')
+                        print(f'---{traintxt.readlines()}')
+                    if len(valtxt.readlines()) != len(val_files):
+                        print('---val.txt not created successfully')
+                        print('---val.txt', valtxt.readlines())
+                    if len(testtxt.readlines()) != len(test_files):
+                        print('---test.txt not created successfully')
+                        print('---test.txt', testtxt.readlines())
+    return total_files, rejects, tot_missing_extent, tot_missing_mask
 
 # NOT USED?
 def copy_data_and_generate_txt(data_folders, destination):
