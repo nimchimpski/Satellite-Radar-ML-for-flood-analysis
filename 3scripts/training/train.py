@@ -68,7 +68,7 @@ def main(test=None, reproduce=None):
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     base_path = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\1data\3final")
-    dataset_name = 'ds_v2_selection'
+    dataset_name = 'UNOSAT_FloodAI_Dataset_v2_norm_split'
     dataset_path  = base_path / dataset_name
     project = "floodai_v2"
     # DATA PARAMS
