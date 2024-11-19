@@ -1,3 +1,23 @@
 # Add patterns of files dvc should ignore, which could improve
 # the performance. Learn more at
 # https://dvc.org/doc/user-guide/dvcignore
+
+# JUST TRACK 3FINAL VERSIONS (DUE TO SIZE)
+
+2configs/
+3scripts/
+4results/
+5notebooks/
+6qgis
+modules
+
+1raw
+2interim
+2interim/bkp
+2interim/dataset_DLR_S1S2_bycountry_4326
+2interim/DLR_S1S2_SARONLY
+2interim/TESTS
+2interim/UNOSAT_FloodAI_Dataset_v2
+2interim/UNOSAT_FloodAI_Dataset_v2_norm
+# IGNORE ALL FILES BEGINNING WITH ds
+ds*

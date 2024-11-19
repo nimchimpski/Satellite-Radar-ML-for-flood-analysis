@@ -37,11 +37,15 @@ oldcode.py
 
 1data/1raw/
 1data/2interim/
+1data/3final/*
 1data/3final/ds*
 
-!1data/3final/ds_v2_selection.dvc
+vc
 
 #DVC
+# But allow .dvc files
+!1data/3final/*.dvc
+!1data/**/*.dvc
 
 
 ignoretest/

@@ -66,29 +66,33 @@ def main(test_mode=None, reproduce=None):
     print('---in main')
     start = time.time()
 
-    base_path = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\1data\3final")
-
     torch.set_float32_matmul_precision('medium')  # TODO try high
     pl.seed_everything(42, workers=True, verbose = False)
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    project = "floodai_v2"
-    dataset_name = 'ds_v2_selection'
+    base_path = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\1data\3final")
+    dataset_name = 'UNOSAT_FloodAI_Dataset_v2_norm_split'
     dataset_path  = base_path / dataset_name
+    project = "floodai_v2"
+    # DATA PARAMS
     dataset_version = 'complete'
-    subset_fraction = 0.1  # Use n% of the dataset for quick experiments
-    model_name = f'{dataset_name}_{dataset_version}_{subset_fraction}'
-    test_model_name = model_name
-    artifact_description = 'artifact_desc___unfiltered'
-    bs = 32
-    max_epoch = 10
-    inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
-    in_channels = len(inputs) 
-    LOGSTEPS = 10 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
-    DEVRUN = False
+    subset_fraction = 0.4
+    bs = 16
+    max_epoch = 5
+    # DATALOADER PARAMS
+    num_workers = 0
+    persistent_workers = False
+    # WANDB PARAMS
+    WBOFFLINE = True
+    LOGSTEPS = 50 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
+    # MODEL PARAMS
     PRETRAINED = True
-    
+    inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
+    in_channels = len(inputs)
+    DEVRUN = 0
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    if not dataset_path.exists():
+        print('---base path not exists')
 
     if not reproduce:
         print('---start train')
@@ -133,40 +137,45 @@ def main(test_mode=None, reproduce=None):
             test_list = Path(metadata_data['test_list'])
             val_list = Path(metadata_data['val_list'])    
     # TODO check the path chains here
-    train_dl = create_subset(train_list, dataset_path, 'train' , subset_fraction, inputs, bs)
-    test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs)   
-    val_dl = create_subset(val_list, dataset_path, 'val',  subset_fraction, inputs, bs)  
-
-    print(f"Train List: {train_list}")
-    print(f"Test List: {test_list}")
-    print(f"Val List: {val_list}")
-    print(f"Model Name: {model_name}")
+    train_dl = create_subset(train_list, dataset_path, 'train' , subset_fraction, inputs, bs, num_workers, persistent_workers)
+    test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs, num_workers, persistent_workers)   
+    val_dl = create_subset(val_list, dataset_path, 'val',  subset_fraction, inputs, bs, num_workers, persistent_workers)  
 
     # MAKE MODEL
     # model = SimpleCNN(in_channels=in_channels, classes=2)
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=2, pretrained=PRETRAINED)
-
-    
-    # check model location
     model = model.to('cuda')  # Ensure the model is on GPU
     device = next(model.parameters()).device
     print(f'---model location: {device}')
 
-    experiment_name = f'ds_v2_selection:{subset_fraction}. channels:{in_channels}_epoch:{max_epoch}_{"crossentropy"}'
-    print(f'---EXPERIMENT NAME= {experiment_name}')
+    run_name = f'ds_v2_complete. channels:{in_channels}_epoch:{max_epoch}_{"crossentropy"}'
+    print(f'---RUN NAME= {run_name}')
+
     wandb_logger = WandbLogger(
-        project=project,
-        name=experiment_name)
-    
-      # DEFINE THE TRAINER
-    checkpoint_callback = ModelCheckpoint(
-    dirpath=r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints",  # Save checkpoints locally in this directory
-    # filename="best-checkpoint-{epoch:02d}-{val_loss:.2f}",  # Custom filename format
-    filename=model_name,  # Custom filename format
-    monitor="val_loss",              # Monitor validation loss
-    mode="min",                      # Save the model with the lowest validation loss
-    save_top_k=1                     # Only keep the best model
+        project="floodai_v2",
+        name=run_name,
     )
+    wandb_logger.log_metrics({"sunset fraction": subset_fraction})
+
+    # Logging additional run metadata (e.g., dataset info)
+    wandb_logger.experiment.config.update({ 
+        "dataset_name": dataset_name,
+        "max_epoch": max_epoch,
+        "subset_fraction": subset_fraction,
+        "devrun": DEVRUN,
+        "offline_mode": WBOFFLINE
+    })
+
+          # DEFINE THE TRAINER
+    checkpoint_callback = ModelCheckpoint(
+        dirpath=r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints",  # Save checkpoints locally in this directory
+        filename=f"{dataset_name} {dataset_version} {max_epoch:02d}",  # Custom filename format
+        # filename="best-checkpoint",  # Custom filename format
+        monitor="val_loss",              # Monitor validation loss
+        mode="min",                      # Save the model with the lowest validation loss
+        save_top_k=1                   # Only keep the best model
+    )
+    
     
     print('---trainer')
     trainer= pl.Trainer(
@@ -186,14 +195,20 @@ def main(test_mode=None, reproduce=None):
         print('---not test ')
         training_loop = Segmentation_training_loop(model)
         trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl,)
+
+        best_val_loss = trainer.callback_metrics.get("val_loss", None)
+        if best_val_loss is not None:
+            wandb_logger.experiment.summary["final_val_loss"] = float(best_val_loss)
+
         # RUN A TRAINER.TEST HERE FOR A SIMPLE ONE RUN TRAIN/TEST CYCLE        
         # trainer.test(model=training_loop, dataloaders=test_dl, ckpt_path='best')
+        
         
     else:
         print('---test')
         threshold = 0.9
 
-        ckpt = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints" , f"{model_name}.ckpt")
+        ckpt = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints\ds_v2_selection_complete_0.1.ckpt")
 
         training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
         training_loop = training_loop.cuda()
@@ -274,7 +289,8 @@ def main(test_mode=None, reproduce=None):
 
     # end timing
     end = time.time()
-    print(f'>>>total time = {(end - start)/60:.2f} minutes')  
+    print(f'>>>total time = {(end - start)/60} minutes')  
+
 
 if __name__ == '__main__':
     main()

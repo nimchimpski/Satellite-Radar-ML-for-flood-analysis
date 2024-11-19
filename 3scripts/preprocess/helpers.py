@@ -59,6 +59,7 @@ def check_int16_range(dataarray):
         print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
         print(f"---Minimum value found: {actual_min}")
         print(f"---Maximum value found: {actual_max}")
+        return False
     
     # else:
     #     print(f"---no exceedances int16.")
@@ -67,3 +68,27 @@ def check_int16_range(dataarray):
     # dataarray = dataarray.fillna(0)  # Replace NaN with 0 or another appropriate value
     # dataarray = dataarray.where(~np.isinf(dataarray), 0)  # Replace Inf with 0 or appropriate value
     
+def get_incremental_filename(base_dir, base_name):
+    """
+    Generates a unique directory name by adding an incremental suffix.
+    Example: 'base_name', 'base_name_1', 'base_name_2', etc.
+    
+    :param base_dir: The parent directory.
+    :param base_name: The base name of the directory.
+    :return: A Path object for the unique directory.
+    """
+    dest_dir = base_dir / base_name
+    counter = 1
+    while dest_dir.exists():
+        dest_dir = base_dir / f"{base_name}_{counter}"
+        counter += 1
+    return dest_dir
+
+def make_train_folders(dest_dir):
+    train_dir = dest_dir / "train"
+    val_dir = dest_dir / "val"
+    test_dir = dest_dir / "test"
+    train_dir.mkdir(parents=True, exist_ok=True)
+    val_dir.mkdir(parents=True, exist_ok=True)
+    test_dir.mkdir(parents=True, exist_ok=True)
+    return train_dir, val_dir, test_dir
