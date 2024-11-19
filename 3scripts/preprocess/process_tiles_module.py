@@ -173,7 +173,10 @@ def has_enough_valid_pixels(file_path, analysis_threshold, mask_threshold):
             return 0,0,0  # Handle any other exceptions
 
 def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ratio, analysis_threshold, mask_threshold, MAKEFOLDER):
-    # print('+++select_tiles_and_split')
+    '''
+    TODO return  where selected files is below some threshold or zero
+    '''
+    print('\n+++select_tiles_and_split')
     # Ensure the ratios sum to 1.0
     # assert train_ratio + val_ratio + test_ratio == 1.0, "Ratios must sum to 1.0"
     assert abs(train_ratio + val_ratio + test_ratio - 1.0) < 1e-6, "Ratios must sum to 1.0"
@@ -186,15 +189,14 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
     tot_missing_extent = 0
     tot_missing_mask = 0
 
-    with open(dest_dir / "train.txt", "w") as traintxt,  open(dest_dir / "val.txt", "w") as valtxt,  open(dest_dir / "test.txt", "w") as testtxt:
+    with open(dest_dir / "train.txt", "a") as traintxt,  open(dest_dir / "val.txt", "a") as valtxt,  open(dest_dir / "test.txt", "a") as testtxt:
         # Get a list of all files in the source directory
         files = list(source_dir.glob('*'))  # Modify '*' if you want a specific file extension
         total_files = len(files)
         # print(f"---Total files: {total_files}")
 
         # FILTER FILES BY VALID PIXELS
-        # filtered_tiles = [file for file in tqdm(files) if has_enough_valid_pixels(file)]
-        filtered_tiles = []
+        selected_tiles = []
         for file in tqdm(files):
             # print(f"---Checking {file.name}")
             rejected, missing_extent, missing_mask = has_enough_valid_pixels(file, analysis_threshold, mask_threshold)
@@ -203,22 +205,22 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
             if rejected:
                 rejects += 1
             else:
-                filtered_tiles.append(file)
+                selected_tiles.append(file)
 
-        # print(f"---Filtered files: {filtered_tiles}")
+        # print(f"---Filtered files: {selected_tiles}")
 
         if MAKEFOLDER:
             # SHUFFLE FILES
-            random.shuffle(filtered_tiles)  # Shuffle files for random split
+            random.shuffle(selected_tiles)  # Shuffle files for random split
 
             # Calculate split indices
-            train_end = int(len(filtered_tiles) * train_ratio)
-            val_end = train_end + int(len(filtered_tiles) * val_ratio)
+            train_end = int(len(selected_tiles) * train_ratio)
+            val_end = train_end + int(len(selected_tiles) * val_ratio)
 
             # Split files into train, val, and test sets
-            train_files = filtered_tiles[:train_end]
-            val_files = filtered_tiles[train_end:val_end]
-            test_files = filtered_tiles[val_end:]
+            train_files = selected_tiles[:train_end]
+            val_files = selected_tiles[train_end:val_end]
+            test_files = selected_tiles[val_end:]
 
             # Copy files to their respective folders
             for file in tqdm(train_files, desc="Copying train files"):
@@ -248,28 +250,16 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
             traintxt.flush()
             valtxt.flush()
             testtxt.flush()
+            # print(f'---folder total files: {total_files}')
+            if len(selected_tiles) < 10:
+                print(f"#######\n---{source_dir.parent.name} selected tiles: {len(selected_tiles)}\n#######")
+            # print(f"---folder train files: {len(train_files)}")
+            # print(f'---folder test files: {len(test_files)}')
+            # print(f"---folder validation files: {len(val_files)}")
+            assert int(len(train_files)) + int(len(val_files)) + int(len(test_files)) == int(len(selected_tiles)), "Files not split correctly"
 
-            print(f"---Total files: {len(filtered_tiles)}")
-            print(f"---Train files: {len(train_files)}")
-            print(f'---Test files: {len(test_files)}')
-            print(f"---Validation files: {len(val_files)}")
-            assert int(len(train_files)) + int(len(val_files)) + int(len(test_files)) == int(len(filtered_tiles)), "Files not split correctly"
-            # with open("train.txt", "r") as tra, open("val.txt", "r") as val, open("test.txt", "r") as tes:
-            with     open(dest_dir / "train.txt", "r") as traintxt,  open(dest_dir / "val.txt", "r") as valtxt,  open(dest_dir / "test.txt", "r") as testtxt:
-            
-                    # FINAL CHECK
-                    if len(traintxt.readlines()) != len(train_files):
-                        print('---train.txt not created successfully')
-                        print('---len train_files= ', len(train_files))
-                        print('---length train.txt= ', len(traintxt.readlines()))
-                        print(f'---{traintxt.readlines()}')
-                    if len(valtxt.readlines()) != len(val_files):
-                        print('---val.txt not created successfully')
-                        print('---val.txt', valtxt.readlines())
-                    if len(testtxt.readlines()) != len(test_files):
-                        print('---test.txt not created successfully')
-                        print('---test.txt', testtxt.readlines())
-    return total_files, rejects, tot_missing_extent, tot_missing_mask
+            print('---END OF SPLI FUNCTION--------------------------------')
+    return total_files, selected_tiles, rejects, tot_missing_extent, tot_missing_mask
 
 # NOT USED?
 def copy_data_and_generate_txt(data_folders, destination):

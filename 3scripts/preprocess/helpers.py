@@ -83,3 +83,12 @@ def get_incremental_filename(base_dir, base_name):
         dest_dir = base_dir / f"{base_name}_{counter}"
         counter += 1
     return dest_dir
+
+def make_train_folders(dest_dir):
+    train_dir = dest_dir / "train"
+    val_dir = dest_dir / "val"
+    test_dir = dest_dir / "test"
+    train_dir.mkdir(parents=True, exist_ok=True)
+    val_dir.mkdir(parents=True, exist_ok=True)
+    test_dir.mkdir(parents=True, exist_ok=True)
+    return train_dir, val_dir, test_dir
