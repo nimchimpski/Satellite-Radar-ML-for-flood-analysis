@@ -69,16 +69,16 @@ def main(test=None, reproduce=None):
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     base_path = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\1data\3final")
     dataset_name = 'UNOSAT_FloodAI_Dataset_v2_norm_split'
+    dataset_name = 'ds_flaiv2_split'
     dataset_path  = base_path / dataset_name
     project = "floodai_v2"
     # DATA PARAMS
-    dataset_version = 'complete'
-    subset_fraction = 1
+    dataset_version = 'pixel threshold 0.5'
+    subset_fraction = 0.1
     bs = 16
-    max_epoch = 3
+    max_epoch = 2
     # DATALOADER PARAMS
-    num_workers = 0
-    persistent_workers = False
+    num_workers = 4
     # WANDB PARAMS
     WBOFFLINE = True
     LOGSTEPS = 50 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
@@ -88,6 +88,8 @@ def main(test=None, reproduce=None):
     in_channels = len(inputs)
     DEVRUN = 0
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    persistent_workers = True #TODO set this to default true in the dl creation
+
     if not dataset_path.exists():
         print('---base path not exists')
 
@@ -151,7 +153,7 @@ def main(test=None, reproduce=None):
         project="floodai_v2",
         name=run_name,
     )
-    wandb_logger.log_metrics({"sunset fraction": subset_fraction})
+    wandb_logger.log_metrics({"subset fraction": subset_fraction})
 
     # Logging additional run metadata (e.g., dataset info)
     wandb_logger.experiment.config.update({ 
@@ -165,7 +167,7 @@ def main(test=None, reproduce=None):
           # DEFINE THE TRAINER
     checkpoint_callback = ModelCheckpoint(
         dirpath=r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints",  # Save checkpoints locally in this directory
-        filename=f"{dataset_name} {dataset_version} {max_epoch:02d}",  # Custom filename format
+        filename=f"{dataset_name} {subset_fraction} {max_epoch:02d}",  # Custom filename format
         # filename="best-checkpoint",  # Custom filename format
         monitor="val_loss",              # Monitor validation loss
         mode="min",                      # Save the model with the lowest validation loss
@@ -276,13 +278,17 @@ def main(test=None, reproduce=None):
 
     # Ensure the model is on GPU
     model = model.to('cuda')
-
+    end = time.time()
+    run_time = f'{(end - start)/60}:.2f'
     if wandb.run:
+        wandb_logger.experiment.config.update({ 
+        "run_time": run_time,
+    })
         wandb.finish()  # Properly finish the W&B run
     torch.cuda.empty_cache()
     # end timing
-    end = time.time()
-    print(f'>>>total time = {(end - start)/60} minutes')  
+    
+    print(f'>>>total time = {run_time} minutes')  
 
 
 if __name__ == '__main__':
