@@ -39,19 +39,22 @@ from boundaryloss import BoundaryLoss
 from train_helpers import *
 from train_classes import FloodDataset, UnetModel, SimpleCNN, SurfaceLoss
 
+
 load_dotenv()
+
+os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"  
 
 #TODO add DICE , NSD, IOU, PRECISION, RECALL metrics
 
 @click.command()
-@click.option('--test', is_flag=True, show_default=False)
+@click.option('--test_mode', is_flag=True, show_default=False)
 @click.option('--reproduce', is_flag=True, show_default=False)
 
 #########################################################################
 
-def main(test=None, reproduce=None):
+def main(test_mode=None, reproduce=None):
     '''
-    CONDA ENVIRONMENT = 'floodenv3"
+    CONDA ENVIRONMENT = 'floodenv2"
 
     expects that the data is in tile_root, with 3 tile_lists for train, test and val
     ***NAVIGATE IN TERMINAL TO THE UNMAPPED ADRESS TO RUN THIS SCRIPT.***
@@ -73,9 +76,9 @@ def main(test=None, reproduce=None):
     project = "floodai_v2"
     # DATA PARAMS
     dataset_version = 'complete'
-    subset_fraction = 1
+    subset_fraction = 0.4
     bs = 16
-    max_epoch = 3
+    max_epoch = 5
     # DATALOADER PARAMS
     num_workers = 0
     persistent_workers = False
@@ -86,13 +89,14 @@ def main(test=None, reproduce=None):
     PRETRAINED = True
     inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
     in_channels = len(inputs)
-    DEVRUN = 0
+    DEVRUN = 1
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     if not dataset_path.exists():
         print('---base path not exists')
 
     if not reproduce:
         print('---start train')
+        
         # itereate through dataset_paths here 
         train_list = dataset_path / "train.txt" # converts to absolute path with resolve
         test_list = dataset_path / "test.txt"
@@ -110,7 +114,7 @@ def main(test=None, reproduce=None):
                 data_artifact = wandb.Artifact(
                     dataset_name, 
                     type="dataset",
-                    description=f"{dataset_name} all tiles from unosat original dataset",
+                    description=f"{artifact_description}",
                     metadata={"train_list": str(train_list),
                             "test_list": str(test_list),
                             "val_list": str(val_list)})
@@ -122,7 +126,7 @@ def main(test=None, reproduce=None):
                 run.log_artifact(data_artifact, aliases=[dataset_version, dataset_name])
     else:
         print('---reproduce')
-        artifact_dataset_name = f'unosat_emergencymapping-United Nations Satellite Centre/{project}/{dataset_name}/ {dataset_name}'
+        artifact_dataset_name = f'UNOSAT/{project}/{dataset_name}/ {dataset_version}'
         
         print("---initialising Wandb")
         with wandb.init(project=project, job_type="reproduce", name='reproduce', mode="disabled") as run:
@@ -144,7 +148,7 @@ def main(test=None, reproduce=None):
     device = next(model.parameters()).device
     print(f'---model location: {device}')
 
-    run_name = f'FR:{subset_fraction}_CH{in_channels}_E:{max_epoch}_{"crossentropy"}'
+    run_name = f'ds_v2_complete. channels:{in_channels}_epoch:{max_epoch}_{"crossentropy"}'
     print(f'---RUN NAME= {run_name}')
 
     wandb_logger = WandbLogger(
@@ -187,7 +191,7 @@ def main(test=None, reproduce=None):
     )
     print('---trainer done')
 
-    if not test:
+    if not test_mode:
         print('---not test ')
         training_loop = Segmentation_training_loop(model)
         trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl,)
@@ -237,14 +241,14 @@ def main(test=None, reproduce=None):
 
             preds.append(logits.detach().cpu().numpy())
             gts.append(mask.detach().numpy())
-            # for pd, gt in zip(logits, mask):
-            #     plt.subplot(131)
-            #     plt.imshow(pd[0])
-            #     plt.subplot(132)
-            #     plt.imshow(pd[0] > 0.8)
-            #     plt.subplot(133)
-            #     plt.imshow(gt[0].cpu())
-            #     plt.show()
+            for pd, gt in zip(logits, mask):
+                plt.subplot(131)
+                plt.imshow(pd[0])
+                plt.subplot(132)
+                plt.imshow(pd[0] > 0.8)
+                plt.subplot(133)
+                plt.imshow(gt[0].cpu())
+                plt.show()
             
         tps = torch.vstack(tps)
         fps = torch.vstack(fps)
@@ -263,23 +267,26 @@ def main(test=None, reproduce=None):
         fp_perc = fps.sum() / num_pixels * 100
         fn_perc = fns.sum() / num_pixels * 100
 
-        print("water accuracy: {}".format(water_accuracy))
-        print("IoU: {}".format(iou))
-        print("Precision: {}".format(precision))
-        print("Recall: {}".format(recall))
-        print("TP percentage: {}".format(tp_perc))
-        print("TN percentage: {}".format(tn_perc))
-        print("FP percentage: {}".format(fp_perc))
-        print("FN percentage: {}".format(fn_perc))
-        print("NSD: {}".format(nsd_avg))
-
-
-    # Ensure the model is on GPU
-    model = model.to('cuda')
+        print("---water accuracy: {}".format(water_accuracy))
+        print("---IoU: {}".format(iou))
+        print("---Precision: {}".format(precision))
+        print("---Recall: {}".format(recall))
+        print("---TP percentage: {}".format(tp_perc))
+        print("---TN percentage: {}".format(tn_perc))
+        print("---FP percentage: {}".format(fp_perc))
+        print("---FN percentage: {}".format(fn_perc))
+        print("---NSD: {}".format(nsd_avg))
 
     if wandb.run:
         wandb.finish()  # Properly finish the W&B run
-    torch.cuda.empty_cache()
+
+    # Explicit cleanup
+    del model, train_dl, test_dl, val_dl  # Free variable references
+    import gc
+    gc.collect()             # Run garbage collection
+    torch.cuda.empty_cache() # Clear unused GPU memory
+    torch.cuda.synchronize() # Ensure GPU operations are complete
+
     # end timing
     end = time.time()
     print(f'>>>total time = {(end - start)/60} minutes')  
@@ -287,3 +294,5 @@ def main(test=None, reproduce=None):
 
 if __name__ == '__main__':
     main()
+
+torch.cuda.empty_cache()
