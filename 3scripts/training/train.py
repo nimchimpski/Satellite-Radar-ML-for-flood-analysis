@@ -54,7 +54,7 @@ os.environ["KMP_DUPLICATE_LIB_OK"] = "TRUE"
 
 def main(test_mode=None, reproduce=None):
     '''
-    CONDA ENVIRONMENT = 'floodenv3"
+    CONDA ENVIRONMENT = 'floodenv2"
 
     expects that the data is in tile_root, with 3 tile_lists for train, test and val
     ***NAVIGATE IN TERMINAL TO THE UNMAPPED ADRESS TO RUN THIS SCRIPT.***
@@ -89,7 +89,7 @@ def main(test_mode=None, reproduce=None):
     PRETRAINED = True
     inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
     in_channels = len(inputs)
-    DEVRUN = 0
+    DEVRUN = 1
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     if not dataset_path.exists():
         print('---base path not exists')
