@@ -7,7 +7,8 @@ import random
 import numpy as np
 import os.path as osp
 from pathlib import Path 
-from dotenv import load_dotenv
+from dotenv import load_dotenv  
+import sys
 
 # -------------------------------------------
 
@@ -28,6 +29,7 @@ from surface_distance.metrics import compute_surface_distances, compute_surface_
 #-------------------------------------------
 import tifffile as tiff
 import matplotlib.pyplot as plt
+import signal
 from PIL import Image
 from tqdm import tqdm
 from operator import itemgetter, mul
@@ -38,6 +40,83 @@ from segmentation_training_loop import Segmentation_training_loop
 from boundaryloss import BoundaryLoss
 from train_helpers import *
 from train_classes import FloodDataset, UnetModel, SimpleCNN, SurfaceLoss
+
+
+
+def handle_interrupt(signal, frame):
+    print("Interrupt received! Cleaning up...")
+    # Add any necessary cleanup code here (e.g., saving model checkpoints)
+    sys.exit(0)
+
+def calculate_metrics(logits, masks, metric_threshold):
+    """
+    Calculate TP, FP, FN, TN, and related metrics for a batch of predictions.
+    """
+    # Initialize accumulators
+    tps, fps, fns, tns = [], [], [], []
+    nsds = []
+
+    for logit, mask in zip(logits, masks):
+        # metric predictions
+        tp, fp, fn, tn = smp.metrics.get_stats(
+            logit, mask.long(), mode='binary', threshold=metric_threshold
+        )
+        tps.append(tp)
+        fps.append(fp)
+        fns.append(fn)
+        tns.append(tn)
+
+        # Compute Normalized Spatial Difference (NSD)
+        nsd_value = nsd(
+            logit[0].cpu().numpy() > metric_threshold,
+            mask[0].cpu().numpy().astype(bool),
+        )
+        nsds.append(nsd_value)
+
+    # Aggregate metrics
+    tps = torch.vstack(tps).sum()
+    fps = torch.vstack(fps).sum()
+    fns = torch.vstack(fns).sum()
+    tns = torch.vstack(tns).sum()
+
+    return {
+        "tps": tps,
+        "fps": fps,
+        "fns": fns,
+        "tns": tns,
+        "nsd_avg": np.mean(nsds)
+    }
+
+def log_metrics_to_wandb(metrics, wandb_logger, logits, masks):
+    """
+    Log metrics and visualizations to wandb.
+    """
+    # Extract values from metrics
+    water_accuracy = metrics["tps"] / (metrics["tps"] + metrics["fns"])
+    precision = smp.metrics.precision(metrics["tps"], metrics["fps"], metrics["fns"], metrics["tns"]).mean()
+    recall = smp.metrics.recall(metrics["tps"], metrics["fps"], metrics["fns"], metrics["tns"]).mean()
+    iou = smp.metrics.iou_score(metrics["tps"], metrics["fps"], metrics["fns"], metrics["tns"]).mean()
+
+    # Log metrics
+    wandb_logger.log_metrics({
+        "water_accuracy": water_accuracy,
+        "iou": iou,
+        "precision": precision,
+        "recall": recall,
+        "nsd_avg": metrics["nsd_avg"],
+    })
+
+    # Log images
+    for i, (logit, mask) in enumerate(zip(logits, masks)):
+        pred_image = (logit[0] > 0.5).cpu().numpy()
+        gt_image = mask[0].cpu().numpy()
+
+        wandb_logger.experiment.log({
+            f"sample_{i}_prediction": wandb.Image(pred_image, caption="Prediction"),
+            f"sample_{i}_ground_truth": wandb.Image(gt_image, caption="Ground Truth")
+        })
+
+#########################################################################
 
 load_dotenv()
 os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
@@ -64,6 +143,8 @@ def main(test=None, reproduce=None):
     print('---in main')
     start = time.time()
 
+    signal.signal(signal.SIGINT, handle_interrupt)
+
     torch.set_float32_matmul_precision('medium')  # TODO try high
     pl.seed_everything(42, workers=True, verbose = False)
 
@@ -87,7 +168,12 @@ def main(test=None, reproduce=None):
     inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
     in_channels = len(inputs)
     DEVRUN = 0
+    metric_threshold = 0.9
+    loss = "xentropy"
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    mode = "train"
+    if test:
+        mode = "test"
     persistent_workers = False
     if num_workers > 0:
         persistent_workers = True
@@ -148,14 +234,13 @@ def main(test=None, reproduce=None):
     device = next(model.parameters()).device
     print(f'---model location: {device}')
 
-    run_name = f'FR:{subset_fraction}_BS_{bs}CH{in_channels}_EP:{max_epoch}_{"crossentropy"}'
+    run_name = f'm:{mode}_FR:{subset_fraction}_BS:{bs}_CH{in_channels}_EP:{max_epoch}_{loss}'
     print(f'---RUN NAME= {run_name}')
 
     wandb_logger = WandbLogger(
         project="floodai_v2",
         name=run_name,
     )
-    wandb_logger.log_metrics({"subset fraction": subset_fraction})
 
     # Logging additional run metadata (e.g., dataset info)
     wandb_logger.experiment.config.update({ 
@@ -165,9 +250,8 @@ def main(test=None, reproduce=None):
         "devrun": DEVRUN,
         "offline_mode": WBOFFLINE
     })
-    print('---make ckpt dir')
+
     ckpt_dir = repo_path / "4results" / "checkpoints"
-    print('---ckpt dir')
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     print('---ckpt exists = ', ckpt_dir.exists())
           # DEFINE THE TRAINER
@@ -179,7 +263,6 @@ def main(test=None, reproduce=None):
         mode="min",                      # Save the model with the lowest validation loss
         save_top_k=1                   # Only keep the best model
     )
-    
     
     print('---trainer')
     trainer= pl.Trainer(
@@ -210,7 +293,7 @@ def main(test=None, reproduce=None):
         
     else:
         print('---test')
-        threshold = 0.9
+        
         # TODO encapuulate in 'get checkpoint name' function
         ckpt = ckpt_dir / f"{dataset_name} f{subset_fraction} ep{max_epoch:02d}.ckpt"
 
@@ -219,71 +302,18 @@ def main(test=None, reproduce=None):
         training_loop.eval()
         # trainer.test(model=training_loop, dataloaders=test_dl)
 
-        preds, gts = [], []
-        cnt = 0
-        tps, fps, fns, tns = [], [], [], []
-        nsds = []
-        for sample in tqdm(test_dl, total=len(test_dl)):
-            image, mask = sample
+        for batch in tqdm(test_dl, total=len(test_dl)):
+            images, masks = batch
             # im = Func.normalize(image.repeat(1,3,1,1)/255, mean=imagenet_stats[0], std=imagenet_stats[1])
 
             with torch.no_grad():
-                logits = training_loop(image.cuda())
-                logits = logits.cpu()
+                logits = training_loop(images.cuda())
+                logits = logits.cpu().softmax(1)[:,1:] # Softmax + select "flood" class
 
-            logits = logits.softmax(1)[:,1:]
+            metrics = calculate_metrics(logits, masks, metric_threshold)
 
-            tp, fp, fn, tn = smp.metrics.get_stats(logits, mask.long(), mode='binary', threshold=threshold)
-            tps.append(tp)
-            fps.append(fp)
-            fns.append(fn)
-            tns.append(tn)
-
-            for pd, gt in zip(logits, mask):
-                nsd_value = nsd(pd[0].cpu().numpy()>threshold, gt[0].cpu().numpy().astype(bool))
-                nsds.append(nsd_value)
-
-            preds.append(logits.detach().cpu().numpy())
-            gts.append(mask.detach().numpy())
-            for pd, gt in zip(logits, mask):
-                plt.subplot(131)
-                plt.title("Raw Logits\n(Sigmoid)")
-                plt.imshow(pd[0])
-                plt.subplot(132)
-                plt.title("Ground Truth\n Mask")
-                plt.imshow(pd[0] > 0.8)
-                plt.subplot(133)
-                plt.title(f"Thresholded\nPrediction\n{threshold}")
-                plt.imshow(gt[0].cpu())
-                plt.show()
-            
-        tps = torch.vstack(tps)
-        fps = torch.vstack(fps)
-        fns = torch.vstack(fns)
-        tns = torch.vstack(tns)
-            
-        water_accuracy = tps.sum() / (tps.sum() + fns.sum())
-        iou = smp.metrics.iou_score(tps ,fps, fns, tns).mean()
-        precision = smp.metrics.precision(tps ,fps, fns, tns).mean()
-        recall = smp.metrics.recall(tps ,fps, fns, tns).mean()
-        nsd_avg = np.mean(nsds)
-
-        num_pixels = len(test_dl.dataset)*256*256
-        tp_perc = tps.sum() / num_pixels * 100
-        tn_perc = tns.sum() / num_pixels * 100
-        fp_perc = fps.sum() / num_pixels * 100
-        fn_perc = fns.sum() / num_pixels * 100
-
-        print("water accuracy: {}".format(water_accuracy))
-        print("IoU: {}".format(iou))
-        print("Precision: {}".format(precision))
-        print("Recall: {}".format(recall))
-        print("TP percentage: {}".format(tp_perc))
-        print("TN percentage: {}".format(tn_perc))
-        print("FP percentage: {}".format(fp_perc))
-        print("FN percentage: {}".format(fn_perc))
-        print("NSD: {}".format(nsd_avg))
-
+            # Log metrics and visualizations to wandb
+            log_metrics_to_wandb(metrics, wandb_logger, logits, masks)
 
     # Ensure the model is on GPU
     model = model.to('cuda')
