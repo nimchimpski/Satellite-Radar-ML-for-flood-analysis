@@ -8,7 +8,7 @@ from pathlib import Path
 from tqdm import tqdm
 
 
-def tile_datacube(datacube_path, event, tile_size=256, stride=256):
+def tile_datacube(datacube_path, save_tiles_path, tile_size=256, stride=256):
     """
     Tile a DATASET (from which the dataarray is selected) and save to 'tiles' dir in same location.
     'ARGs:
@@ -63,18 +63,29 @@ def tile_datacube(datacube_path, event, tile_size=256, stride=256):
     #print('---making tiles dir  in event dir')
     #print('---event= ', event.name)
 
-    tile_path = Path(event, 'tiles') 
-    os.makedirs(tile_path, exist_ok=True)
+    # tile_path = Path(event, 'tiles') 
+    # os.makedirs(tile_path, exist_ok=True)
     # check new tiles dir exists
     datacube = rxr.open_rasterio(datacube_path)
+
+
     print('==============================')
     print('---opened datacube= ', datacube)
     print('==============================')
 
+    # check if datacube is a dataarray or dataset
+    if isinstance(datacube, xr.Dataset):
+        print('---datacube is a dataset')
+        # Select the 'valid' layer within 'data1'
+        valid_values = datacube['data1'].sel(layer='valid').values
+    else:
+        print('---datacube is a dataarray')
+        # datacube = datacube.to_array(dim='layer', name='data1')
+        valid_values = datacube.sel(layer='band').values
+
     print('---opened datacube crs = ', datacube.rio.crs)
 
-    # Select the 'valid' layer within 'data1'
-    valid_values = datacube['data1'].sel(layer='valid').values
+
 
     # Check unique values in the 'valid' layer
     unique_valid_values = np.unique(valid_values)
@@ -118,7 +129,7 @@ def tile_datacube(datacube_path, event, tile_size=256, stride=256):
             # print('--- 1 tile as dataarray before saving= ', tile)
 
             # CREAE A JSON FILE FOR EACH TILE
-            create_tile_json(tile, event, x_idx, y_idx, tile_path)   
+            # create_tile_json(tile, event, x_idx, y_idx, tile_path)   
 
             total_num_tiles += 1
 
@@ -143,17 +154,20 @@ def tile_datacube(datacube_path, event, tile_size=256, stride=256):
 
             # TODO mask pixel check here + add to json
 
-            name = f"tile_{event.name}_{x_idx}_{y_idx}.tif"
-            save_path = Path(tile_path, name)
+            name = f"tile_{datacube_path.name}_{x_idx}_{y_idx}.tif"
+            dest_path = save_tiles_path / datacube_path.name / name
+            if not dest_path.parent.exists():
+                os.makedirs(dest_path.parent, exist_ok=True)
+                print('---created dir= ', dest_path.parent)
             #print('---save_path= ', save_path)
 
-            if save_path.exists():
-                save_path.unlink()
+            if dest_path.exists():
+                dest_path.unlink()
 
             # Save the multi-band GeoTIFF with layer names in metadata
 
             #print(f"---Saving tile {name}")
-            tile.rio.to_raster(save_path, compress="deflate")
+            tile.rio.to_raster(dest_path, compress="deflate")
             num_saved += 1
 
     return total_num_tiles, num_saved, num_has_nans, num_novalid, num_nomask

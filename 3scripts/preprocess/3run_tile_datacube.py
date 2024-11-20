@@ -1,15 +1,15 @@
 from pathlib import Path
 import rioxarray as rxr
 import numpy as np
+from tqdm import tqdm
 
 
 def main():
     print('>>>>>in main')
     datacube_name = 'datacube_Vietnam_11alex.nc'
-    data_root = Path(r"Z:\1NEW_DATA\1data\2interim\TESTS\sample_s1s24326\Vietnam_11")
-    datacube = rxr.open_rasterio(Path(data_root,datacube_name ))
+    event = Path(r"Z:\1NEW_DATA\1data\2interim\TESTS\sample_s1s24326\Vietnam_11")
+    datacube = rxr.open_rasterio(Path(event,datacube_name ))
     print(f"################### tiling ###################")
-    event = Path(data_root)
 
     # DO THE TILING AND GET THE STATISTICS
     total_num_tiles, num_saved, num_has_nans, num_novalid, num_nomask = tile_datacube(datacube, event, tile_size=256, stride=256)

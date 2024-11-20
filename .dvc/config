@@ -1,4 +1,4 @@
 [core]
-    remote = network_drive_remote
-['remote "network_drive_remote"']
+    remote = y_remote
+['remote "y_remote"']
     url = Y:/1NEW_DATA.dvc/cache
