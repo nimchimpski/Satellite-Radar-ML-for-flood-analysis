@@ -40,6 +40,7 @@ from train_helpers import *
 from train_classes import FloodDataset, UnetModel, SimpleCNN, SurfaceLoss
 
 load_dotenv()
+os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
 
 #TODO add DICE , NSD, IOU, PRECISION, RECALL metrics
 
@@ -67,18 +68,17 @@ def main(test=None, reproduce=None):
     pl.seed_everything(42, workers=True, verbose = False)
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    base_path = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\1data\3final")
-    dataset_name = 'UNOSAT_FloodAI_Dataset_v2_norm_split'
+    repo_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2")
     dataset_name = 'ds_flaiv2_split'
-    dataset_path  = base_path / dataset_name
+    dataset_path  = repo_path / "1data" / "3final" / dataset_name
     project = "floodai_v2"
     # DATA PARAMS
     dataset_version = 'pixel threshold 0.5'
-    subset_fraction = 0.1
+    subset_fraction = 1
     bs = 16
-    max_epoch = 2
+    max_epoch = 10
     # DATALOADER PARAMS
-    num_workers = 4
+    num_workers = 0
     # WANDB PARAMS
     WBOFFLINE = True
     LOGSTEPS = 50 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
@@ -88,7 +88,9 @@ def main(test=None, reproduce=None):
     in_channels = len(inputs)
     DEVRUN = 0
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    persistent_workers = True #TODO set this to default true in the dl creation
+    persistent_workers = False
+    if num_workers > 0:
+        persistent_workers = True
 
     if not dataset_path.exists():
         print('---base path not exists')
@@ -105,7 +107,7 @@ def main(test=None, reproduce=None):
                         job_type="data-process", 
                         name='load-data', 
                         mode="online",
-                        dir=str(Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results")), 
+                        dir=repo_path / "4results", 
                         settings=wandb.Settings(program=__file__)
                         ) as run:
                 # ARTIFACT CREATION
@@ -146,7 +148,7 @@ def main(test=None, reproduce=None):
     device = next(model.parameters()).device
     print(f'---model location: {device}')
 
-    run_name = f'FR:{subset_fraction}_CH{in_channels}_E:{max_epoch}_{"crossentropy"}'
+    run_name = f'FR:{subset_fraction}_BS_{bs}CH{in_channels}_EP:{max_epoch}_{"crossentropy"}'
     print(f'---RUN NAME= {run_name}')
 
     wandb_logger = WandbLogger(
@@ -163,10 +165,14 @@ def main(test=None, reproduce=None):
         "devrun": DEVRUN,
         "offline_mode": WBOFFLINE
     })
-
+    print('---make ckpt dir')
+    ckpt_dir = repo_path / "4results" / "checkpoints"
+    print('---ckpt dir')
+    ckpt_dir.mkdir(parents=True, exist_ok=True)
+    print('---ckpt exists = ', ckpt_dir.exists())
           # DEFINE THE TRAINER
     checkpoint_callback = ModelCheckpoint(
-        dirpath=r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints",  # Save checkpoints locally in this directory
+        dirpath=ckpt_dir,  # Save checkpoints locally in this directory
         filename=f"{dataset_name} {subset_fraction} {max_epoch:02d}",  # Custom filename format
         # filename="best-checkpoint",  # Custom filename format
         monitor="val_loss",              # Monitor validation loss
@@ -205,8 +211,8 @@ def main(test=None, reproduce=None):
     else:
         print('---test')
         threshold = 0.9
-
-        ckpt = Path(r"\\cerndata100\AI_Files\Users\AI_flood_Service\1NEW_DATA\4results\checkpoints\ds_v2_selection_complete_0.1.ckpt")
+        # TODO encapuulate in 'get checkpoint name' function
+        ckpt = ckpt_dir / f"{dataset_name} f{subset_fraction} ep{max_epoch:02d}.ckpt"
 
         training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
         training_loop = training_loop.cuda()
@@ -239,14 +245,17 @@ def main(test=None, reproduce=None):
 
             preds.append(logits.detach().cpu().numpy())
             gts.append(mask.detach().numpy())
-            # for pd, gt in zip(logits, mask):
-            #     plt.subplot(131)
-            #     plt.imshow(pd[0])
-            #     plt.subplot(132)
-            #     plt.imshow(pd[0] > 0.8)
-            #     plt.subplot(133)
-            #     plt.imshow(gt[0].cpu())
-            #     plt.show()
+            for pd, gt in zip(logits, mask):
+                plt.subplot(131)
+                plt.title("Raw Logits\n(Sigmoid)")
+                plt.imshow(pd[0])
+                plt.subplot(132)
+                plt.title("Ground Truth\n Mask")
+                plt.imshow(pd[0] > 0.8)
+                plt.subplot(133)
+                plt.title(f"Thresholded\nPrediction\n{threshold}")
+                plt.imshow(gt[0].cpu())
+                plt.show()
             
         tps = torch.vstack(tps)
         fps = torch.vstack(fps)
@@ -279,7 +288,7 @@ def main(test=None, reproduce=None):
     # Ensure the model is on GPU
     model = model.to('cuda')
     end = time.time()
-    run_time = f'{(end - start)/60}:.2f'
+    run_time = f'{(end - start)/60:.2f}'
     if wandb.run:
         wandb_logger.experiment.config.update({ 
         "run_time": run_time,
