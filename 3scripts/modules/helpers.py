@@ -6,6 +6,15 @@ from pathlib import Path
 import json
 import time
 import numpy as np
+import sys
+
+def handle_interrupt(signal, frame):
+    '''
+    usage: signal.signal(signal.SIGINT, handle_interrupt)
+    '''
+    print("Interrupt received! Cleaning up...")
+    # Add any necessary cleanup code here (e.g., saving model checkpoints)
+    sys.exit(0)
 
 def check_novalues(path_to_tiff):
     with rasterio.open(path_to_tiff) as src:
