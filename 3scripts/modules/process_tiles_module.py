@@ -197,7 +197,7 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
 
         # FILTER FILES BY VALID PIXELS
         selected_tiles = []
-        for file in tqdm(files):
+        for file in tqdm(files, desc=f"Filtering files for {source_dir.name}", unit="file"):
             # print(f"---Checking {file.name}")
             rejected, missing_extent, missing_mask = has_enough_valid_pixels(file, analysis_threshold, mask_threshold)
             tot_missing_extent  += missing_extent
