@@ -1,6 +1,5 @@
 import rasterio
-from pyproj import Transformer
-from geopy.geocoders import Nominatim
+# from pyproj import Transformer
 import os
 from pathlib import Path
 import json

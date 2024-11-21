@@ -16,7 +16,7 @@ import wandb
 import numpy as np
 import random
 #--------------------------
-from train_classes import FloodDataset
+from .train_classes import FloodDataset
 #------------------------------------------
 
 
