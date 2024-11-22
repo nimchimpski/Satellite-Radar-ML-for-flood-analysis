@@ -1,8 +1,8 @@
 
 from tqdm import tqdm
 from pathlib import Path
-from ..modules.tiff_folders_to_datacubes import create_event_datacubes
-from ..modules.tile_datacube import tile_datacube
+from scripts.modules.tiff_folders_to_datacubes import create_event_datacubes
+from scripts.modules.tile_datacube import tile_datacube
 import rioxarray as rxr
 
 
@@ -17,17 +17,18 @@ def main():
     source = data_root / data_name
     save_cube_path = data_root / "dset_DLR_S1S2_bycountry_4326_datacubes"
 
+    # MAKE DATACUBES
     # create_event_datacubes(source, save_cube_path, VERSION="v1")
 
-    print(">>>datacubes saved in: ", save_cube_path)
+    # print(">>>datacubes saved in: ", save_cube_path)
 
+    save_tiles_path = data_root / "dset_DLR_S1S2_bycountry_4326_tiles"
+    save_tiles_path.mkdir(exist_ok=True, parents=True)
 
     cubes = list(save_cube_path.rglob("*.nc"))   
     for cube in tqdm(cubes, desc="### Datacubes tiled"):
         print("cube=", cube.name)
         print(f"################### tiling ###################")
-        save_tiles_path = data_root / "dset_DLR_S1S2_bycountry_4326_tiles"
-
         ##DO THE TILING AND GET THE STATISTICS
         total_num_tiles, num_saved, num_has_nans, num_novalid, num_nomask = tile_datacube(cube, save_tiles_path, tile_size=256, stride=256)
 
@@ -37,7 +38,7 @@ def main():
         print(f'>>>num with no mask : {num_nomask}')
         print(f'>>>num with no valid layer or pixels : {num_novalid}')
 
-        # # check layers in tile
+        # check layers in tile
         # tile_dir = Path(event, 'tiles') 
         # # open a tile
         # tile = rxr.open_rasterio(tile_dir / 'tile_Vietnam_11_0_0.tif')

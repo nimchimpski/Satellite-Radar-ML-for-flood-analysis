@@ -12,8 +12,8 @@ import shutil
 import re
 # MODULES
 # from check_int16_exceedance import check_int16_exceedance
-from ..modules.helpers import *
-from ..modules.organise_folders import collect_images
+from scripts.modules.helpers import *
+from scripts.modules.organise_folders import collect_images
 
 
 def fill_nodata_with_zero(input_file):

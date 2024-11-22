@@ -2,11 +2,11 @@ from pathlib import Path
 import sys
 import os
 from tqdm import tqdm
-from ..modules.process_tiles_module import select_tiles_and_split
+from scripts.modules.process_tiles_module import select_tiles_and_split
 import click
 import shutil
 import signal
-from ..modules.helpers import get_incremental_filename, make_train_folders, handle_interrupt
+from scripts.modules.helpers import get_incremental_filename, make_train_folders, handle_interrupt
 
 @click.command()
 @click.option("--testdata",is_flag=True)

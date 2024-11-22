@@ -10,9 +10,9 @@ from tqdm import tqdm
 
 def tile_datacube(datacube_path, save_tiles_path, tile_size=256, stride=256):
     """
-    Tile a DATASET (from which the dataarray is selected) and save to 'tiles' dir in same location.
+    Tile a DATASET (extracted from a dataarray is selected) and save to 'tiles' dir in same location.
     'ARGs:
-      event is a Path object: datacube is a xarray object
+    
     play with the stride and tile_size to get the right size of tiles.
     TODO add date etc to saved tile name?
     TODO add json file with metadata for each tile inv mask and anal_ext pixel count etc
@@ -41,12 +41,19 @@ def tile_datacube(datacube_path, save_tiles_path, tile_size=256, stride=256):
         Filters out tiles without analysis extent (in this case, using valid.tiff as analysis_extent).
         return False = ok
         '''
+        print("---Layer values: ", tile.coords['layer'].values)
+     
+        valid_data = tile.sel(layer='valid')
+        # print("---Valid layer content: ", valid_data)
+        print("---Valid layer stats: min=", valid_data.min().item(), ", max=", valid_data.max().item())
+
+
         # Ensure 'valid' layer exists
-        if 'valid' not in tile.coords['layer']:
+        if 'valid' not in tile.coords['layer'].values:
             print("---Warning: 'valid' layer not found in tile.")
             return True  # If 'valid' layer is missing, treat as no valid data
 
-        if 1 not in tile.sel(layer='valid').values:
+        if 1 not in tile.sel(layer='valid'):
             print("---Warning: No valid data found in tile.")
             #print("Unique values in 'valid' layer:", np.unique(datacube.sel(layer='valid').values))
             #print("Values in 'valid' layer for tile:", tile.sel(layer='valid').values)
@@ -59,20 +66,17 @@ def tile_datacube(datacube_path, save_tiles_path, tile_size=256, stride=256):
         return False = ok
         '''
         return 'mask' not in tile.coords['layer'].values
-    
-    #print('---making tiles dir  in event dir')
-    #print('---event= ', event.name)
 
-    # tile_path = Path(event, 'tiles') 
-    # os.makedirs(tile_path, exist_ok=True)
-    # check new tiles dir exists
-    datacube = rxr.open_rasterio(datacube_path)
+    # datacube = rxr.open_rasterio(datacube_path, variable='data1') # OPENS A DATAARRAY
 
+    # EXTRACT THE DATAARRAY WE WANT
+    datacube = xr.open_dataset(datacube_path) # OPENS A DATASET
+    datacube = datacube['data1']
 
     print('==============================')
     print('---opened datacube= ', datacube)
     print('==============================')
-
+    # CHECKING THE VALID LAYER
     # check if datacube is a dataarray or dataset
     if isinstance(datacube, xr.Dataset):
         print('---datacube is a dataset')
@@ -81,10 +85,11 @@ def tile_datacube(datacube_path, save_tiles_path, tile_size=256, stride=256):
     else:
         print('---datacube is a dataarray')
         # datacube = datacube.to_array(dim='layer', name='data1')
-        valid_values = datacube.sel(layer='band').values
+        valid_values = datacube.sel(layer='valid').values
 
-    print('---opened datacube crs = ', datacube.rio.crs)
-
+    print('---opened datacube crs1 = ', datacube.rio.crs)
+    datacube.rio.write_crs("EPSG:4326", inplace=True)
+    print('---opened datacube crs2 = ', datacube.rio.crs)
 
 
     # Check unique values in the 'valid' layer
@@ -101,34 +106,29 @@ def tile_datacube(datacube_path, save_tiles_path, tile_size=256, stride=256):
     num_nomask = 0
     num_saved = 0
     num_novalid = 0
-    for y_idx in tqdm(range(num_y_tiles),desc="### Processing tiles by row"):
 
-        for x_idx in range(num_x_tiles):
-
-            x_start = x_idx * stride
-            y_start = y_idx * stride
+    for y_start in tqdm(range(0, datacube.y.size, stride), desc="### Processing tiles by row"):
+        for x_start in range(0, datacube.x.size, stride):
+            # Ensure tiles start on the boundary and fit within the dataset
             x_end = min(x_start + tile_size, datacube.x.size)
             y_end = min(y_start + tile_size, datacube.y.size)
-            x_start = max(x_end - tile_size, 0)
-            y_start = max(y_end - tile_size, 0)
 
             # Select the subset of data for the current tile
             try:
-                tile = datacube['data1'].sel(y=slice(y_start, y_end), x=slice(x_start, x_end))
+                tile = datacube.isel(y=slice(y_start, y_end), x=slice(x_start, x_end))
             except KeyError:
-                print("---Error: 'data1' not found in datacube.")
+                print("---Error: tiling.")
                 return
 
             # Skip empty tiles
             if tile.sizes["x"] == 0 or tile.sizes["y"] == 0:
                 print("---Empty tile encountered; skipping.")
                 continue
-            # print('==============================')
-            # print('---TILE= ', tile)
-            # print('==============================')
-            # print('--- 1 tile as dataarray before saving= ', tile)
+            print('vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv')
+            print('---TILE= ', tile)
+            print('^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^')
 
-            # CREAE A JSON FILE FOR EACH TILE
+            #CREAE A JSON FILE FOR EACH TILE
             # create_tile_json(tile, event, x_idx, y_idx, tile_path)   
 
             total_num_tiles += 1
@@ -144,6 +144,7 @@ def tile_datacube(datacube_path, save_tiles_path, tile_size=256, stride=256):
 
             if has_no_valid(tile):
                 num_novalid += 1
+                print('---tile has no valid')
 
                 continue
 
@@ -154,22 +155,18 @@ def tile_datacube(datacube_path, save_tiles_path, tile_size=256, stride=256):
 
             # TODO mask pixel check here + add to json
 
-            name = f"tile_{datacube_path.name}_{x_idx}_{y_idx}.tif"
-            dest_path = save_tiles_path / datacube_path.name / name
+            tile_name = f"tile_{datacube_path.parent.name}_{x_start}_{y_start}.tif"
+
+            dest_path = save_tiles_path / datacube_path.name / tile_name
             if not dest_path.parent.exists():
                 os.makedirs(dest_path.parent, exist_ok=True)
                 print('---created dir= ', dest_path.parent)
-            #print('---save_path= ', save_path)
 
-            if dest_path.exists():
-                dest_path.unlink()
-
-            # Save the multi-band GeoTIFF with layer names in metadata
-
-            #print(f"---Saving tile {name}")
             tile.rio.to_raster(dest_path, compress="deflate")
             num_saved += 1
 
+
+        
     return total_num_tiles, num_saved, num_has_nans, num_novalid, num_nomask
 
 
