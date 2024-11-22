@@ -1,3 +1,5 @@
+import sys
+# print('---sys path= ',sys.path)
 import os
 import click
 from typing import Callable, BinaryIO, Match, Pattern, Tuple, Union, Optional, List
@@ -44,81 +46,8 @@ from scripts.modules.helpers import handle_interrupt
 from scripts.train_modules.train_functions import calculate_metrics, log_metrics_to_wandb
 from scripts.train_modules.segmentation_training_loop import Segmentation_training_loop
 
-
-# def handle_interrupt(signal, frame):
-#     print("Interrupt received! Cleaning up...")
-#     # Add any necessary cleanup code here (e.g., saving model checkpoints)
-#     sys.exit(0)
-
-# def calculate_metrics(logits, masks, metric_threshold):
-#     """
-#     Calculate TP, FP, FN, TN, and related metrics for a batch of predictions.
-#     """
-#     # Initialize accumulators
-#     tps, fps, fns, tns = [], [], [], []
-#     nsds = []
-
-#     for logit, mask in zip(logits, masks):
-#         # metric predictions
-#         tp, fp, fn, tn = smp.metrics.get_stats(
-#             logit, mask.long(), mode='binary', threshold=metric_threshold
-#         )
-#         tps.append(tp)
-#         fps.append(fp)
-#         fns.append(fn)
-#         tns.append(tn)
-
-#         # Compute Normalized Spatial Difference (NSD)
-#         nsd_value = nsd(
-#             logit[0].cpu().numpy() > metric_threshold,
-#             mask[0].cpu().numpy().astype(bool),
-#         )
-#         nsds.append(nsd_value)
-
-#     # Aggregate metrics
-#     tps = torch.vstack(tps).sum()
-#     fps = torch.vstack(fps).sum()
-#     fns = torch.vstack(fns).sum()
-#     tns = torch.vstack(tns).sum()
-
-#     return {
-#         "tps": tps,
-#         "fps": fps,
-#         "fns": fns,
-#         "tns": tns,
-#         "nsd_avg": np.mean(nsds)
-#     }
-
-# def log_metrics_to_wandb(metrics, wandb_logger, logits, masks):
-#     """
-#     Log metrics and visualizations to wandb.
-#     """
-#     # Extract values from metrics
-#     water_accuracy = metrics["tps"] / (metrics["tps"] + metrics["fns"])
-#     precision = smp.metrics.precision(metrics["tps"], metrics["fps"], metrics["fns"], metrics["tns"]).mean()
-#     recall = smp.metrics.recall(metrics["tps"], metrics["fps"], metrics["fns"], metrics["tns"]).mean()
-#     iou = smp.metrics.iou_score(metrics["tps"], metrics["fps"], metrics["fns"], metrics["tns"]).mean()
-
-#     # Log metrics
-#     wandb_logger.log_metrics({
-#         "water_accuracy": water_accuracy,
-#         "iou": iou,
-#         "precision": precision,
-#         "recall": recall,
-#         "nsd_avg": metrics["nsd_avg"],
-#     })
-
-#     # Log images
-#     for i, (logit, mask) in enumerate(zip(logits, masks)):
-#         pred_image = (logit[0] > 0.5).cpu().numpy()
-#         gt_image = mask[0].cpu().numpy()
-
-#         wandb_logger.experiment.log({
-#             f"sample_{i}_prediction": wandb.Image(pred_image, caption="Prediction"),
-#             f"sample_{i}_ground_truth": wandb.Image(gt_image, caption="Ground Truth")
-#         })
-
 #########################################################################
+
 
 load_dotenv()
 os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
@@ -133,7 +62,7 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
 
 def main(evaluate=None, reproduce=None):
     '''
-    CONDA ENVIRONMENT = 'floodenv3"
+    CONDA ENVIRONMENT = 'floodenv2"
 
     expects that the data is in tile_root, with 3 tile_lists for train, test and val
     ***NAVIGATE IN TERMINAL TO THE UNMAPPED ADRESS TO RUN THIS SCRIPT.***
@@ -159,7 +88,7 @@ def main(evaluate=None, reproduce=None):
     project = "floodai_v2"
     # DATA PARAMS
     dataset_version = 'pixel threshold 0.5'
-    subset_fraction = .1
+    subset_fraction = 1 # 1 = full dataset
     bs = 16
     max_epoch = 10
     # DATALOADER PARAMS
@@ -171,14 +100,16 @@ def main(evaluate=None, reproduce=None):
     PRETRAINED = True
     inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
     in_channels = len(inputs)
-    DEVRUN = 1
+    DEVRUN = 0
     metric_threshold = 0.9
     loss = "xentropy"
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     input = [i for i in dataset_path.iterdir()]
     assert len(input) == 1
-    dataset_name = [input][0].name
-    print(f'---dataset name: {dataset_name}')
+    dataset_name = input[0].name
+    dataset_path = dataset_path / dataset_name
+    print(f'---dataset path = {dataset_path}')
+
     mode = "train"
     if evaluate:
         mode = "test"
@@ -303,7 +234,9 @@ def main(evaluate=None, reproduce=None):
         print('---evaluate')
         
         # TODO encapuulate in 'get checkpoint name' function
-        ckpt = ckpt_dir / f"{dataset_name} f{subset_fraction} ep{max_epoch:02d}.ckpt"
+        # ckpt = ckpt_dir / f"{dataset_name} f{subset_fraction} ep{max_epoch:02d}.ckpt"
+
+        ckpt = ckpt_dir / f'{dataset_name} {subset_fraction} {max_epoch:02d}.ckpt'
 
         training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
         training_loop = training_loop.cuda()

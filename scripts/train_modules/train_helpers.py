@@ -109,3 +109,15 @@ def create_subset(file_list, event, stage,  subset_fraction , inputs, bs, num_wo
     subset = Subset(dataset, subset_indices)
     dl = DataLoader(subset, batch_size=bs, num_workers=num_workers, persistent_workers= persistent_workers,  shuffle = (stage == 'train'))
     return dl
+
+def reassemble_tiles(tiles, coords, image_shape, tile_size):
+    """
+    Combine predicted tiles into the original image shape.
+    """
+    h, w = image_shape
+    prediction_image = np.zeros((h, w), dtype=np.uint8)
+
+    for (x, y), tile in zip(coords, tiles):
+        prediction_image[y:y+tile_size, x:x+tile_size] = tile
+
+    return prediction_image
