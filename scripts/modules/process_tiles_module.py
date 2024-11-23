@@ -17,6 +17,8 @@ import time
 from rasterio.crs import CRS
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 import rioxarray as rxr
+
+
 # NORMALIZE
 def custom_normalize(array, lower_percentile=2, upper_percentile=98, clip_range=(0, 1)):
     """
@@ -298,7 +300,6 @@ def find_data_folders(base_path):
     # print('---data_folders = ', data_folders)
     return data_folders
 
-
 def create_stac_metadata(tile, tile_id, output_dir, parent_dataset_id="datacube_01"):
     """
     Create STAC JSON metadata for a tile.
@@ -372,7 +373,6 @@ def create_stac_metadata(tile, tile_id, output_dir, parent_dataset_id="datacube_
         json.dump(metadata, f, indent=4)
     print(f"STAC metadata saved to {json_path}")
 
-
 def location_to_crs(location, crs):
 
     
@@ -411,156 +411,222 @@ def location_to_crs(location, crs):
 
     return output_path  # Return the path of the reprojected file
 
-
-
-def tile_datacube(datacube_path, event, tile_size=256, stride=256):
+def tile_datacube(datacube_path, save_tiles_path, tile_size=256, stride=256):
     """
-    Tile a DATASET (from which the dataarray is selected) and save to 'tiles' dir in same location.
+    Tile a DATASET (extracted from a dataarray is selected) and save to 'tiles' dir in same location.
     'ARGs:
-      event is a Path object: datacube is a xarray object
+    
     play with the stride and tile_size to get the right size of tiles.
     TODO add date etc to saved tile name?
     TODO add json file with metadata for each tile inv mask and anal_ext pixel count etc
     """
     print('\n+++++++in tile_datacube fn ++++++++')
 
-    def contains_nans(tile):
-        """
-        Checks if specified bands contain NaN values.
-        Returns True if NaNs are found, along with the count of NaNs per band.
-        Returns False if no NaNs are found.
-        """
-        bands_to_check = ["dem", "slope", "vv", "vh", 'valid','mask']
-        contains_nan = False  # Flag to track if any NaNs are found
+    # datacube = rxr.open_rasterio(datacube_path, variable='data1') # OPENS A DATAARRAY
 
-        for band in bands_to_check:
-            # Calculate the number of NaNs in the current band
-            nan_count = np.isnan(tile.sel(layer=band)).sum().values
-            if nan_count > 0:
-                print(f"Tile contains {nan_count} NaN values in {band}")
-                contains_nan = True
-        return contains_nan  # True if any NaNs were found, False if none
+    # EXTRACT THE DATAARRAY WE WANT
+    datacube = xr.open_dataset(datacube_path) # OPENS A DATASET
+    datacube = datacube['data1']
 
-    def has_no_valid(tile):
-        '''
-        Filters out tiles without analysis extent (in this case, using valid.tiff as analysis_extent).
-        return False = ok
-        '''
-        # Ensure 'valid' layer exists
-        if 'valid' not in tile.coords['layer']:
-            print("---Warning: 'valid' layer not found in tile.")
-            return True  # If 'valid' layer is missing, treat as no valid data
-
-        if 1 not in tile.sel(layer='valid').values:
-            print("---Warning: No valid data found in tile.")
-            #print("Unique values in 'valid' layer:", np.unique(datacube.sel(layer='valid').values))
-            #print("Values in 'valid' layer for tile:", tile.sel(layer='valid').values)
-            return True  # If no valid data is found, treat as no valid data
-        return False  # If valid data is found, return False
-    
-    def has_no_mask(tile):
-        '''
-        Filters out tiles without mask.
-        return False = ok
-        '''
-        return 'mask' not in tile.coords['layer'].values
-    
-    #print('---making tiles dir  in event dir')
-    #print('---event= ', event.name)
-
-    tile_path = Path(event, 'tiles') 
-    os.makedirs(tile_path, exist_ok=True)
-    # check new tiles dir exists
-    datacube = rxr.open_rasterio(datacube_path)
     print('==============================')
     print('---opened datacube= ', datacube)
     print('==============================')
+    # check if datacube is a dataarray or dataset
+    if isinstance(datacube, xr.Dataset):
+        print('---datacube is a dataset')
+    else:
+        print('---datacube is a dataarray')
+        # datacube = datacube.to_array(dim='layer', name='data1')
 
-    print('---opened datacube crs = ', datacube.rio.crs)
+    # print("---Raw Datacube Check----------------")
+    # for layer in datacube.coords["layer"].values:
+    #     layer_data = datacube.sel(layer=layer)
+    #     print(f"Layer '{layer}': Min={layer_data.min().item()}, Max={layer_data.max().item()}")
+    #     print(f"Layer '{layer}': Unique values: {np.unique(layer_data.values)}")
 
-    # Select the 'valid' layer within 'data1'
-    valid_values = datacube['data1'].sel(layer='valid').values
+    # print('---opened datacube crs1 = ', datacube.rio.crs)
+    datacube.rio.write_crs("EPSG:4326", inplace=True)
+    # print('---opened datacube crs2 = ', datacube.rio.crs)
 
-    # Check unique values in the 'valid' layer
-    unique_valid_values = np.unique(valid_values)
-    print("---Unique values in 'valid' layer for 'data1':", unique_valid_values)
-
-    num_x_tiles = max(datacube.x.size + stride - 1, 0) // stride + 1
-    num_y_tiles = max(datacube.y.size + stride - 1, 0) // stride + 1
-    # num_x_tiles = 100
-    # num_y_tiles = 100
-
-    total_num_tiles = 0
-    num_has_nans = 0
-    num_nomask = 0
+    num_tiles = 0
     num_saved = 0
-    num_novalid = 0
-    for y_idx in tqdm(range(num_y_tiles),desc="### Processing tiles by row"):
+    num_has_nans = 0
+    num_novalid_layer = 0
+    num_novalid_pixels = 0
+    num_nomask = 0
+    num_nomask_pixels = 0
 
-        for x_idx in range(num_x_tiles):
-
-            x_start = x_idx * stride
-            y_start = y_idx * stride
+    for y_start in tqdm(range(0, datacube.y.size, stride), desc="### Processing tiles by row"):
+        for x_start in range(0, datacube.x.size, stride):
+            if num_saved == 1:
+                break
+            # Ensure tiles start on the boundary and fit within the dataset
             x_end = min(x_start + tile_size, datacube.x.size)
             y_end = min(y_start + tile_size, datacube.y.size)
-            x_start = max(x_end - tile_size, 0)
-            y_start = max(y_end - tile_size, 0)
 
             # Select the subset of data for the current tile
             try:
-                tile = datacube['data1'].sel(y=slice(y_start, y_end), x=slice(x_start, x_end))
+                tile = datacube.isel(y=slice(y_start, y_end), x=slice(x_start, x_end))
             except KeyError:
-                print("---Error: 'data1' not found in datacube.")
+                print("---Error: tiling.")
                 return
 
             # Skip empty tiles
             if tile.sizes["x"] == 0 or tile.sizes["y"] == 0:
                 print("---Empty tile encountered; skipping.")
                 continue
-            # print('==============================')
+            # print('vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv')
             # print('---TILE= ', tile)
-            # print('==============================')
-            # print('--- 1 tile as dataarray before saving= ', tile)
+            # print('^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^')
 
-            # CREAE A JSON FILE FOR EACH TILE
-            create_tile_json(tile, event, x_idx, y_idx, tile_path)   
+            #CREAE A JSON FILE FOR EACH TILE
+            # create_tile_json(tile, event, x_idx, y_idx, tile_path)   
 
-            total_num_tiles += 1
+            num_tiles += 1
+            # print('---*****num_tiles*************= ', num_tiles)
 
-            if total_num_tiles % 250 == 0:
-                print(f"Counted {total_num_tiles} tiles")
+            if  num_tiles % 250 == 0:
+                print(f"Counted { num_tiles} tiles")
 
-            # set the criterion here.
+            #   FILTER OUT TILES WITH NO DATA
+            # print('---filtering out bad tiles')
             if contains_nans(tile):
                 num_has_nans += 1
-                print('---tile has nans')
+                # print('---tile has nans')
                 continue
-
-            if has_no_valid(tile):
-                num_novalid += 1
-
+            if has_no_valid_layer(tile):
+                num_novalid_layer += 1
+                # print('---tile has no valid layer')
                 continue
-
+            if has_no_valid_pixels(tile):
+                num_novalid_pixels += 1
+                # print('---tile has no valid pixels')
+                continue
             if has_no_mask(tile):
                 num_nomask +=1
-                print('---tile has no mask')
+                # print('---tile has no mask')
+                continue
+            if has_no_mask_pixels(tile):
+                num_nomask_pixels +=1
+                # print('---tile has no mask pixels')
                 continue
 
-            # TODO mask pixel check here + add to json
+            print("---tile Stats Before Normalization--------------------")
+            for layer in tile.coords["layer"].values:
+                # print(f"{layer}: Min={tile.sel(layer=layer).min().item()}, Max={tile.sel(layer=layer).max().item()}")
+                # CALCULATE UNIQUE VALUES
+                vals = np.unique(tile.sel(layer=layer).values)
+                print(f"{layer}: num Unique values: {len(vals)}")
 
-            name = f"tile_{event.name}_{x_idx}_{y_idx}.tif"
-            save_path = Path(tile_path, name)
-            #print('---save_path= ', save_path)
+            # Normalize the tile
+            # print('---normalizing tile')
+            normalized_tile = normalize_inmemory_tile(tile)
 
-            if save_path.exists():
-                save_path.unlink()
+            print("---Tile layers: ", tile.coords["layer"].values)
 
-            # Save the multi-band GeoTIFF with layer names in metadata
+            # TODO  add to json
+            tile_name = f"tile_{datacube_path.parent.name}_{x_start}_{y_start}.tif"
+            # print('---tile_name= ', tile_name)
 
-            #print(f"---Saving tile {name}")
-            tile.rio.to_raster(save_path, compress="deflate")
+            dest_path = save_tiles_path / datacube_path.name / tile_name
+            if not dest_path.parent.exists():
+                os.makedirs(dest_path.parent, exist_ok=True)
+                print('---created dir= ', dest_path.parent)
+
+            # PRESAVE CHACK
+            print("---Tile before saving---")
+            for layer in normalized_tile.coords["layer"].values:
+                vals = np.unique(tile.sel(layer=layer).values)
+                print(f"{layer}: num Unique values: {len(vals)}")
+
+            normalized_tile = normalized_tile.astype('float32')
+            normalized_tile.rio.to_raster(dest_path, compress="deflate")
             num_saved += 1
 
-    return total_num_tiles, num_saved, num_has_nans, num_novalid, num_nomask
+            # OPEN SAVED TILE AND CHECK VALUES IN LAYERS
+            print('-----------------------------')
+            print('---TILE CHECK-------')
+
+            saved_tile = rxr.open_rasterio(dest_path)
+
+            print('---saved_tile= ', saved_tile)
+            for i in saved_tile.coords["band"].values:
+                # Select the second band (e.g., band 2)
+                # Find unique values
+                vals = np.unique(saved_tile.sel(band=i))
+                print(f"{i}: num Unique values: {len(vals)}")
+            print('-----------------------------')
+
+    # print('--- num_tiles= ', num_tiles)
+    # print('---num_saved= ', num_saved)  
+    # print('---num_has_nans= ', num_has_nans)
+    # print('---num_novalid_layer= ', num_novalid_layer)
+    # print('---num_novalid_pixels= ', num_novalid_pixels)
+    # print('---num_nomask= ', num_nomask)
+    # print('---num_nomask_pixels= ', num_nomask_pixels)
+    return num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask, num_nomask_pixels
+
+def normalize_inmemory_tile(tile):
+    """
+    Min-max normalize all layers in a tile except specified layers.
+    """
+    skip_layers =  ['mask', 'valid']
+    normalized_tile = tile.copy()
+
+    for layer in tile.coords['layer'].values:
+        if layer in skip_layers:
+            print(f"---Skipping normalization for layer '{layer}'")
+            continue
+        
+        layer_data = tile.sel(layer=layer)
+        layer_min, layer_max = layer_data.min().item(), layer_data.max().item()
+        if layer_min != layer_max:  # Avoid division by zero
+            normalized_tile.loc[dict(layer=layer)] = (layer_data - layer_min) / (layer_max - layer_min)
+
+            normalized_tile.loc[dict(layer=layer)] = (layer_data - layer_min) / (layer_max - layer_min)
+
+    return normalized_tile
 
 
+
+def contains_nans(tile):
+    """
+    Checks if specified bands contain NaN values.
+    Returns True if NaNs are found, along with the count of NaNs per band.
+    Returns False if no NaNs are found.
+    """
+    bands_to_check = ["dem", "slope", "vv", "vh", 'valid','mask']
+    contains_nan = False  # Flag to track if any NaNs are found
+    for band in bands_to_check:
+        # Calculate the number of NaNs in the current band
+        nan_count = np.isnan(tile.sel(layer=band)).sum().values
+        if nan_count > 0:
+            # print(f"Tile contains {nan_count} NaN values in {band}")
+            contains_nan = True
+    return contains_nan  # True if any NaNs were found, False if none
+
+def has_no_valid_layer(tile):
+    '''
+    Filters out tiles without analysis extent (in this case, using valid.tiff as analysis_extent).
+    return False = ok
+    '''
+    # Ensure 'valid' layer exists
+    # print("---Warning: 'valid' layer not found in tile.")
+    return 'valid' not in tile.coords['layer'].values  # If valid data is found, return False
+    
+def has_no_valid_pixels(tile, ):
+
+    #print("Values in 'valid' layer for tile:", tile.sel(layer='valid').values)
+    return 1 not in tile.sel(layer='valid').values  # If valid data is found, return False
+
+def has_no_mask(tile):
+    '''
+    Filters out tiles without mask.
+    return False = ok
+    '''
+    return 'mask' not in tile.coords['layer'].values
+
+def has_no_mask_pixels(tile, ):
+    #print("Values in 'mask' layer for tile:", tile.sel(layer='mask').values)
+    return 1 not in tile.sel(layer='mask').values  # If valid data is found, return False
+    
