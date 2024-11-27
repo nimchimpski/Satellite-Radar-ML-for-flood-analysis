@@ -168,101 +168,6 @@ def match_resolutions_with_check(event):
                 reprojected_layer.rio.to_raster(file)
                 #print(f'--- Resampled raster saved to: {file.name}')
 
-def make_dataset(data_root, event, datas):
-    '''
-    MAKES AN XARRAY 'DATASET' (!!!)
-    THIS MEANS 1ST DIMENSION IS A VARIABLE NAME. DEFAULT = '--xarray_dataarray_variable--'
-    THIS MEANS FURTHER VARIABLES CAN BE ADDED - EG TIME SERIES DATA FOR SAME AREA
-    'Event' is a single folder conatining flood event data    
-    'satck' is an Xarray DataArray 
-    '''   
-    print(f"\n++++ in make_dataset fn")      
-    layers = []
-    layer_names = []
-    # CREATE THE DATACUBE
-    # TODO SKIP XML's etc to avoid error
-    for tif_file, band_name in tqdm(datas.items(), desc='---making lists of tiffs and corresponding band names'):
-        try:
-            #print(f"\n---Loading {tif_file}-------------------------------------------")
-            # 'da'  IS A DATA ARRAY
-
-            # CREATE A DATA ARRAY FROM THE TIF FILE
-            tiffda = rxr.open_rasterio(Path(data_root, event, tif_file))
-            # Check if da is created successfully
-            if tiffda is None:
-                print(f"---Error: da for {tif_file} is None")
-
-        except Exception as e:
-            print(f"---Error loading {tif_file}: {e}")
-            continue  # Skip this file if there is an issue loading
-        # Handle multi-band image data (e.g., VV, VH bands)
-    
-        try:
-            #print(f"---Processing single-band layer: {band_name}")
-            layers.append(tiffda)
-            layer_names.append(band_name)
-            #print(f"---Successfully processed layer with band name: {band_name}")
-        except Exception as e:
-            print(f"---Error creating layers for {tif_file}: {e}")
-            continue
-    if len(layers) != 6:
-        print('---length layers= {len(layers)} not 6')         
-    print(f'---layer_names created= {layer_names}')
-
-    if layers:
-        # REPROJECT ALL LAYERS TO MATCH THE FIRST LAYER
-        reprojected_layers = []
-        for layer in tqdm(layers, desc='---reprojecting'):
-            reprojected_layer = layer.rio.reproject_match(layers[0])
-            reprojected_layers.append(reprojected_layer)
-
-        # CREATE NEW DATASET + CONCATENATE THE LAYERS ALONG A NEW DIMENSION CALLED 'layer'
-        da = xr.concat(layers, dim='layer').astype('float32')
-
-        print('---da is a dataset=',isinstance(da, xr.Dataset))
-        print('---da layers =',da['layer'])
-
-        # Assign the layer names (e.g., ['vv', 'vh', 'dem', 'slope']) to the 'layer' dimension
-        da = da.assign_coords(layer=layer_names)
-        print('---da layers after assigning=',da['layer'])
-
-
-        print('---layer names finished assigning - did i fuck up?')
-
-        # MAKE da INTO A DATASET !!!!!!!!!!!!
-        ds = da.to_dataset(name="data1")  # Replace with a suitable name
-        print('---ds made')
-        print('---ds is a dataset???=',isinstance(ds, xr.Dataset))
-
-        # Rechunk the final datacube for optimal performance
-        ds = ds.chunk({'x': 1024, 'y': 1024, 'layer': 1})
-        print('---Rechunked datacube')
-
-        # Check if layers[0] has a CRS
-        if layers[0].rio.crs is None:
-            print("---Warning: layers[0] does not have a CRS. Assigning a default CRS.")
-            # Optionally assign a default CRS, like EPSG:4326
-            layers[0].rio.write_crs("EPSG:4326", inplace=True)
-        else:
-            print(f"---CRS for layers[0]: {layers[0].rio.crs}")
-
-        ds.rio.write_crs(layers[0].rio.crs, inplace=True)
-
-
-        # If the 'band' dimension is unnecessary (e.g., single-band layers), squeeze it out
-        if 'band' in ds.dims and ds.sizes['band'] == 1:
-            ds = ds.squeeze('band')
-            #print('---Squeezed out single-band dimension')
-
-        print(f'---ds {event.name} made ok')
-        print('---ds is a dataset=',isinstance(ds, xr.Dataset))
-        print('++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++\n')
-        return ds
-    else:
-        print('---No layers found')
-        return None 
-
-
 def make_datas(event):
     '''
     iterates through the files in the event folder and returns a dict of the datas
@@ -297,34 +202,6 @@ def make_datas(event):
     
     print("\n+++ Datacube Health Check Completed +++")
 
-    
-def make_datas_tsx(extracted):
-    '''
-    iterates through the files in the event folder and returns a dict of the datas
-    '''
-    datas = {}
-    for file in extracted.iterdir():
-        # print(f'---file {file}')
-        if 'image.tif' in file.name:
-            datas[file.name] = 'hh'
-            print(f'---+image file found {file}')
-        elif 'dem.tif' in file.name:
-            datas[file.name] = 'dem'
-            print(f'---+dem file found {file}')
-        elif 'slope_norm.tif' in file.name:
-            datas[file.name] = 'slope'   
-            print(f'---+slope file found {file}')
-        elif 'MASK.tif' in file.name:
-            datas[file.name] = 'mask'
-            print(f'---+mask file found {file}')
-
-    #print('---datas ',datas)
-    return datas
-
-
-
-    
-    print("\n+++ Datacube Health Check Completed +++")
 
 def create_event_datacubes(data_root, save_path, VERSION="v1"):
     '''
@@ -441,6 +318,157 @@ def create_event_datacubes(data_root, save_path, VERSION="v1"):
 
     print('>>>finished all events\n')
 
+
+
+# TERRASARX FUNCTIONS
+def reproject_layers_to_match_TSX(src_path, dst_path):
+    print('+++in reproject_layers_to_match_TSX fn')
+
+    with rasterio.open(src_path) as src:
+        print(f'---src_path= {src_path.name}')
+        print(f'---dst_path= {dst_path.name}')
+        print(f'---src_path crs = {src.crs}')
+        
+        transform, width, height = calculate_default_transform(src.crs, 'EPSG:4326', src.width, src.height, *src.bounds)
+        kwargs = src.meta.copy()
+        kwargs.update({'crs': 'EPSG:4326', 'transform': transform, 'width': width, 'height': height})
+        with rasterio.open(dst_path, 'w', **kwargs) as dst:
+            for i in range(1, src.count + 1):
+                reproject(
+                    source=rasterio.band(src, i),
+                    destination=rasterio.band(dst, i),
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=transform,
+                    dst_crs='EPSG:4326',
+                    resampling=Resampling.nearest)
+            print(f'---reprojected {src_path.name} to {dst_path.name} with {dst.crs}')
+                
+
+def make_dataset_TSX(folder, event, datas):
+    '''
+    MAKES AN XARRAY 'DATASET' (!!!)
+    THIS MEANS 1ST DIMENSION IS A VARIABLE NAME. DEFAULT = '--xarray_dataarray_variable--'
+    THIS MEANS FURTHER VARIABLES CAN BE ADDED - EG TIME SERIES DATA FOR SAME AREA
+    'Event' is a single folder conatining flood event data    
+    'satck' is an Xarray DataArray 
+    '''   
+    print(f"\n++++ in make_dataset fn")      
+    layers = []
+    layer_names = []
+
+    for tif_file, band_name in tqdm(datas.items(), desc='---making lists of tiffs and corresponding band names'):
+        try:
+
+            # CREATE A DATA ARRAY FROM THE EACH FILE
+            filepath = folder / tif_file
+            # print(f'---filepath= {filepath.name}')
+            tiffda = rxr.open_rasterio(Path(filepath))
+            # Check if da is created successfully
+            if tiffda is None:
+                print(f"---Error: da for {tif_file} is None")
+
+        except Exception as e:
+            print(f"---Error loading {tif_file}: {e}")
+            continue  # Skip this file if there is an issue loading
+        # Handle multi-band image data (e.g., VV, VH bands)
+    
+        try:
+            #print(f"---Processing single-band layer: {band_name}")
+            layers.append(tiffda)
+            layer_names.append(band_name)
+            #print(f"---Successfully processed layer with band name: {band_name}")
+        except Exception as e:
+            print(f"---Error creating layers for {tif_file}: {e}")
+            continue
+    if len(layers) != 6:
+        print(f'---length layers list= {len(layers)}')         
+    print(f'---layer_names list created= {layer_names}')
+
+    if layers:
+        # REPROJECT ALL LAYERS TO MATCH THE FIRST LAYER
+        # reprojected_layers = []
+        # for layer in tqdm(layers, desc='---reprojecting'):
+        #     reprojected_layer = layer.rio.reproject_match(layers[0])
+        #     reprojected_layers.append(reprojected_layer)
+
+        # CREATE NEW DATASET + CONCATENATE THE LAYERS ALONG A NEW DIMENSION CALLED 'layer'
+        da = xr.concat(layers, dim='layer').astype('float32')
+
+        print('---da is a dataset=',isinstance(da, xr.Dataset))
+        print('---da =',da)
+
+        # Assign the layer names (e.g., ['vv', 'vh', 'dem', 'slope']) to the 'layer' dimension
+        da = da.assign_coords(layer=layer_names)
+        print('---da layers after assigning=',da['layer'])
+
+
+        print('---layer names finished assigning - did i fuck up?')
+
+        # MAKE da INTO A DATASET !!!!!!!!!!!!
+        ds = da.to_dataset(name="data1")  # Replace with a suitable name
+        print('---ds made')
+        print('---ds is a dataset???=',isinstance(ds, xr.Dataset))
+
+        # Rechunk the final datacube for optimal performance
+        ds = ds.chunk({'x': 1024, 'y': 1024, 'layer': 1})
+        print('---Rechunked datacube')
+
+        # Check if layers[0] has a CRS
+        if layers[0].rio.crs is None:
+            print("---Warning: layers[0] does not have a CRS. Assigning a default CRS.")
+            # Optionally assign a default CRS, like EPSG:4326
+            layers[0].rio.write_crs("EPSG:4326", inplace=True)
+        else:
+            print(f"---CRS for layers[0]: {layers[0].rio.crs}")
+
+        ds.rio.write_crs(layers[0].rio.crs, inplace=True)
+
+
+        # If the 'band' dimension is unnecessary (e.g., single-band layers), squeeze it out
+        if 'band' in ds.dims and ds.sizes['band'] == 1:
+            ds = ds.squeeze('band')
+            #print('---Squeezed out single-band dimension')
+
+        print(f'---ds {event.name} made ok')
+        print('---ds is a dataset=',isinstance(ds, xr.Dataset))
+        print('---ds= ',ds)
+        print('++++++++++++++++++++++++++END MAKE DATASET TSX ++++++++++++++++++++++++++++++++++\n')
+        return ds
+    else:
+        print('---No layers found')
+        return None 
+
+
+    
+def make_datas_TSX(extracted):
+    '''
+    iterates through the files in the event folder and returns a dict of the datas
+    '''
+    datas = {}
+    for file in extracted.iterdir():
+        # print(f'---file {file}')
+        if '4326_image.tif' in file.name:
+            datas[file.name] = 'hh'
+            # print(f'---+image file found {file}')
+        elif '4326_dem.tif' in file.name:
+            datas[file.name] = 'dem'
+            # print(f'---+dem file found {file}')
+        elif '4326_slope.tif' in file.name:
+            datas[file.name] = 'slope'   
+            # print(f'---+slope file found {file}')
+        elif '4326_mask.tif' in file.name:
+            datas[file.name] = 'mask'
+            # print(f'---+mask file found {file}')
+
+    #print('---datas ',datas)
+    return datas
+
+
+
+    
+    print("\n+++ Datacube Health Check Completed +++")
+
 def create_event_datacubes_TSX(data_root, VERSION="v1"):
     '''
     data_root: Path directory containing the event folders (1deep).
@@ -457,23 +485,20 @@ def create_event_datacubes_TSX(data_root, VERSION="v1"):
         if event.suffix == '.nc' or event.name in ['tiles'] or not event.is_dir():
             # print(f"Skipping file: {event.name}")
             continue
-        if event.is_dir() and any(event.iterdir()):
 
+        if event.is_dir() and any(event.iterdir()):
             # FIND THE EXTRACTED FOLDER
             print(f"***************** {event.name}   PREPARING TIFS *****************: ")
+            folder = event / 'extracted'
             # Get the datas info from the folder
-            datas = make_datas_tsx(event / 'extracted')
+            datas = make_datas_TSX(folder)
             print('---datas= ',datas)
     
             print(f'##################### MAKING SINGLE DATASET {event.name} ##############################')
-    
-            # Create the ds
-            ds = make_dataset(data_root, event, datas)
-            print('---ds is a dataset=',isinstance(ds, xr.Dataset))
-    
-            # check the ds for excess int16 values 
-            print('-----  CREATED= ',event.name )
 
+            # Create the ds
+            ds = make_dataset_TSX(folder, event, datas)
+            print('---ds is a dataset=',isinstance(ds, xr.Dataset))
             
             # Iterate over each variable in the dataset
         for var_name, dataarray in ds.data_vars.items():
@@ -487,7 +512,6 @@ def create_event_datacubes_TSX(data_root, VERSION="v1"):
         if not ds.rio.crs:
             ds.rio.write_crs("EPSG:4326", inplace=True)  # Replace with desired CRS
         print('---ds crs = ', ds.rio.crs)
-        return
         # Step 2: Add spatial_ref coordinate
         crs = ds.rio.crs
         ds['spatial_ref'] = xr.DataArray(
@@ -519,8 +543,7 @@ def create_event_datacubes_TSX(data_root, VERSION="v1"):
         print(f"---Saving event datacube : {f'datacube_{event.name}_{VERSION}.nc'}")
 
 
-        output_path = save_path / event.name / f"datacube_{event.name}{VERSION}.nc"
-        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path = folder / f"datacube_{event.name}{VERSION}.nc"
         if output_path.exists():
             print(f"---Overwriting existing file: {output_path}")
         else:
@@ -545,120 +568,6 @@ def create_event_datacubes_TSX(data_root, VERSION="v1"):
 
 
     print('>>>finished all events\n')
-
-
-# WORK ON DATAARRAYS
-    
-def check_int16_range(dataarray):
-    # TAKES A DATAARRAY NOT A DATASET
-    #print("+++in small int16 range check fn+++")
-    int16_min, int16_max = np.iinfo(np.int16).min, np.iinfo(np.int16).max
-    if (dataarray < int16_min).any() or (dataarray > int16_max).any():
-        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
-        # Calculate actual min and max values in the array
-        actual_min = dataarray.min().item()
-        actual_max = dataarray.max().item()
-        
-        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
-        print(f"---Minimum value found: {actual_min}")
-        print(f"---Maximum value found: {actual_max}")
-        return False
-    
-    # else:
-    #     print(f"---no exceedances int16.")
-
-    # Optional: Replace NaN and Inf values if necessary
-    # dataarray = dataarray.fillna(0)  # Replace NaN with 0 or another appropriate value
-    # dataarray = dataarray.where(~np.isinf(dataarray), 0)  # Replace Inf with 0 or appropriate value
-
-
-
-
-
-
-# probably not needed
-def process_terraSARx_data(data_root):
-    '''
-    makes a 'datacube_files' folder in each event folder and copies the necessary files to it
-    '''
-    print('+++in process_terraSARx_data fn')
-    #image = list(Path('.').rglob("IMAGE_HH_*"))
-    #print('---image= ',image)
-
-    target_filename = "DEM_MAP.tif"
-
-    for event in data_root.iterdir():
-        if event.is_dir() and any(event.iterdir()):
-            print(f"******* {event.name}   PREPARING TIFS ********")
-            datacube_files_path = event / 'datacube_files'
-            if datacube_files_path.exists() :
-                shutil.rmtree(datacube_files_path)  # Delete the directory and all its contents
-
-    
-            datacube_files_path.mkdir(parents=True, exist_ok=True)
-            pattern = re.compile(f'^{re.escape(target_filename)}$')
-
-            # STEP THROUGH FILENAMES WE WANT 
-            filename_parts = ['DEM_MAP', 'IMAGE_HH']
-            for i in filename_parts:
-                # print(f'---looking for files starting with {i}')
-                pattern = re.compile(f'^{re.escape(i)}')  
-
-                # COPY THEM TO THE EVENT DATA CUBE FOLDER
-                for file_path in Path(event).rglob("*"):
-                    if file_path.suffixes == ['.tif'] and pattern.match(file_path.name):
-                    # if file_path.suffix != '.aux.xml'and file_path.name == target_filename:
-                    # if True:    
-                        target = datacube_files_path / file_path.name
-                        # if Path(target).exists():
-                        #     print('---file already exists') 
-                        #     continue
-                        shutil.copy(file_path, target)
-            
-
-def match_dem_to_sar(sar_image, dem, output_path):
-    """
-    Matches the DEM to the SAR image grid by enforcing exact alignment of transform, CRS, and dimensions.
-    """
-    print('+++in match_dem_to_sar fn')
-    
-
-    output_path.unlink(missing_ok=True)  # Deletes the file if it exists
-    # Open the SAR image to extract its grid and CRS
-    with rasterio.open(sar_image) as sar:
-        sar_transform = sar.transform
-        sar_crs = sar.crs
-        print(f"---SAR CRS: {sar_crs}")
-        sar_width = sar.width
-        sar_height = sar.height
-
-    # Open the DEM to reproject and align it
-    with rasterio.open(dem) as dem_src:
-        print(f"---DEM CRS: {dem_src.crs}")
-        dem_meta = dem_src.meta.copy()
-        # Update DEM metadata to match SAR grid
-        dem_meta.update({
-            'crs': sar_crs,
-            'transform': sar_transform,
-            'width': sar_width,
-            'height': sar_height
-        })
-        with rasterio.open(output_path, 'w', **dem_meta) as dst:
-            print(f'---output_path= {output_path.name}')
-            # Reproject each band of the DEM
-            for i in range(1, dem_src.count + 1):
-                reproject(
-                    source=rasterio.band(dem_src, i),
-                    destination=rasterio.band(dst, i),
-                    src_transform=dem_src.transform,
-                    src_crs=dem_src.crs,
-                    dst_transform=sar_transform,
-                    dst_crs=sar_crs,
-                    resampling=Resampling.nearest  # Nearest neighbor for discrete data like DEM
-                )
-
-    print(f"Reprojected and aligned DEM saved to: {output_path}")
-    return output_path
 
 
 def calculate_and_normalize_slope(input_dem, mask_code):
@@ -707,3 +616,122 @@ def calculate_and_normalize_slope(input_dem, mask_code):
     print(f"Normalized slope raster saved to: {normalized_slope}")
     return normalized_slope
 
+
+def match_dem_to_sar(sar_image, dem, output_path):
+    """
+    Matches the DEM to the SAR image grid by enforcing exact alignment of transform, CRS, and dimensions.
+    """
+    print('+++in match_dem_to_sar fn')
+    
+
+    output_path.unlink(missing_ok=True)  # Deletes the file if it exists
+    # Open the SAR image to extract its grid and CRS
+    with rasterio.open(sar_image) as sar:
+        sar_transform = sar.transform
+        sar_crs = sar.crs
+        print(f"---SAR CRS: {sar_crs}")
+        sar_width = sar.width
+        sar_height = sar.height
+
+    # Open the DEM to reproject and align it
+    with rasterio.open(dem) as dem_src:
+        print(f"---DEM CRS: {dem_src.crs}")
+        dem_meta = dem_src.meta.copy()
+        # Update DEM metadata to match SAR grid
+        dem_meta.update({
+            'crs': sar_crs,
+            'transform': sar_transform,
+            'width': sar_width,
+            'height': sar_height
+        })
+        with rasterio.open(output_path, 'w', **dem_meta) as dst:
+            print(f'---output_path= {output_path.name}')
+            # Reproject each band of the DEM
+            for i in range(1, dem_src.count + 1):
+                reproject(
+                    source=rasterio.band(dem_src, i),
+                    destination=rasterio.band(dst, i),
+                    src_transform=dem_src.transform,
+                    src_crs=dem_src.crs,
+                    dst_transform=sar_transform,
+                    dst_crs=sar_crs,
+                    resampling=Resampling.nearest  # Nearest neighbor for discrete data like DEM
+                )
+
+    print(f"Reprojected and aligned DEM saved to: {output_path}")
+
+
+# WORK ON DATAARRAYS
+    
+def check_int16_range(dataarray):
+    # TAKES A DATAARRAY NOT A DATASET
+    #print("+++in small int16 range check fn+++")
+    int16_min, int16_max = np.iinfo(np.int16).min, np.iinfo(np.int16).max
+    if (dataarray < int16_min).any() or (dataarray > int16_max).any():
+        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
+        # Calculate actual min and max values in the array
+        actual_min = dataarray.min().item()
+        actual_max = dataarray.max().item()
+        
+        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
+        print(f"---Minimum value found: {actual_min}")
+        print(f"---Maximum value found: {actual_max}")
+        return False
+    
+    # else:
+    #     print(f"---no exceedances int16.")
+
+    # Optional: Replace NaN and Inf values if necessary
+    # dataarray = dataarray.fillna(0)  # Replace NaN with 0 or another appropriate value
+    # dataarray = dataarray.where(~np.isinf(dataarray), 0)  # Replace Inf with 0 or appropriate value
+
+def nan_check(nparray):
+    if np.isnan(nparray).any():
+        print("----Warning: NaN values found in the data.")
+        return False
+    else:
+        print("----NO NANS FOUND")
+        return True
+
+
+
+
+# probably not needed
+def process_terraSARx_data(data_root):
+    '''
+    makes a 'datacube_files' folder in each event folder and copies the necessary files to it
+    '''
+    print('+++in process_terraSARx_data fn')
+    #image = list(Path('.').rglob("IMAGE_HH_*"))
+    #print('---image= ',image)
+
+    target_filename = "DEM_MAP.tif"
+
+    for event in data_root.iterdir():
+        if event.is_dir() and any(event.iterdir()):
+            print(f"******* {event.name}   PREPARING TIFS ********")
+            datacube_files_path = event / 'datacube_files'
+            if datacube_files_path.exists() :
+                shutil.rmtree(datacube_files_path)  # Delete the directory and all its contents
+
+    
+            datacube_files_path.mkdir(parents=True, exist_ok=True)
+            pattern = re.compile(f'^{re.escape(target_filename)}$')
+
+            # STEP THROUGH FILENAMES WE WANT 
+            filename_parts = ['DEM_MAP', 'IMAGE_HH']
+            for i in filename_parts:
+                # print(f'---looking for files starting with {i}')
+                pattern = re.compile(f'^{re.escape(i)}')  
+
+                # COPY THEM TO THE EVENT DATA CUBE FOLDER
+                for file_path in Path(event).rglob("*"):
+                    if file_path.suffixes == ['.tif'] and pattern.match(file_path.name):
+                    # if file_path.suffix != '.aux.xml'and file_path.name == target_filename:
+                    # if True:    
+                        target = datacube_files_path / file_path.name
+                        # if Path(target).exists():
+                        #     print('---file already exists') 
+                        #     continue
+                        shutil.copy(file_path, target)
+            
