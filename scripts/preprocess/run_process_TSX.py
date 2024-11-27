@@ -14,6 +14,7 @@ data_root = Path(r'C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_process
 if True:
     # MOVE THE MASK, IMAGE, AND DEM TO THE EXTRACTED FOLDER
     for event in data_root.iterdir():
+        
         print(f'################### EVENT={event.name}  ###################')
         extract_folder = event / 'extracted'
         if extract_folder.exists():
@@ -43,6 +44,50 @@ if True:
         print(f'>>>dem={dem.name}')
         if not (extract_folder / dem.name).exists():
             shutil.copy(dem, extract_folder)
+
+        # GET REFERENCE DATA 
+        with rasterio.open(image) as ref:
+            ref_crs = ref.crs
+            ref_transform = ref.transform
+            ref_width = ref.width
+            ref_height = ref.height
+
+        # CHECK THE MASK
+        final_mask = extract_folder / f'{mask_code}_mask_clean.tif'
+        # CHECK THE MASK AND REMOVE THE 3'S
+        with rasterio.open(mask) as src:
+            data = src.read(1)
+            print(f">>> Original mask stats: min={data.min()}, max={data.max()}, unique={np.unique(data)}")
+        #     transform, width, height = calculate_default_transform(
+        #     src.crs, ref_crs, src.width, src.height, *src.bounds
+        # )
+            meta = src.meta.copy()
+            meta.update({
+            'crs': ref_crs,
+            'transform': ref_transform,
+            'width': ref_width,
+            'height': ref_height,
+            'dtype': "uint8"
+            })
+
+            # Replace 3s with 0s
+            data[data == 3] = 0
+            print(f"--- Modified mask unique values: {np.unique(data)}")
+
+            # Write the cleaned mask
+            with rasterio.open(final_mask, "w", **meta) as dst:
+                reproject(
+                    source=rasterio.band(src, 1),
+                    destination=rasterio.band(dst, 1),
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=ref_transform,
+                    dst_crs=ref_crs,
+                    resampling=Resampling.nearest  # Use nearest neighbor for categorical data
+            )
+                dst.write(data.astype("uint8"), 1)  # Ensure uint8 format
+
+        print(f"Cleaned and aligned mask saved to: {final_mask}")
 
         # MATCH THE DEM TO THE SAR IMAGE
         final_dem = extract_folder / f'{mask_code}_dem.tif'
@@ -76,33 +121,16 @@ if True:
             nonans = nan_check(data)
             print(f'>>>nonans?={nonans}')
 
-        output_path = extract_folder / f'{mask_code}_mask_clean.tif'
-        # CHECK THE MASK AND REMOVE THE 3'S
-        with rasterio.open(mask) as src:
-            # Read the mask data and metadata
+
+
+        # CHECK THE NEW MASK
+        with rasterio.open(final_mask) as src:
             data = src.read(1)
-            meta = src.meta.copy()
-            print(f">>> Original mask stats: min={data.min()}, max={data.max()}, unique={np.unique(data)}")
+            unique_values = np.unique(data)
+            print(f"Unique values in mask: {unique_values}")
+            nonans = nan_check(data)
+            print(f'>>>nonans?={nonans}')
 
-            # Replace 3s with 0s
-            data[data == 3] = 0
-            print(f"--- Modified mask unique values: {np.unique(data)}")
-
-            # Check and preserve transform, CRS, and metadata
-            meta.update(dtype="uint8")  # Set data type to Byte
-
-            # Write the cleaned mask
-            with rasterio.open(output_path, "w", **meta) as dst:
-                dst.write(data.astype("uint8"), 1)  # Ensure uint8 format
-
-        print(f"Cleaned and aligned mask saved to: {output_path}")
-
-            # # CHECK THE NEW MASK
-            # with rasterio.open(final_mask) as msrc:
-            #     unique_values = np.unique(data)
-            #     print(f"Unique values in mask: {unique_values}")
-
-        break
 
 
         # REPROJECT THE TIFS TO EPSG:4326
@@ -112,34 +140,24 @@ if True:
         reprojected_slope = extract_folder / f'{mask_code}_4326_slope.tif'
         reprojected_mask = extract_folder / f'{mask_code}_4326_mask.tif'
 
-        # REPROJECT THE IMAGE TO EPSG:4326
-        # with rasterio.open(image) as img_src:
-        #     transform, width, height = calculate_default_transform(img_src.crs, 'EPSG:4326', img_src.width, img_src.height, *img_src.bounds)
-        #     kwargs = img_src.meta.copy()
-        #     kwargs.update({'crs': 'EPSG:4326', 'transform': transform, 'width': width, 'height': height})
-        #     with rasterio.open(reprojected_image, 'w', **kwargs) as dst:
-        #         for i in range(1, img_src.count + 1):
-        #             reproject(
-        #                 source=rasterio.band(img_src, i),
-        #                 destination=rasterio.band(dst, i),
-        #                 src_transform=img_src.transform,
-        #                 src_crs=img_src.crs,
-        #                 dst_transform=transform,
-        #                 dst_crs='EPSG:4326',
-        #                 resampling=Resampling.nearest)
-        
-        # check iMAGE CRS
-        # with rasterio.open(reprojected_image) as src:
-        #     print(f'>>>image crs={src.crs}')
-
-
-        orig_images = [ image, final_dem, normalized_slope, mask]
+        orig_images = [ image, final_dem, normalized_slope, final_mask]
         rep_images = [reprojected_image, reprojected_dem, reprojected_slope, reprojected_mask]
 
         for i,j in zip( orig_images, rep_images):
             print(f'---i={i.name} j={j.name}')
             reproject_layers_to_match_TSX(i, j)
 
-# print('\n>>>>>>>>>>>>>>>> create event datacubes >>>>>>>>>>>>>>>>>')
-# create_event_datacubes_TSX(data_root)
+                # CHECK THE NEW MASK
+        with rasterio.open(final_mask) as src:
+            data = src.read(1)
+            unique_values = np.unique(data)
+            print(f"Unique values in mask again: {unique_values}")
+            nonans = nan_check(data)
+            print(f'>>>nonans?={nonans}')
+
+        
+
+
+        # print('\n>>>>>>>>>>>>>>>> create event datacubes >>>>>>>>>>>>>>>>>')
+        create_event_datacubes_TSX(event)
 

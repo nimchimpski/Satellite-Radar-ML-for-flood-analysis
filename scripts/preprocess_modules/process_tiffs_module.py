@@ -321,13 +321,13 @@ def create_event_datacubes(data_root, save_path, VERSION="v1"):
 
 
 # TERRASARX FUNCTIONS
-def reproject_layers_to_match_TSX(src_path, dst_path):
+def reproject_layers_to_match_TSX(ref_path, src_path, dst_path):
     print('+++in reproject_layers_to_match_TSX fn')
 
     with rasterio.open(src_path) as src:
-        print(f'---src_path= {src_path.name}')
-        print(f'---dst_path= {dst_path.name}')
-        print(f'---src_path crs = {src.crs}')
+        # print(f'---src_path= {src_path.name}')
+        # print(f'---dst_path= {dst_path.name}')
+        # print(f'---src_path crs = {src.crs}')
         
         transform, width, height = calculate_default_transform(src.crs, 'EPSG:4326', src.width, src.height, *src.bounds)
         kwargs = src.meta.copy()
@@ -342,8 +342,9 @@ def reproject_layers_to_match_TSX(src_path, dst_path):
                     dst_transform=transform,
                     dst_crs='EPSG:4326',
                     resampling=Resampling.nearest)
-            print(f'---reprojected {src_path.name} to {dst_path.name} with {dst.crs}')
+            # print(f'---reprojected {src_path.name} to {dst_path.name} with {dst.crs}')
                 
+def 
 
 def make_dataset_TSX(folder, event, datas):
     '''
@@ -357,46 +358,49 @@ def make_dataset_TSX(folder, event, datas):
     layers = []
     layer_names = []
 
-    for tif_file, band_name in tqdm(datas.items(), desc='---making lists of tiffs and corresponding band names'):
+    for tif_file, band_name in datas.items():
         try:
-
             # CREATE A DATA ARRAY FROM THE EACH FILE
             filepath = folder / tif_file
-            # print(f'---filepath= {filepath.name}')
+            print(f'---name form datas= {filepath.name}')
             tiffda = rxr.open_rasterio(Path(filepath))
+            nan_check(tiffda)
+            print(f"Resolution: {tiffda.rio.resolution()}")
+            print(f"Bounds: {tiffda.rio.bounds()}")
+
+
+
+
             # Check if da is created successfully
             if tiffda is None:
                 print(f"---Error: da for {tif_file} is None")
-
         except Exception as e:
             print(f"---Error loading {tif_file}: {e}")
             continue  # Skip this file if there is an issue loading
-        # Handle multi-band image data (e.g., VV, VH bands)
-    
+
         try:
-            #print(f"---Processing single-band layer: {band_name}")
             layers.append(tiffda)
             layer_names.append(band_name)
-            #print(f"---Successfully processed layer with band name: {band_name}")
         except Exception as e:
             print(f"---Error creating layers for {tif_file}: {e}")
             continue
-    if len(layers) != 6:
-        print(f'---length layers list= {len(layers)}')         
+      
     print(f'---layer_names list created= {layer_names}')
-
     if layers:
         # REPROJECT ALL LAYERS TO MATCH THE FIRST LAYER
-        # reprojected_layers = []
-        # for layer in tqdm(layers, desc='---reprojecting'):
-        #     reprojected_layer = layer.rio.reproject_match(layers[0])
-        #     reprojected_layers.append(reprojected_layer)
+        reprojected_layers = []
+        for layer in tqdm(layers, desc='---reprojecting'):
+            reprojected_layer = layer.rio.reproject_match(layers[0])
+            reprojected_layers.append(reprojected_layer)
 
         # CREATE NEW DATASET + CONCATENATE THE LAYERS ALONG A NEW DIMENSION CALLED 'layer'
-        da = xr.concat(layers, dim='layer').astype('float32')
+        da = xr.concat(reprojected_layers, dim='layer').astype('float32')
 
         print('---da is a dataset=',isinstance(da, xr.Dataset))
         print('---da =',da)
+
+        return da
+
 
         # Assign the layer names (e.g., ['vv', 'vh', 'dem', 'slope']) to the 'layer' dimension
         da = da.assign_coords(layer=layer_names)
@@ -469,7 +473,7 @@ def make_datas_TSX(extracted):
     
     print("\n+++ Datacube Health Check Completed +++")
 
-def create_event_datacubes_TSX(data_root, VERSION="v1"):
+def create_event_datacubes_TSX(event, VERSION="v1"):
     '''
     data_root: Path directory containing the event folders (1deep).
 
@@ -478,95 +482,70 @@ def create_event_datacubes_TSX(data_root, VERSION="v1"):
         # TODO add RTC functionality
 
     '''
-    # LOOP THE FOLDERS BY  COUNTRIES, 
-    for event in tqdm(data_root.iterdir() ): # CREATES ITERABLE FO FILE PATHS 
-        print(f'---event= {event.name}')
-        # IGNORE .NC FILES
-        if event.suffix == '.nc' or event.name in ['tiles'] or not event.is_dir():
-            # print(f"Skipping file: {event.name}")
-            continue
+    print(f'##################### MAKING SINGLE DATASET {event.name} ##############################')
+    # FIND THE EXTRACTED FOLDER
+    folder = event / 'extracted'
+    # Get the datas info from the folder
+    datas = make_datas_TSX(folder)
+    print('---datas= ',datas)
+    # Create the ds
+    ds = make_dataset_TSX(folder, event, datas)
+    print('---ds is a dataset=',isinstance(ds, xr.Dataset))
 
-        if event.is_dir() and any(event.iterdir()):
-            # FIND THE EXTRACTED FOLDER
-            print(f"***************** {event.name}   PREPARING TIFS *****************: ")
-            folder = event / 'extracted'
-            # Get the datas info from the folder
-            datas = make_datas_TSX(folder)
-            print('---datas= ',datas)
+    return
     
-            print(f'##################### MAKING SINGLE DATASET {event.name} ##############################')
-
-            # Create the ds
-            ds = make_dataset_TSX(folder, event, datas)
-            print('---ds is a dataset=',isinstance(ds, xr.Dataset))
-            
-            # Iterate over each variable in the dataset
-        for var_name, dataarray in ds.data_vars.items():
-            print(f"---Checking variable: {var_name}")
-            check_int16_range(dataarray)
-        
-
-        # Check and assign CRS to the dataset
-        print(f'################### CRS CHECK {event.name} ##############################')
-        # Step 1: Ensure CRS is applied to the dataset
-        if not ds.rio.crs:
-            ds.rio.write_crs("EPSG:4326", inplace=True)  # Replace with desired CRS
-        print('---ds crs = ', ds.rio.crs)
-        # Step 2: Add spatial_ref coordinate
-        crs = ds.rio.crs
-        ds['spatial_ref'] = xr.DataArray(
-            0,
-            attrs={
-                'grid_mapping_name': 'latitude_longitude',
-                'epsg_code': crs.to_epsg() if crs.to_epsg() else "Unknown EPSG",
-                'crs_wkt': crs.to_wkt()
-            }
-        )
-        print('---ds[spatial ref]',ds['spatial_ref'])
-        print('---ds[spatial ref] attrs', ds['spatial_ref'].attrs)
-
-        # Step 3: Link spatial_ref to 'data1'
-        ds['data1'].encoding['grid_mapping'] = 'spatial_ref'
-
-
-
-        print(f',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,')
-        print('---dataset= ',ds)
-        print(f',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,')
-        
-        # # Link the CRS to the main data variable
-        # ds['data1'].attrs['grid_mapping'] = 'spatial_ref'
-
-        print(f'################### SAVING {event.name} DS ##############################')
-
-        # save datacube to data_root
-        print(f"---Saving event datacube : {f'datacube_{event.name}_{VERSION}.nc'}")
-
-
-        output_path = folder / f"datacube_{event.name}{VERSION}.nc"
-        if output_path.exists():
-            print(f"---Overwriting existing file: {output_path}")
-        else:
-            print(f"---creating save folder: {output_path}")
-        ds.to_netcdf(output_path, mode='w', format='NETCDF4', engine='netcdf4')
-
-        # Check CRS after reopening
-        print('---ds.attrs= ',ds['spatial_ref'].attrs['epsg_code'])
-        print(ds['spatial_ref'].attrs.get("epsg_code", "Attribute not found"))
-        print('---bye bye')
-
-        
-        # TODO COLLAPSE THESE FUNCTIONS
-        for var_name, dataarray in ds.data_vars.items():
-            print(f"Checking variable nan: {var_name}")
-            nan_check(dataarray)
-        for var_name, dataarray in ds.data_vars.items():
-            print(f"Checking variable int16: {var_name}")
-            check_int16_range(dataarray)
-
-        print(f'>>>>>>>>>>>  ds saved for= {event.name} >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n')
-
-
+    # Iterate over each variable in the dataset
+    for var_name, dataarray in ds.data_vars.items():
+        print(f"---Checking variable: {var_name}")
+        check_int16_range(dataarray)
+    
+    # Ensure CRS is applied to the dataset
+    if not ds.rio.crs:
+        ds.rio.write_crs("EPSG:4326", inplace=True)  # Replace with desired CRS
+    print('---ds crs = ', ds.rio.crs)
+    # Step 2: Add spatial_ref coordinate
+    crs = ds.rio.crs
+    ds['spatial_ref'] = xr.DataArray(
+        0,
+        attrs={
+            'grid_mapping_name': 'latitude_longitude',
+            'epsg_code': crs.to_epsg() if crs.to_epsg() else "Unknown EPSG",
+            'crs_wkt': crs.to_wkt()
+        }
+    )
+    print('---ds[spatial ref]',ds['spatial_ref'])
+    print('---ds[spatial ref] attrs', ds['spatial_ref'].attrs)
+    # Step 3: Link spatial_ref to 'data1'
+    ds['data1'].encoding['grid_mapping'] = 'spatial_ref'
+    print(f',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,')
+    print('---dataset= ',ds)
+    print(f',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,')
+    
+    return
+    # # Link the CRS to the main data variable
+    # ds['data1'].attrs['grid_mapping'] = 'spatial_ref'
+    print(f'################### SAVING {event.name} DS ##############################')
+    # save datacube to data_root
+    print(f"---Saving event datacube : {f'datacube_{event.name}_{VERSION}.nc'}")
+    output_path = folder / f"datacube_{event.name}{VERSION}.nc"
+    if output_path.exists():
+        print(f"---Overwriting existing file: {output_path}")
+    else:
+        print(f"---creating save folder: {output_path}")
+    ds.to_netcdf(output_path, mode='w', format='NETCDF4', engine='netcdf4')
+    # Check CRS after reopening
+    print('---ds.attrs= ',ds['spatial_ref'].attrs['epsg_code'])
+    print(ds['spatial_ref'].attrs.get("epsg_code", "Attribute not found"))
+    print('---bye bye')
+    
+    # TODO COLLAPSE THESE FUNCTIONS
+    for var_name, dataarray in ds.data_vars.items():
+        print(f"Checking variable nan: {var_name}")
+        nan_check(dataarray)
+    for var_name, dataarray in ds.data_vars.items():
+        print(f"Checking variable int16: {var_name}")
+        check_int16_range(dataarray)
+    print(f'>>>>>>>>>>>  ds saved for= {event.name} >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n')
     print('>>>finished all events\n')
 
 
