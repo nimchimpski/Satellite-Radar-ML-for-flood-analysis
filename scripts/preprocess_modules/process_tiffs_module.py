@@ -12,8 +12,9 @@ import shutil
 import re
 # MODULES
 # from check_int16_exceedance import check_int16_exceedance
-from scripts.modules.helpers import *
-from scripts.modules.organise_folders import collect_images
+import subprocess
+import rasterio
+from rasterio.warp import calculate_default_transform, reproject, Resampling
 
 
 def fill_nodata_with_zero(input_file):
@@ -82,12 +83,12 @@ def create_vv_and_vh_tifs(file):
     if 'img.tif' in file.name:
         #print(f'---found image file= {file.name}')
         # Open the multi-band TIFF
-        with rasterio.open(file) as src:
+        with rasterio.open(file) as target:
             # Read the vv (first band) and vh (second band)
-            vv_band = src.read(1)  # Band 1 (vv)
-            vh_band = src.read(2)  # Band 2 (vh)
+            vv_band = target.read(1)  # Band 1 (vv)
+            vh_band = target.read(2)  # Band 2 (vh)
             # Define metadata for saving new files
-            meta = src.meta
+            meta = target.meta
             # Update meta to reflect the single band output
             meta.update(count=1)
             # Save the vv band as a separate TIFF
@@ -105,6 +106,19 @@ def create_vv_and_vh_tifs(file):
 
             # delete original image using unlink() method
     #print('---finished create_vv_and_vh_tifs fn')
+
+def create_slope_from_dem(target_file, dst_file):
+    cmd = [
+    "gdaldem", "slope", f"{target_file}", f"{dst_file}", "-compute_edges",
+    "-p"
+    ]
+
+    # Execute the command
+    try:
+        subprocess.run(cmd, check=True)
+        print("Slope calculation completed.")
+    except subprocess.CalledProcessError as e:
+        print(f"Error: {e}")
 
 
 def match_resolutions_with_check(event):
@@ -247,7 +261,8 @@ def make_dataset(data_root, event, datas):
     else:
         print('---No layers found')
         return None 
-    
+
+
 def make_datas(event):
     '''
     iterates through the files in the event folder and returns a dict of the datas
@@ -282,6 +297,35 @@ def make_datas(event):
     
     print("\n+++ Datacube Health Check Completed +++")
 
+    
+def make_datas_tsx(extracted):
+    '''
+    iterates through the files in the event folder and returns a dict of the datas
+    '''
+    datas = {}
+    for file in extracted.iterdir():
+        # print(f'---file {file}')
+        if 'image.tif' in file.name:
+            datas[file.name] = 'hh'
+            print(f'---+image file found {file}')
+        elif 'dem.tif' in file.name:
+            datas[file.name] = 'dem'
+            print(f'---+dem file found {file}')
+        elif 'slope_norm.tif' in file.name:
+            datas[file.name] = 'slope'   
+            print(f'---+slope file found {file}')
+        elif 'MASK.tif' in file.name:
+            datas[file.name] = 'mask'
+            print(f'---+mask file found {file}')
+
+    #print('---datas ',datas)
+    return datas
+
+
+
+    
+    print("\n+++ Datacube Health Check Completed +++")
+
 def create_event_datacubes(data_root, save_path, VERSION="v1"):
     '''
     data_root: Path directory containing the event folders (1deep).
@@ -302,7 +346,7 @@ def create_event_datacubes(data_root, save_path, VERSION="v1"):
         if event.is_dir() and any(event.iterdir()):
             print(f"***************** {event.name}   PREPARING TIFS *****************: ")
             # DO WORK ON THE TIFS
-            # LOOP FILES + PREPARE THEM FOR DATA CUBE
+            # LOOP TIFFS + PREPARE THEM FOR DATA CUBE
             for file in event.iterdir():
                 if 'epsg4326' in file.name and '_s2_' not in file.name:
                     if file.name.endswith('slope.tif') :
@@ -397,6 +441,118 @@ def create_event_datacubes(data_root, save_path, VERSION="v1"):
 
     print('>>>finished all events\n')
 
+def create_event_datacubes_TSX(data_root, VERSION="v1"):
+    '''
+    data_root: Path directory containing the event folders (1deep).
+
+    An xarray dataset is created for each event folder and saved as a .nc file.
+    NB DATASET IS A COLLECTION OF DATAARRAYS
+        # TODO add RTC functionality
+
+    '''
+    # LOOP THE FOLDERS BY  COUNTRIES, 
+    for event in tqdm(data_root.iterdir() ): # CREATES ITERABLE FO FILE PATHS 
+        print(f'---event= {event.name}')
+        # IGNORE .NC FILES
+        if event.suffix == '.nc' or event.name in ['tiles'] or not event.is_dir():
+            # print(f"Skipping file: {event.name}")
+            continue
+        if event.is_dir() and any(event.iterdir()):
+
+            # FIND THE EXTRACTED FOLDER
+            print(f"***************** {event.name}   PREPARING TIFS *****************: ")
+            # Get the datas info from the folder
+            datas = make_datas_tsx(event / 'extracted')
+            print('---datas= ',datas)
+    
+            print(f'##################### MAKING SINGLE DATASET {event.name} ##############################')
+    
+            # Create the ds
+            ds = make_dataset(data_root, event, datas)
+            print('---ds is a dataset=',isinstance(ds, xr.Dataset))
+    
+            # check the ds for excess int16 values 
+            print('>>>>>>>>>>>checking exceedence for= ',event.name )
+
+            return
+            # Iterate over each variable in the dataset
+        for var_name, dataarray in ds.data_vars.items():
+            print(f"---Checking variable: {var_name}")
+            check_int16_range(dataarray)
+
+
+        # Check and assign CRS to the dataset
+        print(f'################### CRS CHECK {event.name} ##############################')
+        # Step 1: Ensure CRS is applied to the dataset
+        if not ds.rio.crs:
+            ds.rio.write_crs("EPSG:4326", inplace=True)  # Replace with desired CRS
+        print('---ds crs = ', ds.rio.crs)
+
+        # Step 2: Add spatial_ref coordinate
+        crs = ds.rio.crs
+        ds['spatial_ref'] = xr.DataArray(
+            0,
+            attrs={
+                'grid_mapping_name': 'latitude_longitude',
+                'epsg_code': crs.to_epsg() if crs.to_epsg() else "Unknown EPSG",
+                'crs_wkt': crs.to_wkt()
+            }
+        )
+        print('---ds[spatial ref]',ds['spatial_ref'])
+        print('---ds[spatial ref] attrs', ds['spatial_ref'].attrs)
+
+        # Step 3: Link spatial_ref to 'data1'
+        ds['data1'].encoding['grid_mapping'] = 'spatial_ref'
+
+
+
+        print(f',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,')
+        print('---dataset= ',ds)
+        print(f',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,')
+        
+        # # Link the CRS to the main data variable
+        # ds['data1'].attrs['grid_mapping'] = 'spatial_ref'
+
+        print(f'################### SAVING {event.name} DS ##############################')
+
+        # save datacube to data_root
+        print(f"---Saving event datacube : {f'datacube_{event.name}_{VERSION}.nc'}")
+
+
+        output_path = save_path / event.name / f"datacube_{event.name}{VERSION}.nc"
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        if output_path.exists():
+            print(f"---Overwriting existing file: {output_path}")
+        else:
+            print(f"---creating save folder: {output_path}")
+        ds.to_netcdf(output_path, mode='w', format='NETCDF4', engine='netcdf4')
+
+        # Check CRS after reopening
+        print('---ds.attrs= ',ds['spatial_ref'].attrs['epsg_code'])
+        print(ds['spatial_ref'].attrs.get("epsg_code", "Attribute not found"))
+        print('---bye bye')
+
+        
+        # TODO COLLAPSE THESE FUNCTIONS
+        for var_name, dataarray in ds.data_vars.items():
+            print(f"Checking variable nan: {var_name}")
+            nan_check(dataarray)
+        for var_name, dataarray in ds.data_vars.items():
+            print(f"Checking variable int16: {var_name}")
+            check_int16_range(dataarray)
+
+        print(f'>>>>>>>>>>>  ds saved for= {event.name} >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n')
+
+
+    print('>>>finished all events\n')
+
+
+
+
+
+
+
+# probably not needed
 def process_terraSARx_data(data_root):
     '''
     makes a 'datacube_files' folder in each event folder and copies the necessary files to it
@@ -417,11 +573,13 @@ def process_terraSARx_data(data_root):
     
             datacube_files_path.mkdir(parents=True, exist_ok=True)
             pattern = re.compile(f'^{re.escape(target_filename)}$')
+
             # STEP THROUGH FILENAMES WE WANT 
             filename_parts = ['DEM_MAP', 'IMAGE_HH']
             for i in filename_parts:
                 # print(f'---looking for files starting with {i}')
                 pattern = re.compile(f'^{re.escape(i)}')  
+
                 # COPY THEM TO THE EVENT DATA CUBE FOLDER
                 for file_path in Path(event).rglob("*"):
                     if file_path.suffixes == ['.tif'] and pattern.match(file_path.name):
@@ -434,6 +592,91 @@ def process_terraSARx_data(data_root):
                         shutil.copy(file_path, target)
             
 
+def match_dem_to_sar(sar_image, dem, output_path):
+    """
+    Matches the DEM to the SAR image grid by enforcing exact alignment of transform, CRS, and dimensions.
+    """
+    # USE CMD AND GDAL TO TO GET SAR_IMAGE INFO
 
 
+    # Open the SAR image to extract its grid and CRS
+    with rasterio.open(sar_image) as sar:
+        sar_transform = sar.transform
+        sar_crs = sar.crs
+        print(f"---SAR CRS: {sar_crs}")
+        sar_width = sar.width
+        sar_height = sar.height
+
+    # Open the DEM to reproject and align it
+    with rasterio.open(dem) as dem_src:
+        dem_meta = dem_src.meta.copy()
+        # Update DEM metadata to match SAR grid
+        dem_meta.update({
+            'crs': sar_crs,
+            'transform': sar_transform,
+            'width': sar_width,
+            'height': sar_height
+        })
+
+        with rasterio.open(output_path, 'w', **dem_meta) as dst:
+            # Reproject each band of the DEM
+            for i in range(1, dem_src.count + 1):
+                reproject(
+                    source=rasterio.band(dem_src, i),
+                    destination=rasterio.band(dst, i),
+                    src_transform=dem_src.transform,
+                    src_crs=dem_src.crs,
+                    dst_transform=sar_transform,
+                    dst_crs=sar_crs,
+                    resampling=Resampling.nearest  # Nearest neighbor for discrete data like DEM
+                )
+
+    print(f"Reprojected and aligned DEM saved to: {output_path}")
+
+
+def calculate_and_normalize_slope(input_dem, mask_code):
+    """
+    Calculate slope from a DEM using GDAL and normalize it between 0 and 1.
+    """
+
+    # Step 1: Calculate slope using GDAL's gdaldem
+    temp_slope = "temp_slope.tif"  # Temporary slope file
+    gdal_command = [
+        "gdaldem", "slope",
+        input_dem,         # Input DEM
+        temp_slope,         # Output raw slope file
+        "-compute_edges"
+    ]
+
+    try:
+        subprocess.run(gdal_command, check=True)
+        print(f"Raw slope raster created: {temp_slope}")
+    except subprocess.CalledProcessError as e:
+        print(f"Error calculating slope: {e}")
+        return
+
+    # Step 2: Normalize slope using rasterio
+    with rasterio.open(temp_slope) as src:
+        slope = src.read(1)  # Read the slope data
+        slope_min, slope_max = slope.min(), slope.max()
+        print(f"Min slope: {slope_min}, Max slope: {slope_max}")
+
+        # Normalize the slope to the range [0, 1]
+        slope_norm_data = (slope - slope_min) / (slope_max - slope_min)
+
+        # Prepare metadata for output file
+        meta = src.meta.copy()
+        meta.update(dtype='float32')
+
+        normalized_slope = input_dem.parent / f"{mask_code}_slope_norm.tif"
+
+        # Save the normalized slope
+        with rasterio.open(normalized_slope, 'w', **meta) as dst:
+            dst.write(slope_norm_data.astype(np.float32), 1)
+
+    # Cleanup temporary raw slope file
+    Path(temp_slope).unlink()
+
+    print(f"Normalized slope raster saved to: {normalized_slope}")
+    return normalized_slope
 

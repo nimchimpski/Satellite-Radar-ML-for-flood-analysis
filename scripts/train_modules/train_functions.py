@@ -77,3 +77,12 @@ def calculate_metrics(logits, masks, metric_threshold):
     }
         
 
+def handle_interrupt(signal, frame):
+    '''
+    usage: signal.signal(signal.SIGINT, handle_interrupt)
+    '''
+    print("Interrupt received! Cleaning up...")
+    # Add any necessary cleanup code here (e.g., saving model checkpoints)
+    sys.exit(0)
+
+

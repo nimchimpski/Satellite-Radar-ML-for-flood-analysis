@@ -39,12 +39,12 @@ from functools import partial
 from wandb import Artifact
 #--------------------------------------------
 
-from scripts.train_modules.boundaryloss import BoundaryLoss
+from scripts.train_modules.z.boundaryloss import BoundaryLoss
 from scripts.train_modules.train_helpers import *
-from scripts.train_modules.train_classes import FloodDataset, UnetModel, SimpleCNN, SurfaceLoss
-from scripts.modules.helpers import handle_interrupt
+from scripts.train_modules.train_classes import FloodDataset, UnetModel, SimpleCNN, SurfaceLoss  
+from scripts.train_modules.train_functions import handle_interrupt
 from scripts.train_modules.train_functions import calculate_metrics, log_metrics_to_wandb
-from scripts.train_modules.segmentation_training_loop import Segmentation_training_loop
+from scripts.train_modules.training_loops import Single_channel_training_loop
 
 #########################################################################
 
@@ -100,7 +100,7 @@ def main(evaluate=None, reproduce=None):
     PRETRAINED = True
     inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
     in_channels = len(inputs)
-    DEVRUN = 0
+    DEVRUN = 1
     metric_threshold = 0.9
     loss = "xentropy"
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -169,6 +169,7 @@ def main(evaluate=None, reproduce=None):
     # MAKE MODEL
     # model = SimpleCNN(in_channels=in_channels, classes=2)
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=2, pretrained=PRETRAINED)
+    print('---model =', model)
     model = model.to('cuda')  # Ensure the model is on GPU
     device = next(model.parameters()).device
     print(f'---model location: {device}')
@@ -218,8 +219,8 @@ def main(evaluate=None, reproduce=None):
     print('---trainer done')
 
     if not evaluate:
-        print('---not evaluate ')
-        training_loop = Segmentation_training_loop(model)
+        print('---training / val  (NOT test)')
+        training_loop = Single_channel_training_loop(model)
         trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl,)
 
         best_val_loss = trainer.callback_metrics.get("val_loss", None)

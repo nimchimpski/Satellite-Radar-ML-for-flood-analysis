@@ -77,3 +77,5 @@ class BoundaryLoss(nn.Module):
         loss = torch.mean(1 - BF1)
 
         return loss
+    
+    

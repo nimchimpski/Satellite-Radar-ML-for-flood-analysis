@@ -44,17 +44,23 @@ class FloodDataset(Dataset):
         # Select channels based on `inputs` list position
         input_idx = list(range(len(self.inputs)))
         model_input = tile[:, :, input_idx]  # auto select the channels
+        model_input = torch.tensor(model_input)
 
-        # TODO THIS SHOULD PROB BE DONE IN THE DATASET
-        model_input = Func.to_tensor(model_input)
-        model_input = model_input.cuda()
+        model_input = model_input.cuda() #???
 
-        # extract the mask
-        val_idx = tile[:,:, self.inputs.index('mask')]
-        val_mask = Func.to_tensor(val_idx)
+        # EXTRACT MASK TO BINARY
+        mask = tile[:,:, self.inputs.index('mask')]
+        # CONVERT TO TENSOR
+        mask = torch.tensor(mask)
+        mask = (mask > 0.5)
 
-        return [model_input.float(), val_mask.float()]
+        # Debugging: Check unique values in the mask
+        print("Unique values in mask:", torch.unique(mask))
+
+        return [model_input.float(), mask.float()]
         # return model_input.float(), val_mask.float()
+
+# MODELS
 
 class UnetModel(nn.Module):
     def __init__(self,encoder_name='resnet34', in_channels=3, classes=1, pretrained=False):
@@ -72,26 +78,7 @@ class UnetModel(nn.Module):
     def forward(self,x):
         x= self.model(x)
         return x
-    
-class SurfaceLoss():
-    def __init__(self, **kwargs):
-        # Self.idc is used to filter out some classes of the target mask. Use fancy indexing
-        self.idc: List[int] = kwargs["idc"]
-        print(f"Initialized {self.__class__.__name__} with {kwargs}")
-
-    def __call__(self, probs: Tensor, dist_maps: Tensor) -> Tensor:
-        assert simplex(probs)
-        assert not one_hot(dist_maps)
-
-        pc = probs[:, self.idc, ...].type(torch.float32)
-        dc = dist_maps[:, self.idc, ...].type(torch.float32)
-
-        multipled = einsum("bkwh,bkwh->bkwh", pc, dc)
-
-        loss = multipled.mean()
-
-        return loss
-    
+ 
 class SimpleCNN(nn.Module):
     def __init__(self, in_channels=3, classes=2):
         super(SimpleCNN, self).__init__()
@@ -112,3 +99,98 @@ class SimpleCNN(nn.Module):
         # Optional: Use upsampling if necessary to match the size
         x = self.upsample(x)
         return x
+
+# LOSS FUNCTION
+
+class BoundaryLoss(nn.Module):
+    """Boundary Loss proposed in:
+    Alexey Bokhovkin et al., Boundary Loss for Remote Sensing Imagery Semantic Segmentation
+    https://arxiv.org/abs/1905.07852
+    """
+
+    def __init__(self, theta0=3, theta=5):
+        super().__init__()
+
+        self.theta0 = theta0
+        self.theta = theta
+
+    def forward(self, pred, gt):
+        """
+        Input:
+            - pred: the output from model (before softmax)
+                    shape (N, C, H, W)
+            - gt: ground truth map
+                    shape (N, H, w)
+        Return:
+            - boundary loss, averaged over mini-bathc
+        """
+
+        n, c, _, _ = pred.shape
+
+        # softmax so that predicted map can be distributed in [0, 1]
+        pred = torch.softmax(pred, dim=1)
+
+        # one-hot vector of ground truth
+        one_hot_gt = one_hot(gt, c)
+
+        # ****ADDED****
+        # Check if the input tensor `one_hot_gt` is in the correct format
+        # If it's not, convert it to float32
+        if one_hot_gt.dtype != torch.float32:
+            one_hot_gt = one_hot_gt.float()
+
+        # boundary map
+        gt_b = F.max_pool2d(
+            1 - one_hot_gt, kernel_size=self.theta0, stride=1, padding=(self.theta0 - 1) // 2)
+        gt_b -= 1 - one_hot_gt
+
+
+        pred_b = F.max_pool2d(
+            1 - pred, kernel_size=self.theta0, stride=1, padding=(self.theta0 - 1) // 2)
+        pred_b -= 1 - pred
+
+        # extended boundary map
+        gt_b_ext = F.max_pool2d(
+            gt_b, kernel_size=self.theta, stride=1, padding=(self.theta - 1) // 2)
+
+        pred_b_ext = F.max_pool2d(
+            pred_b, kernel_size=self.theta, stride=1, padding=(self.theta - 1) // 2)
+
+        # reshape
+        gt_b = gt_b.view(n, c, -1)
+        pred_b = pred_b.view(n, c, -1)
+        gt_b_ext = gt_b_ext.view(n, c, -1)
+        pred_b_ext = pred_b_ext.view(n, c, -1)
+
+        # Precision, Recall
+        P = torch.sum(pred_b * gt_b_ext, dim=2) / (torch.sum(pred_b, dim=2) + 1e-7)
+        R = torch.sum(pred_b_ext * gt_b, dim=2) / (torch.sum(gt_b, dim=2) + 1e-7)
+
+        # Boundary F1 Score
+        BF1 = 2 * P * R / (P + R + 1e-7)
+
+        # summing BF1 Score for each class and average over mini-batch
+        loss = torch.mean(1 - BF1)
+
+        return loss
+    
+        
+class SurfaceLoss():
+    def __init__(self, **kwargs):
+        # Self.idc is used to filter out some classes of the target mask. Use fancy indexing
+        self.idc: List[int] = kwargs["idc"]
+        print(f"Initialized {self.__class__.__name__} with {kwargs}")
+
+    def __call__(self, probs: Tensor, dist_maps: Tensor) -> Tensor:
+        assert simplex(probs)
+        assert not one_hot(dist_maps)
+
+        pc = probs[:, self.idc, ...].type(torch.float32)
+        dc = dist_maps[:, self.idc, ...].type(torch.float32)
+
+        multipled = einsum("bkwh,bkwh->bkwh", pc, dc)
+
+        loss = multipled.mean()
+
+        return loss
+   

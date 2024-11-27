@@ -56,26 +56,8 @@ def convert_tensor_to_array(tensor):
 def create_numpy_array(img):
     return np.array(img)[...]
 
-#NOT IN TRAIN
-# D = Union[Image.Image, np.ndarray, Tensor]
-# def gt_transform(resolution: Tuple[float, ...], K: int) -> Callable[[D], Tensor]:
-#         return transforms.Compose([
-#                 # lambda img: np.array(img)[...],
-#                 partial(create_numpy_array),
-#                 lambda nd: torch.tensor(nd, dtype=torch.int64)[None, ...],  # Add one dimension to simulate batch
-#                 partial(class2one_hot, K=K),
-#                 itemgetter(0)  # Then pop the element to go back to img shape
-#         ])
 
-#NOT IN TRAIN
-# def dist_map_transform(resolution: Tuple[float, ...], K: int) -> Callable[[D], Tensor]:
-#         return transforms.Compose([
-#                 gt_transform(resolution, K),
-
-#                 lambda t: t.cpu().numpy(),
-#                 partial(one_hot2dist, resolution=resolution),
-#                 lambda nd: torch.tensor(nd, dtype=torch.float32)
-#         ])
+# METRICS
 
 def acc_background(input, target, threshold=0.5):
     'define pixel-level accuracy just for background'
@@ -93,6 +75,8 @@ def nsd(input, target, threshold=1):
     surface_distances = compute_surface_distances(target, input, [1,1])
     nsd = compute_surface_dice_at_tolerance(surface_distances, threshold)
     return nsd
+
+#########
 
 def one_hot(label, n_classes, requires_grad=True):
     """Return One Hot Label"""
