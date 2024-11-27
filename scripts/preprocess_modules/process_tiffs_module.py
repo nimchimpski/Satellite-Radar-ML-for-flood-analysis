@@ -217,7 +217,7 @@ def make_dataset(data_root, event, datas):
             reprojected_layers.append(reprojected_layer)
 
         # CREATE NEW DATASET + CONCATENATE THE LAYERS ALONG A NEW DIMENSION CALLED 'layer'
-        da = xr.concat(layers, dim='layer').astype('int16')
+        da = xr.concat(layers, dim='layer').astype('float32')
 
         print('---da is a dataset=',isinstance(da, xr.Dataset))
         print('---da layers =',da['layer'])
@@ -472,14 +472,14 @@ def create_event_datacubes_TSX(data_root, VERSION="v1"):
             print('---ds is a dataset=',isinstance(ds, xr.Dataset))
     
             # check the ds for excess int16 values 
-            print('>>>>>>>>>>>checking exceedence for= ',event.name )
+            print('-----  CREATED= ',event.name )
 
-            return
+            
             # Iterate over each variable in the dataset
         for var_name, dataarray in ds.data_vars.items():
             print(f"---Checking variable: {var_name}")
             check_int16_range(dataarray)
-
+        
 
         # Check and assign CRS to the dataset
         print(f'################### CRS CHECK {event.name} ##############################')
@@ -487,7 +487,7 @@ def create_event_datacubes_TSX(data_root, VERSION="v1"):
         if not ds.rio.crs:
             ds.rio.write_crs("EPSG:4326", inplace=True)  # Replace with desired CRS
         print('---ds crs = ', ds.rio.crs)
-
+        return
         # Step 2: Add spatial_ref coordinate
         crs = ds.rio.crs
         ds['spatial_ref'] = xr.DataArray(
@@ -547,6 +547,30 @@ def create_event_datacubes_TSX(data_root, VERSION="v1"):
     print('>>>finished all events\n')
 
 
+# WORK ON DATAARRAYS
+    
+def check_int16_range(dataarray):
+    # TAKES A DATAARRAY NOT A DATASET
+    #print("+++in small int16 range check fn+++")
+    int16_min, int16_max = np.iinfo(np.int16).min, np.iinfo(np.int16).max
+    if (dataarray < int16_min).any() or (dataarray > int16_max).any():
+        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
+        # Calculate actual min and max values in the array
+        actual_min = dataarray.min().item()
+        actual_max = dataarray.max().item()
+        
+        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
+        print(f"---Minimum value found: {actual_min}")
+        print(f"---Maximum value found: {actual_max}")
+        return False
+    
+    # else:
+    #     print(f"---no exceedances int16.")
+
+    # Optional: Replace NaN and Inf values if necessary
+    # dataarray = dataarray.fillna(0)  # Replace NaN with 0 or another appropriate value
+    # dataarray = dataarray.where(~np.isinf(dataarray), 0)  # Replace Inf with 0 or appropriate value
+
 
 
 
@@ -596,9 +620,10 @@ def match_dem_to_sar(sar_image, dem, output_path):
     """
     Matches the DEM to the SAR image grid by enforcing exact alignment of transform, CRS, and dimensions.
     """
-    # USE CMD AND GDAL TO TO GET SAR_IMAGE INFO
+    print('+++in match_dem_to_sar fn')
+    
 
-
+    output_path.unlink(missing_ok=True)  # Deletes the file if it exists
     # Open the SAR image to extract its grid and CRS
     with rasterio.open(sar_image) as sar:
         sar_transform = sar.transform
@@ -609,6 +634,7 @@ def match_dem_to_sar(sar_image, dem, output_path):
 
     # Open the DEM to reproject and align it
     with rasterio.open(dem) as dem_src:
+        print(f"---DEM CRS: {dem_src.crs}")
         dem_meta = dem_src.meta.copy()
         # Update DEM metadata to match SAR grid
         dem_meta.update({
@@ -617,8 +643,8 @@ def match_dem_to_sar(sar_image, dem, output_path):
             'width': sar_width,
             'height': sar_height
         })
-
         with rasterio.open(output_path, 'w', **dem_meta) as dst:
+            print(f'---output_path= {output_path.name}')
             # Reproject each band of the DEM
             for i in range(1, dem_src.count + 1):
                 reproject(
@@ -632,6 +658,7 @@ def match_dem_to_sar(sar_image, dem, output_path):
                 )
 
     print(f"Reprojected and aligned DEM saved to: {output_path}")
+    return output_path
 
 
 def calculate_and_normalize_slope(input_dem, mask_code):

@@ -863,6 +863,7 @@ def handle_interrupt(signal, frame):
     sys.exit(0)
 
 
+
 # MAYBE NOT NEEDED
 
 def nan_check(input):
@@ -872,28 +873,7 @@ def nan_check(input):
     else:
         #print("----NO NANS FOUND")
         return True
-    
-def check_int16_range(dataarray):
-    # TAKES A DATAARRAY NOT A DATASET
-    #print("+++in small int16 range check fn+++")
-    int16_min, int16_max = np.iinfo(np.int16).min, np.iinfo(np.int16).max
-    if (dataarray < int16_min).any() or (dataarray > int16_max).any():
-        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
-        # Calculate actual min and max values in the array
-        actual_min = dataarray.min().item()
-        actual_max = dataarray.max().item()
-        
-        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
-        print(f"---Minimum value found: {actual_min}")
-        print(f"---Maximum value found: {actual_max}")
-        return False
-    
-    # else:
-    #     print(f"---no exceedances int16.")
 
-    # Optional: Replace NaN and Inf values if necessary
-    # dataarray = dataarray.fillna(0)  # Replace NaN with 0 or another appropriate value
-    # dataarray = dataarray.where(~np.isinf(dataarray), 0)  # Replace Inf with 0 or appropriate value
 
  
 def compress_geotiff_rasterio(input_tile_path, output_tile_path, compression="lzw"):
