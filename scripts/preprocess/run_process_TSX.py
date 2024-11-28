@@ -4,17 +4,16 @@ import rasterio
 import numpy as np
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from scripts.preprocess_modules.process_tiffs_module import match_dem_to_sar
-from scripts.preprocess_modules.process_tiffs_module import calculate_and_normalize_slope, create_event_datacubes_TSX,         reproject_layers_to_match_TSX, nan_check
+from scripts.preprocess_modules.process_tiffs_module import calculate_and_normalize_slope, create_event_datacubes_TSX,         reproject_layers_to_4326_TSX, nan_check, clip_image_to_mask, align_image_to_mask
 
 
 data_root = Path(r'C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_process1\archive')
 
+tiffs = 1
 
-# if False:
-if True:
-    # MOVE THE MASK, IMAGE, AND DEM TO THE EXTRACTED FOLDER
-    for event in data_root.iterdir():
-        
+# MOVE THE MASK, IMAGE, AND DEM TO THE EXTRACTED FOLDER
+for event in data_root.iterdir():
+    if tiffs:    
         print(f'################### EVENT={event.name}  ###################')
         extract_folder = event / 'extracted'
         if extract_folder.exists():
@@ -45,6 +44,8 @@ if True:
         if not (extract_folder / dem.name).exists():
             shutil.copy(dem, extract_folder)
 
+        #############################################
+
         # GET REFERENCE DATA 
         with rasterio.open(image) as ref:
             ref_crs = ref.crs
@@ -52,11 +53,20 @@ if True:
             ref_width = ref.width
             ref_height = ref.height
 
-        # CHECK THE MASK
+        # CLIP THE MASK TO THE SAR IMAGE
         final_mask = extract_folder / f'{mask_code}_mask_clean.tif'
-        # CHECK THE MASK AND REMOVE THE 3'S
+        aligned_image = extract_folder / f'{mask_code}_aligned_image.tif'
+
+        clip_image_to_mask(image, mask, aligned_image)
+
+        # align_image_to_mask(image, mask, aligned_image)
+
+        break
+
+        # SORT THE MASK TO 1 AND 0
+        # CHECK THE MASK AND REMOVE THE 3'S and align to the SAR image
         with rasterio.open(mask) as src:
-            data = src.read(1)
+            data = src.read(1).astype("float32")
             print(f">>> Original mask stats: min={data.min()}, max={data.max()}, unique={np.unique(data)}")
         #     transform, width, height = calculate_default_transform(
         #     src.crs, ref_crs, src.width, src.height, *src.bounds
@@ -67,7 +77,7 @@ if True:
             'transform': ref_transform,
             'width': ref_width,
             'height': ref_height,
-            'dtype': "uint8"
+            'dtype': "float32"
             })
 
             # Replace 3s with 0s
@@ -77,7 +87,7 @@ if True:
             # Write the cleaned mask
             with rasterio.open(final_mask, "w", **meta) as dst:
                 reproject(
-                    source=rasterio.band(src, 1),
+                    source=data,
                     destination=rasterio.band(dst, 1),
                     src_transform=src.transform,
                     src_crs=src.crs,
@@ -85,7 +95,7 @@ if True:
                     dst_crs=ref_crs,
                     resampling=Resampling.nearest  # Use nearest neighbor for categorical data
             )
-                dst.write(data.astype("uint8"), 1)  # Ensure uint8 format
+                dst.write(data, 1)  # Ensure uint8 format
 
         print(f"Cleaned and aligned mask saved to: {final_mask}")
 
@@ -144,20 +154,18 @@ if True:
         rep_images = [reprojected_image, reprojected_dem, reprojected_slope, reprojected_mask]
 
         for i,j in zip( orig_images, rep_images):
-            print(f'---i={i.name} j={j.name}')
-            reproject_layers_to_match_TSX(i, j)
+            # print(f'---i={i.name} j={j.name}')
+            reproject_layers_to_4326_TSX(i, j)
 
                 # CHECK THE NEW MASK
-        with rasterio.open(final_mask) as src:
+        with rasterio.open(reprojected_mask) as src:
+            print(f'>>>final mask name={src.name}') 
             data = src.read(1)
             unique_values = np.unique(data)
-            print(f"Unique values in mask again: {unique_values}")
+            print(f"Unique values in reprojected mask: {unique_values}")
             nonans = nan_check(data)
             print(f'>>>nonans?={nonans}')
 
-        
-
-
-        # print('\n>>>>>>>>>>>>>>>> create event datacubes >>>>>>>>>>>>>>>>>')
-        create_event_datacubes_TSX(event)
+    # print('\n>>>>>>>>>>>>>>>> create event datacubes >>>>>>>>>>>>>>>>>')
+    # create_event_datacubes_TSX(event)
 

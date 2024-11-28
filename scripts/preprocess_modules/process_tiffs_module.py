@@ -321,8 +321,8 @@ def create_event_datacubes(data_root, save_path, VERSION="v1"):
 
 
 # TERRASARX FUNCTIONS
-def reproject_layers_to_match_TSX(ref_path, src_path, dst_path):
-    print('+++in reproject_layers_to_match_TSX fn')
+def reproject_layers_to_4326_TSX( src_path, dst_path):
+    print('+++in reproject_layers_to_4326_TSX fn')
 
     with rasterio.open(src_path) as src:
         # print(f'---src_path= {src_path.name}')
@@ -331,9 +331,11 @@ def reproject_layers_to_match_TSX(ref_path, src_path, dst_path):
         
         transform, width, height = calculate_default_transform(src.crs, 'EPSG:4326', src.width, src.height, *src.bounds)
         kwargs = src.meta.copy()
-        kwargs.update({'crs': 'EPSG:4326', 'transform': transform, 'width': width, 'height': height})
+        kwargs.update({'crs': 'EPSG:4326', 'transform': transform, 'width': width, 'height': height, 'nodata': 5, 'dtype': 'float32'})
         with rasterio.open(dst_path, 'w', **kwargs) as dst:
             for i in range(1, src.count + 1):
+                band=src.read(i)
+                band[band > 1] = 1
                 reproject(
                     source=rasterio.band(src, i),
                     destination=rasterio.band(dst, i),
@@ -344,7 +346,6 @@ def reproject_layers_to_match_TSX(ref_path, src_path, dst_path):
                     resampling=Resampling.nearest)
             # print(f'---reprojected {src_path.name} to {dst_path.name} with {dst.crs}')
                 
-def 
 
 def make_dataset_TSX(folder, event, datas):
     '''
@@ -355,21 +356,20 @@ def make_dataset_TSX(folder, event, datas):
     'satck' is an Xarray DataArray 
     '''   
     print(f"\n++++ in make_dataset fn")      
-    layers = []
+    dataarrays = []
     layer_names = []
 
     for tif_file, band_name in datas.items():
+        filepath = folder / tif_file
+        print(f'---name from datas= {filepath.name}')
         try:
             # CREATE A DATA ARRAY FROM THE EACH FILE
-            filepath = folder / tif_file
-            print(f'---name form datas= {filepath.name}')
             tiffda = rxr.open_rasterio(Path(filepath))
             nan_check(tiffda)
+            # check unique values in dataarray
+            print(f"Unique values in {band_name}: {np.unique(tiffda)}")
             print(f"Resolution: {tiffda.rio.resolution()}")
             print(f"Bounds: {tiffda.rio.bounds()}")
-
-
-
 
             # Check if da is created successfully
             if tiffda is None:
@@ -379,26 +379,43 @@ def make_dataset_TSX(folder, event, datas):
             continue  # Skip this file if there is an issue loading
 
         try:
-            layers.append(tiffda)
+            dataarrays.append(tiffda)
             layer_names.append(band_name)
         except Exception as e:
             print(f"---Error creating layers for {tif_file}: {e}")
-            continue
-      
+    print('---length dataarrays = ',len(dataarrays))
+    # dataarrays = [i.astype('float32') for i in dataarrays]
+
     print(f'---layer_names list created= {layer_names}')
-    if layers:
-        # REPROJECT ALL LAYERS TO MATCH THE FIRST LAYER
-        reprojected_layers = []
-        for layer in tqdm(layers, desc='---reprojecting'):
-            reprojected_layer = layer.rio.reproject_match(layers[0])
-            reprojected_layers.append(reprojected_layer)
 
-        # CREATE NEW DATASET + CONCATENATE THE LAYERS ALONG A NEW DIMENSION CALLED 'layer'
-        da = xr.concat(reprojected_layers, dim='layer').astype('float32')
+    for i, da in enumerate(dataarrays):
+        if not hasattr(da, 'rio'):
+            print(f"---Error: {layer_names[i]} lacks rioxarray accessors. Reinitializing...")
+        else:
+            print('---has attr')
+        print('---type da= ',type(da))  
+        print(f"---Layer {i} name: {layer_names[i]}")
+        print(f"---Shape: {da.shape}, CRS: {da.rio.crs}, Resolution: {da.rio.resolution()}, Bounds: {da.rio.bounds()}")
+        if da.rio.crs != dataarrays[0].rio.crs:
+            print(f"---Mismatch in CRS for {layer_names[i]}")
+        if da.rio.resolution() != dataarrays[0].rio.resolution():
+            print(f"---Mismatch in Resolution for {layer_names[i]}")
+        dataarrays[i] = da.astype('float32')
+        # chack the datatype
+        print(f"---Data Type: {da.dtype}")
 
+    # REPROJECT ALL LAYERS TO MATCH THE FIRST LAYER
+    # reprojected_layers = []
+    # for layer in tqdm(dataarrays, desc='---reprojecting'):
+    #     reprojected_layer = layer.rio.reproject_match(dataarrays[0])
+    #     reprojected_layers.append(reprojected_layer)
+
+    if dataarrays:
+        da = xr.concat(dataarrays, dim='layer').astype('float32')
+        reference_layer = dataarrays[0]
+        da.attrs.update(reference_layer.attrs)
         print('---da is a dataset=',isinstance(da, xr.Dataset))
         print('---da =',da)
-
         return da
 
 
@@ -621,7 +638,8 @@ def match_dem_to_sar(sar_image, dem, output_path):
             'crs': sar_crs,
             'transform': sar_transform,
             'width': sar_width,
-            'height': sar_height
+            'height': sar_height,
+            'dtype': "float32"
         })
         with rasterio.open(output_path, 'w', **dem_meta) as dst:
             print(f'---output_path= {output_path.name}')
@@ -638,6 +656,108 @@ def match_dem_to_sar(sar_image, dem, output_path):
                 )
 
     print(f"Reprojected and aligned DEM saved to: {output_path}")
+
+
+def clip_image_to_mask(sar_image_path, mask_path, output_path):
+    with rasterio.open(sar_image_path) as src_image, rasterio.open(mask_path) as src_mask:
+        # CHECK CRS, RESOLUTION, AND BOUNDS MATCH
+        # if src_image.crs != src_mask.crs:
+        #     raise ValueError("CRS mismatch between SAR image and mask.")
+        # else:
+        #     print('---CRS MATCH')
+        # if src_image.res != src_mask.res:
+        #     raise ValueError("Resolution mismatch between SAR image and mask.")
+        # else:
+        #     print('---RESOLUTION MATCH')
+        # if src_image.bounds != src_mask.bounds:
+        #     raise ValueError("Bounds mismatch between SAR image and mask.")
+        # else:
+        #     print('---BOUNDS MATCH')
+        
+        
+        
+        # Read the mask and identify valid region
+        mask_data = src_mask.read(1)  # Read the first band
+        valid_region = np.where(mask_data > 0)  # Find where the mask is greater than 0
+        
+        # Compute bounding box of the valid region
+        if valid_region[0].size > 0 and valid_region[1].size > 0:
+            min_row, max_row = valid_region[0].min(), valid_region[0].max()
+            min_col, max_col = valid_region[1].min(), valid_region[1].max()
+        else:
+            raise ValueError("The mask does not contain any valid region.")
+        
+        # Calculate window for clipping
+        window = rasterio.windows.Window.from_slices(
+            (min_row, max_row + 1),
+            (min_col, max_col + 1)
+        )
+        
+        # Read the SAR image for the same window
+        sar_data = src_image.read(1, window=window)
+        transform = src_image.window_transform(window)
+        
+        # Apply the mask (optional)
+        # sar_data[mask_data[min_row:max_row + 1, min_col:max_col + 1] == 0] = src_image.nodata
+        
+        # Update metadata
+        out_meta = src_image.meta.copy()
+        out_meta.update({
+            "height": sar_data.shape[0],
+            "width": sar_data.shape[1],
+            "transform": transform
+        })
+        
+        # Save clipped SAR image
+        with rasterio.open(output_path, "w", **out_meta) as dst:
+            dst.write(sar_data, 1)
+    
+    print(f"Clipped SAR image saved to {output_path}")          
+
+
+def align_image_to_mask(sar_image, mask, aligned_image):
+    print('+++in align_image_to_mask fn')
+
+    # Open the mask to get CRS, transform, and dimensions
+    with rasterio.open(mask) as mask_src:
+        mask_crs = mask_src.crs
+        mask_transform = mask_src.transform
+        mask_width = mask_src.width
+        mask_height = mask_src.height
+        mask_res = (abs(mask_transform[0]), abs(mask_transform[4]))  # Ensure positive resolution
+        print('---mask ok')
+
+    # Open the SAR image to calculate alignment
+    with rasterio.open(sar_image) as sar_src:
+        sar_meta = sar_src.meta.copy()
+        transform, width, height = calculate_default_transform(
+            sar_src.crs, mask_crs, sar_src.width, sar_src.height, *sar_src.bounds, resolution=mask_res
+        )
+        sar_meta.update({
+            'crs': mask_crs,
+            'transform': transform,
+            'width': width,
+            'height': height
+        })
+        print('---sar ok')
+
+        # Write the aligned SAR image
+        with rasterio.open(aligned_image, 'w', **sar_meta) as aligned_dst:
+            for i in range(1, sar_src.count + 1):
+                reproject(
+                    source=rasterio.band(sar_src, i),
+                    destination=rasterio.band(aligned_dst, i),
+                    src_transform=sar_src.transform,
+                    src_crs=sar_src.crs,
+                    dst_transform=transform,
+                    dst_crs=mask_crs,
+                    resampling=Resampling.nearest
+                )
+    print(f"---Aligned SAR image saved to: {aligned_image}")
+
+
+# def set_tif_dtype_to_float32(tif_file):
+
 
 
 # WORK ON DATAARRAYS
