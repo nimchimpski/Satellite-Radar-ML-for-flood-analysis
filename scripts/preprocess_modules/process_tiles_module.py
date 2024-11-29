@@ -18,6 +18,7 @@ import time
 from rasterio.crs import CRS
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 import rioxarray as rxr
+from rioxarray import open_rasterio
 from rasterio.windows import Window
 
 
@@ -429,15 +430,24 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
     TODO add json file with metadata for each tile inv mask and anal_ext pixel count etc
     """
     print('\n+++++++in tile_datacube fn ++++++++')
+    num_tiles = 0
+    num_saved = 0
+    num_has_nans = 0
+    num_novalid_layer = 0
+    num_novalid_pixels = 0
+    num_nomask = 0
+    num_nomask_pixels = 0
 
+    values = [num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask, num_nomask_pixels]
     # datacube = rxr.open_rasterio(datacube_path, variable='data1') # OPENS A DATAARRAY
 
     # EXTRACT THE DATAARRAY WE WANT
-    ds = xr.open_dataset(datacube_path)
-    da = ds['data1']
+    ds = xr.open_dataset(datacube_path) # OPENS A DATASET
+    da = open_rasterio(datacube_path)
+    # da = ds['data1']
 
     print('==============================')
-    print('---opened da= ', da)
+    print('---opened da= ', ds)
     print('==============================')
     # check if da is a dataarray or dataset
     if isinstance(da, xr.Dataset):
@@ -446,23 +456,19 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
         print('---da is a dataarray')
         # da = da.to_array(dim='layer', name='data1')
 
-    # print("---Raw da Check----------------")
-    # for layer in da.coords["layer"].values:
-    #     layer_data = da.sel(layer=layer)
-    #     print(f"Layer '{layer}': Min={layer_data.min().item()}, Max={layer_data.max().item()}")
-    #     print(f"Layer '{layer}': Unique values: {np.unique(layer_data.values)}")
+    return values
+
+    print("---Raw da Check----------------")
+    for layer in da.coords["layer"].values:
+        layer_data = da.sel(layer=layer)
+        print(f"Layer '{layer}': Min={layer_data.min().item()}, Max={layer_data.max().item()}")
+        print(f"Layer '{layer}': Unique values: {np.unique(layer_data.values)}")
 
     # print('---opened da crs1 = ', da.rio.crs)
     da.rio.write_crs("EPSG:4326", inplace=True)
     # print('---opened da crs2 = ', da.rio.crs)
 
-    num_tiles = 0
-    num_saved = 0
-    num_has_nans = 0
-    num_novalid_layer = 0
-    num_novalid_pixels = 0
-    num_nomask = 0
-    num_nomask_pixels = 0
+
     print('----start----------------')
     for y_start in tqdm(range(0, da.y.size, stride), desc="### Processing tiles by row"):
         for x_start in range(0, da.x.size, stride):
@@ -557,7 +563,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
 
             normalized_tile.rio.to_raster(dest_path, compress="deflate", nodata=np.nan)
             num_saved += 1
-            if num_saved == 50:
+            if num_saved == 3:
                 break
 
             # OPEN SAVED TILE AND CHECK VALUES IN LAYERS
