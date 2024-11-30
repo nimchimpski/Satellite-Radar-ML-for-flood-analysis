@@ -9,8 +9,8 @@ from tqdm import tqdm
 
 def main():
     print('>>>>>in main')
-    base_path = Path(r"\c\users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TESTS\xrx")
-    base_path2 = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_process1\archive\dims_op_oc_dfd2_695959729_1\datacubexxxx_tiles\tile_extracted_0_0.tif")
+    base_path = Path(r"c:\users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TESTS\xrx")
+
     base_path.mkdir(exist_ok=True, parents=True)
 
     data = np.random.rand(2, 5, 5)
@@ -24,6 +24,19 @@ def main():
                         attrs = {'country': 'UK', 'crs': 'EPSG:7777'}
     )   
     da1.attrs['landcover'] = 'forest'
+
+    print('>>>>>da1 layers=', da1.coords['layer'].values)
+
+    da1.to_netcdf(base_path / 'test1.nc')
+
+    da1 = rxr.open_rasterio(base_path / 'test1.nc', decode_coords='all')
+    print('>>>>>da1 layers=', da1.coords['layer'].values)
+
+
+    return
+
+
+
 
     # da1.rio.write_crs("EPSG:7777", inplace=True)
     meta = {

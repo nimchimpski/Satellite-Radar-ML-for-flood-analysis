@@ -20,6 +20,7 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 import rioxarray as rxr
 from rioxarray import open_rasterio
 from rasterio.windows import Window
+from scripts.preprocess_modules.preprocess_helpers import dataset_type, print_dataarray_info, nan_check
 
 
 # NORMALIZE
@@ -111,22 +112,25 @@ def normalize_inmemory_tile(tile):
     """
     Min-max normalize all layers in a tile except specified layers.
     """
+    # print('+++in normalize_inmemory_tile')
     skip_layers =  ['mask', 'valid']
     normalized_tile = tile.copy()
 
     for layer in tile.coords['layer'].values:
+        # print(f"---Normalizing layer '{layer}'")
         if layer in skip_layers:
-            print(f"---Skipping normalization for layer '{layer}'")
+            # print(f"---Skipping normalization for layer '{layer}'")
             continue
         
         layer_data = tile.sel(layer=layer)
         layer_min, layer_max = layer_data.min().item(), layer_data.max().item()
+        # print(f"---Layer '{layer}': Min={layer_min}, Max={layer_max}")
         if layer_min != layer_max:  # Avoid division by zero
             normalized_tile.loc[dict(layer=layer)] = (layer_data - layer_min) / (layer_max - layer_min)
+        else:
+            print(f"---Layers '{layer}' has constant values; skipping normalization")
 
-            normalized_tile.loc[dict(layer=layer)] = (layer_data - layer_min) / (layer_max - layer_min)
-
-    return normalized_tile
+    return normalized_tile.astype('float32')
 
 
 # SELECT AND SPLIT
@@ -439,37 +443,16 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
     num_nomask_pixels = 0
 
     values = [num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask, num_nomask_pixels]
-    # datacube = rxr.open_rasterio(datacube_path, variable='data1') # OPENS A DATAARRAY
 
-    # EXTRACT THE DATAARRAY WE WANT
-    ds = xr.open_dataset(datacube_path) # OPENS A DATASET
-    da = open_rasterio(datacube_path)
-    # da = ds['data1']
+    ds = xr.open_dataset(datacube_path)
+    var = list(ds.data_vars)[0]
+    da = ds[var]
 
-    print('==============================')
-    print('---opened da= ', ds)
-    print('==============================')
-    # check if da is a dataarray or dataset
-    if isinstance(da, xr.Dataset):
-        print('---da is a dataset')
-    else:
-        print('---da is a dataarray')
-        # da = da.to_array(dim='layer', name='data1')
+    print('---ds layers= ', list(ds.data_vars))
 
-    return values
+    print_dataarray_info(da)
 
-    print("---Raw da Check----------------")
-    for layer in da.coords["layer"].values:
-        layer_data = da.sel(layer=layer)
-        print(f"Layer '{layer}': Min={layer_data.min().item()}, Max={layer_data.max().item()}")
-        print(f"Layer '{layer}': Unique values: {np.unique(layer_data.values)}")
-
-    # print('---opened da crs1 = ', da.rio.crs)
-    da.rio.write_crs("EPSG:4326", inplace=True)
-    # print('---opened da crs2 = ', da.rio.crs)
-
-
-    print('----start----------------')
+    print('----START TILING----------------')
     for y_start in tqdm(range(0, da.y.size, stride), desc="### Processing tiles by row"):
         for x_start in range(0, da.x.size, stride):
 
@@ -483,30 +466,26 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
             except KeyError:
                 print("---Error: tiling.")
                 return
+            # print('---checking first tile')
+            # print_dataarray_info(tile)
 
             # Skip empty tiles
             if tile.sizes["x"] == 0 or tile.sizes["y"] == 0:
-                # print("---Empty tile encountered; skipping.")
+                print("---Empty tile encountered; skipping.")
                 continue
-            print('vvvvvvvvvvvvvvvvvvvvvvvvvvvvvvvv')
-            # print('---TILE= ', tile)
-            print('xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx')
-
-            #CREAE A JSON FILE FOR EACH TILE
-            # create_tile_json(tile, event, x_idx, y_idx, tile_path)   
 
             num_tiles += 1
-            # print('---*****num_tiles*************= ', num_tiles)
-
             if  num_tiles % 250 == 0:
                 print(f"Counted { num_tiles} tiles")
 
             # #   FILTER OUT TILES WITH NO DATA
             # # print('---filtering out bad tiles')
-            # if contains_nans(tile):
-            #     num_has_nans += 1
-            #     # print('---tile has nans')
-            #     continue
+            if contains_nans(tile):
+                num_has_nans += 1
+                print('---tile has nans')
+                return
+
+
             # if has_no_valid_layer(tile):
             #     num_novalid_layer += 1
             #     # print('---tile has no valid layer')
@@ -519,23 +498,18 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
             #     num_nomask +=1
             #     # print('---tile has no mask')
             #     continue
-            # if has_no_mask_pixels(tile):
-            #     num_nomask_pixels +=1
-            #     # print('---tile has no mask pixels')
-            #     continue
+            # print('---MASK CHECK')
+            if has_no_mask_pixels(tile):
+                num_nomask_pixels +=1
+                # print('---tile has no mask pixels')
+                continue
 
-            print("---tile Stats Before Normalization--------------------")
-            for layer in tile.coords["layer"].values:
-                print(f"{layer}: Min={tile.sel(layer=layer).min().item()}, Max={tile.sel(layer=layer).max().item()}")
-                # CALCULATE UNIQUE VALUES
-                vals = np.unique(tile.sel(layer=layer).values)
-                print(f"{layer}: num Unique values: {len(vals)}")
+            # print("---PRINTING DA INFO B4 NORM-----")
+            # print_dataarray_info(tile)
 
             # Normalize the tile
-            # print('---normalizing tile')
-            # normalized_tile = normalize_inmemory_tile(tile)
-            normalized_tile = tile
-            print("---Tile layers: ", tile.coords["layer"].values)
+            normalized_tile = normalize_inmemory_tile(tile)
+
 
             # TODO  add to json
             tile_name = f"tile_{datacube_path.parent.name}_{x_start}_{y_start}.tif"
@@ -547,28 +521,40 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
                 print('---created dir= ', dest_path.parent)
 
             # PRESAVE CHACK
-            print("---Tile before saving---------------")
-            for layer in normalized_tile.coords["layer"].values:
-                vals = np.unique(tile.sel(layer=layer).values)
-                print(f"{layer}: num Unique values: {len(vals)}")
-            print('-----------------------------------')
+            # print("---Tile before saving---------------")
+            # print_dataarray_info(normalized_tile)
+
 
             ######### SAVE TILE ############
             # Save layer names as metadata
             layer_names = list(normalized_tile.coords["layer"].values)
             layer_names = [str(name) for name in layer_names]
-            print('---layer_names= ', layer_names)
-            # print('---normalized_tile layer names= ', normalized_tile.attrs["layer_names"]) 
-            normalized_tile = normalized_tile.astype('float32')
+            # get crs and transform
+            crs = normalized_tile.rio.crs
+            transform = normalized_tile.rio.transform()
+            tile_data = normalized_tile.values
+            num_layers, height, width = tile_data.shape
+            # print('---layer_names= ', layer_names)
+            with rasterio.open(dest_path, 'w',
+                                driver='GTiff',
+                                height=height,
+                                width=width,
+                                count=num_layers,
+                                dtype=tile_data.dtype,
+                                crs=crs,
+                                transform=transform,
+                                compress='deflate') as dst:
+                for i in range(1, num_layers + 1):
+                    dst.write(tile_data[i - 1], i)
+                    dst.set_band_description(i, layer_names[i-1])  # Add band descriptions
 
-            normalized_tile.rio.to_raster(dest_path, compress="deflate", nodata=np.nan)
-            num_saved += 1
-            if num_saved == 3:
-                break
+
+            # num_saved += 1
+            # if num_saved %  == 0:
+            #     print(f"Saved {num_saved} tiles")
 
             # OPEN SAVED TILE AND CHECK VALUES IN LAYERS
-            print('-----------------------------')
-            print('---TILE WAS SAVED-------')
+            # print('---TILE WAS SAVED-------')
 
             # saved_tile = rxr.open_rasterio(dest_path)
             # print('---saved_tile= ', saved_tile)
@@ -600,7 +586,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
             #         if src.descriptions[band_idx - 1]:
             #             print(f"--- Band {band_idx} Description: {src.descriptions[band_idx - 1]}")
 
-            print('-----------------------------')
+            # print('-----------------------------')
 
     print('--- num_tiles= ', num_tiles)
     print('---num_saved= ', num_saved)  
@@ -787,13 +773,12 @@ def contains_nans(tile):
     Returns True if NaNs are found, along with the count of NaNs per band.
     Returns False if no NaNs are found.
     """
-    bands_to_check = ["dem", "slope", "vv", "vh", 'valid','mask']
     contains_nan = False  # Flag to track if any NaNs are found
-    for band in bands_to_check:
+    for band in tile.coords['layer'].values:
         # Calculate the number of NaNs in the current band
         nan_count = np.isnan(tile.sel(layer=band)).sum().values
         if nan_count > 0:
-            # print(f"Tile contains {nan_count} NaN values in {band}")
+            print(f"Tile contains {nan_count} NaN values in {band}")
             contains_nan = True
     return contains_nan  # True if any NaNs were found, False if none
 
@@ -818,10 +803,33 @@ def has_no_mask(tile):
     '''
     return 'mask' not in tile.coords['layer'].values
 
-def has_no_mask_pixels(tile, ):
-    #print("Values in 'mask' layer for tile:", tile.sel(layer='mask').values)
-    return 1 not in tile.sel(layer='mask').values  # If valid data is found, return False
-    
+def has_no_mask_pixels(da):
+    """
+    Checks if the 'mask' layer in the tile contains any pixels with value 1.
+    Returns True if no valid pixels (value 1) are found, False otherwise.
+    """
+    for layer in da.coords['layer'].values:   
+        try:
+            # print('---layer= ', layer)
+
+
+            # Extract the mask layer as a NumPy array
+            mask_values = da.sel(layer=layer)
+            max = mask_values.max().item()
+            print('\n---max= ', max,'\n')
+            # print("---Mask array shape:", mask_values.shape)
+            # print("---Unique values in mask:", np.unique(mask_values))            
+            if max > 0.5:
+                # print("---Valid mask pixels ( > 0.5) found.")
+                return False
+            else:
+                # print("---No valid mask pixels (value 1) found.")
+                return True  # No valid pixels
+
+        except Exception as e:
+            print(f"---Error checking mask pixels: {e}")
+            return True  # Default to True in case of error
+
 
 def check_novalues(path_to_tiff):
     with rasterio.open(path_to_tiff) as src:

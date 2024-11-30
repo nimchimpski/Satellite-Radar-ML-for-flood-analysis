@@ -15,6 +15,7 @@ import re
 import subprocess
 import rasterio
 from rasterio.warp import calculate_default_transform, reproject, Resampling
+from scripts.preprocess_modules.preprocess_helpers import  check_dataarray_list, dataset_type, print_dataarray_info
 
 
 def fill_nodata_with_zero(input_file):
@@ -422,115 +423,32 @@ def reproject_to_4326_gdal(input_path, output_path):
     gdal.Warp(output_path, src_ds, options=warp_options)
     print(f"---Reprojected raster saved to: {output_path.name}")              
 
-def make_dataset_TSX(folder, event, datas):
+def make_dataset_TSX(folder, event, layerdict):
     '''
-    MAKES AN XARRAY 'DATASET' (!!!)
-    THIS MEANS 1ST DIMENSION IS A VARIABLE NAME. DEFAULT = '--xarray_dataarray_variable--'
-    THIS MEANS FURTHER VARIABLES CAN BE ADDED - EG TIME SERIES DATA FOR SAME AREA
     'Event' is a single folder conatining flood event data    
-    'satck' is an Xarray DataArray 
     '''   
     print(f"\n++++ in make_dataset fn")      
-    dataarrays = []
-    layer_names = []
-    print(f'---datas= {datas}')
-    for tif_file, band_name in datas.items():
-        print(f'---tif_file= {tif_file}')
-        print(f'---band_name= {band_name}')
-        filepath = folder / tif_file
-        print(f'---**************filepath = {filepath}')
-        try:
-            # CREATE A DATA ARRAY FROM THE EACH FILE
-            tiffda = rxr.open_rasterio(Path(filepath))
-            nan_check(tiffda)
-            print('---print da= ',tiffda)
 
-            # Check if da is created successfully
-            if tiffda is None:
-                print(f"---Error: da for {tif_file} is None")
+    print(f'---making das from layerdict= {layerdict}')
+    dataarrays, layer_names = make_das_from_layerdict(nan_check, layerdict, dataarrays, layer_names, folder)
 
-            # check num unique vals
-            print('---num unique vals= ',len(np.unique(tiffda.values)))
-        except Exception as e:
-            print(f"---Error loading {tif_file}: {e}")
-            continue  # Skip this file if there is an issue loading
+    # check_dataarray_list(dataarrays, layer_names)
+    # print('---DATAARRAYS cHECKED OK')
 
-        try:
-            dataarrays.append(tiffda)
-            layer_names.append(band_name)
-        except Exception as e:
-            print(f"---Error creating layers for {tif_file}: {e}")
+    da = xr.concat(dataarrays, dim='layer').astype('float32')   
+    da = da.assign_coords(layer=layer_names)
 
-    print('---length dataarrays = ',len(dataarrays))
-    # dataarrays = [i.astype('float32') for i in dataarrays]
+    print('---layer names :', da.coords["layer"].values)    
+    print_dataarray_info(da)
+    # Rechunk the final datacube for optimal performance
+    da = da.chunk({'x': 1024, 'y': 1024, 'layer': 1})
+    print('---Rechunked datacube')  
+    # If the 'band' dimension is unnecessary (e.g., single-band layers), squeeze it out
+    if 'band' in da.dims and da.sizes['band'] == 1:
+        da = da.squeeze('band') 
+    print('++++++++++++++++++++++++++END MAKE DATASET TSX ++++++++++++++++++++++++++++++++++\n')
+    return da
 
-    print(f'---layer_names list created= {layer_names}')
-
-    # CHECKS
-    for i, da in enumerate(dataarrays):
-        if not hasattr(da, 'rio'):
-            print(f"---Error: {layer_names[i]} lacks rioxarray accessors. Reinitializing...")
-        else:
-            print('---has attr')
-        print('---type da= ',type(da))  
-        print(f"---Layer {i} name: {layer_names[i]}")
-        print(f"---Shape: {da.shape}, CRS: {da.rio.crs}, Resolution: {da.rio.resolution()}, Bounds: {da.rio.bounds()}")
-        if da.rio.crs != dataarrays[0].rio.crs:
-            print(f"---Mismatch in CRS for {layer_names[i]}")
-        if da.rio.resolution() != dataarrays[0].rio.resolution():
-            print(f"---Mismatch in Resolution for {layer_names[i]}")
-        dataarrays[i] = da.astype('float32')
-        # chack the datatype
-        print(f"---Data Type: {da.dtype}")
-
-
-    if dataarrays:
-        da = xr.concat(dataarrays, dim='layer').astype('float32')
-        reference_layer = dataarrays[0]
-        da.attrs.update(reference_layer.attrs)
-        print('---da is a dataset=',isinstance(da, xr.Dataset))
-        print('---da =',da)
-
-        da = da.assign_coords(layer=layer_names)
-        print('---da layers after assigning=',da['layer'])
-        print('---layer names finished assigning - did i fuck up?')
-
-        # MAKE da INTO A DATASET !!!!!!!!!!!!
-        ds = da.to_dataset(name="data1")  # Replace with a suitable name
-        print('---ds made')
-        print('---ds is a dataset???=',isinstance(ds, xr.Dataset))
-
-        # Rechunk the final datacube for optimal performance
-        ds = ds.chunk({'x': 1024, 'y': 1024, 'layer': 1})
-        print('---Rechunked datacube')
-
-        # Check if layers[0] has a CRS
-        # if dataarrays[0].rio.crs is None:
-        #     print("---Warning: layers[0] does not have a CRS. Assigning a default CRS.")
-        #     # Optionally assign a default CRS, like EPSG:4326
-        #     dataarrays[0].rio.write_crs("EPSG:4326", inplace=True)
-        # else:
-        #     print(f"---CRS for layers[0]: {dataarrays[0].rio.crs}")
-        #     print(f"---CRS for layers[1]: {dataarrays[1].rio.crs}")
-
-        # ds.rio.write_crs(dataarrays[0].rio.crs, inplace=True)
-
-
-        # If the 'band' dimension is unnecessary (e.g., single-band layers), squeeze it out
-        if 'band' in ds.dims and ds.sizes['band'] == 1:
-            ds = ds.squeeze('band')
-            #print('---Squeezed out single-band dimension')
-
-        print(f'---ds {event.name} made ok')
-        print('---ds is a dataset=',isinstance(ds, xr.Dataset))
-        print('---ds= ',ds)
-        # save the dataset
-        # ds.to_netcdf(folder / f"datacube_{event.name}.nc", mode='w', format='NETCDF4', engine='netcdf4')
-        print('++++++++++++++++++++++++++END MAKE DATASET TSX ++++++++++++++++++++++++++++++++++\n')
-        return ds
-    else:
-        print('---No layers found')
-        return None 
 
 def tif_checks_TSX(func, image=None, mask=None, ):
     if image:
@@ -548,7 +466,7 @@ def tif_checks_TSX(func, image=None, mask=None, ):
             print(f"---Unique values in mask: {unique_values}")
             func(data)
     
-def make_datas_TSX(extracted):
+def make_layerdict_TSX(extracted):
     '''
     iterates through the files in the event folder and returns a dict of the datas
     '''
@@ -578,71 +496,34 @@ def make_datas_TSX(extracted):
 
 def create_event_datacubes_TSX(event, mask_code, VERSION="v1"):
     '''
-    data_root: Path directory containing the event folders (1deep).
-
-    An xarray dataset is created for each event folder and saved as a .nc file.
-    NB DATASET IS A COLLECTION OF DATAARRAYS
-        # TODO add RTC functionality
-
+    An xarray dataset is created for the event folder and saved as a .nc file.
     '''
-    print(f'##################### MAKING SINGLE DATASET {event.name} ##############################')
+    print(f'+++++++++++ IN CREAT EVENT DATACUBE {event.name}+++++++++++++++++')
     # FIND THE EXTRACTED FOLDER
     folder = event / 'extracted'
-    # Get the datas info from the folder
-    datas = make_datas_TSX(folder)
-    print('---datas= ',datas)
-    # Create the ds
-    ds = make_dataset_TSX(folder, event, datas)
-    print('---ds is a dataset=',isinstance(ds, xr.Dataset))
+    layerdict = make_layerdict_TSX(folder)
+
+    print(f'---making das from layerdict= {layerdict}')
+    dataarrays, layer_names = make_das_from_layerdict( layerdict, folder)
+
+    # check_dataarray_list(dataarrays, layer_names)
+
+    da = xr.concat(dataarrays, dim='layer').astype('float32')   
+    da = da.assign_coords(layer=layer_names)
+
+    # If the 'band' dimension is unnecessary (e.g., single-band layers), squeeze it out
+    if 'band' in da.dims and da.sizes['band'] == 1:
+        da = da.squeeze('band') 
+
+    print_dataarray_info(da)
     
-    # Iterate over each variable in the dataset
-    for var_name, dataarray in ds.data_vars.items():
-        print(f"---Checking variable: {var_name}")
-        check_int16_range(dataarray)
+    da = da.chunk({'x': 1024, 'y': 1024, 'layer': 1})
+    print('---Rechunked datacube')  
+
+    output_path = folder / f"{mask_code}.nc"
+    da.to_netcdf(output_path, mode='w', format='NETCDF4', engine='netcdf4')
     
-    # Ensure CRS is applied to the dataset
-    if not ds.rio.crs:
-        ds.rio.write_crs("EPSG:4326", inplace=True)  # Replace with desired CRS
-    print('---ds crs = ', ds.rio.crs)
-    # Step 2: Add spatial_ref coordinate
-    crs = ds.rio.crs
-    ds['spatial_ref'] = xr.DataArray(
-        0,
-        attrs={
-            'grid_mapping_name': 'latitude_longitude',
-            'epsg_code': crs.to_epsg() if crs.to_epsg() else "Unknown EPSG",
-            'crs_wkt': crs.to_wkt()
-        }
-    )
-    print('---ds[spatial ref]',ds['spatial_ref'])
-    print('---ds[spatial ref] attrs', ds['spatial_ref'].attrs)
-    # Step 3: Link spatial_ref to 'data1'
-    ds['data1'].encoding['grid_mapping'] = 'spatial_ref'
-    print(f',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,')
-    print('---dataset= ',ds)
-    print(f',,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,')
-    
-    # # Link the CRS to the main data variable
-    # ds['data1'].attrs['grid_mapping'] = 'spatial_ref'
-    print(f'################### SAVING {event.name} DS ##############################')
-    # save datacube to data_root
-    print(f"---Saving event datacube : {f'datacube_{event.name}_{VERSION}.nc'}")
-    output_path = folder / f"{mask_code}_{VERSION}.nc"
-    ds.to_netcdf(output_path, mode='w', format='NETCDF4', engine='netcdf4')
-    # Check CRS after reopening
-    print('---ds.attrs= ',ds['spatial_ref'].attrs['epsg_code'])
-    print(ds['spatial_ref'].attrs.get("epsg_code", "Attribute not found"))
-    print('---bye bye')
-    
-    # TODO COLLAPSE THESE FUNCTIONS
-    for var_name, dataarray in ds.data_vars.items():
-        print(f"Checking variable nan: {var_name}")
-        nan_check(dataarray)
-    for var_name, dataarray in ds.data_vars.items():
-        print(f"Checking variable int16: {var_name}")
-        check_int16_range(dataarray)
-    print(f'>>>>>>>>>>>  ds saved for= {event.name} >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n')
-    print('>>>finished all events\n')
+    print(f'>>>>>>>>>>>  ds saved for= {event.name} bye bye >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n')
 
 
 def calculate_and_normalize_slope(input_dem, mask_code):
@@ -833,7 +714,27 @@ def align_image_to_mask(sar_image, mask, aligned_image):
 
     print(f"---Aligned SAR image saved to: {aligned_image}")
 
+def make_das_from_layerdict( layerdict, folder):
+    dataarrays = []
+    layer_names = []
+    for tif_file, band_name in layerdict.items():
+        print(f'---tif_file= {tif_file}')
+        print(f'---band_name= {band_name}')
+        filepath = folder / tif_file
+        # print(f'---**************filepath = {filepath.name}')
+        try:
+            tiffda = rxr.open_rasterio(filepath)
+            nan_check(tiffda)
 
+        except Exception as e:
+            print(f"---Error loading {tif_file}: {e}")
+            continue  
+        try:
+            dataarrays.append(tiffda)
+            layer_names.append(band_name)
+        except Exception as e:
+            print(f"---Error creating layers for {tif_file}: {e}")
+    return dataarrays, layer_names
 # def set_tif_dtype_to_float32(tif_file):
 
 

@@ -92,9 +92,10 @@ for event in data_root.iterdir():
         tif_checks_TSX(nan_check, image=final_image, mask=final_mask)  
 
         print('\n>>>>>>>>>>>>>>>> create event datacubes >>>>>>>>>>>>>>>>>')
-    mask_code = 'datacubexxxx'   
+    mask_code = '1234456_345'   
     # create_event_datacubes_TSX(event, mask_code)
     
+
     save_tiles_path = event / f"{mask_code}_tiles"
     if save_tiles_path.exists():
         print(f"### Deleting existing tiles folder: {save_tiles_path}")
