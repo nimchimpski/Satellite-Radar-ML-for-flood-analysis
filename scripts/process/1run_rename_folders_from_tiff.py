@@ -5,8 +5,8 @@ import os
 from pathlib import Path
 import json
 import time
-from scripts.preprocess_modules.preprocess_helpers import get_central_coordinate_from_tiff
-from scripts.preprocess_modules.preprocess_helpers import get_crs_from_tiff
+from scripts.process_modules.process_helpers import get_central_coordinate_from_tiff
+from scripts.process_modules.process_helpers import get_crs_from_tiff
 from preprocess_modules.organise_folders import rename_folder_based_on_country
 from preprocess_modules.organise_folders import get_country_name
 from preprocess_modules.organise_folders import update_asset_jsons

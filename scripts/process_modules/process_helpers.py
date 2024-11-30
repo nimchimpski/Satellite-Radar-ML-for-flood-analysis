@@ -1,6 +1,9 @@
 import xarray as xr
 import numpy as np
 import rioxarray as rxr 
+import rasterio
+from pathlib import Path
+from rasterio.io import DatasetReader
 
 def dataset_type(da):
     if isinstance(da, xr.Dataset):
@@ -10,7 +13,7 @@ def dataset_type(da):
 
 
 def print_dataarray_info(da):
-    print('-------------------------') 
+    print('-----------PRINT DATARAY INFO--------------') 
     for layer in da.coords["layer"].values:
         layer_data = da.sel(layer=layer)
         print(f"---Layer '{layer}': Min={layer_data.min().item()}, Max={layer_data.max().item()}")
@@ -46,3 +49,31 @@ def nan_check(nparray):
         print("----NO NANS FOUND")
         return True
 
+
+def print_tiff_info_TSX( image=None, mask=None):
+    print('---PRINT TIFF INFO---')
+    if image:
+        with rasterio.open(image) as src:
+            print(f'\n---CHECKING = {image.name}') 
+            data = src.read()
+            print(f"--- shape: {data.shape}, dtype: {data.dtype}, crs ={src.crs}")
+            nan_check(data)
+    if isinstance(mask, Path):
+        with rasterio.open(mask) as src:
+            print(f'---mask type = {type(mask)}')
+            print(f'---CHECKING= {mask.name}')
+            data = src.read()
+            print(f"--- shape: {data.shape}, dtype: {data.dtype}, crs ={src.crs}")
+            unique_values = np.unique(data)
+            print(f"---Unique values in mask: {unique_values}")
+            nan_check(data)
+    elif isinstance(mask, DatasetReader):
+        print
+        print(f'---CHECKING= {mask.name}')
+        data = mask.read()
+        print(f"--- shape: {data.shape}, dtype: {data.dtype}, crs ={mask.rio.crs}")
+        unique_values = np.unique(data)
+        print(f"---Unique values in mask: {unique_values}")
+        nan_check(data)
+    print('-----------------------')
+    

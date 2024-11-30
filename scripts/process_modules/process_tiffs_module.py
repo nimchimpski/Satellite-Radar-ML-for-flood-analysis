@@ -14,8 +14,11 @@ import re
 # from check_int16_exceedance import check_int16_exceedance
 import subprocess
 import rasterio
+import numpy as np
+from rasterio.io import MemoryFile
 from rasterio.warp import calculate_default_transform, reproject, Resampling
-from scripts.preprocess_modules.preprocess_helpers import  check_dataarray_list, dataset_type, print_dataarray_info
+from scripts.process_modules.process_helpers import  check_dataarray_list, dataset_type, print_dataarray_info
+
 
 
 def fill_nodata_with_zero(input_file):
@@ -319,8 +322,6 @@ def create_event_datacubes(data_root, save_path, VERSION="v1"):
 
     print('>>>finished all events\n')
 
-
-
 # TERRASARX FUNCTIONS
 
 def make_float32(input_tif, output_file):
@@ -343,8 +344,36 @@ def make_float32(input_tif, output_file):
             # Write the new file
             with rasterio.open(output_file, 'w', **meta) as dst:
                 dst.write(data.astype('float32'))
+    
+
+def make_float32_inmem(input_tif):
+
+    # Open the input TIFF file
+    with rasterio.open(input_tif) as src:
+        # Read the data from the input file
+        data = src.read()
+        meta = src.meta.copy()
+
+        # Check if data is already float32
+        if meta['dtype'] == 'float32':
+            print('---Data already in float32 format.')
+            return src  # Return the original dataset if already float32
+
+        # Convert data to float32
+        converted_data = data.astype('float32')
+
+        # Update metadata to reflect new dtype
+        meta.update(dtype='float32')
+
+        # Create a new in-memory file with updated metadata and float32 data
+        with MemoryFile() as memfile:
+            with memfile.open(**meta) as mem:
+                mem.write(converted_data)
+                print('---Converted to float32 and written to memory.')
+                return memfile.open()
 
 
+    return output_file
 
 def xxx():
 
@@ -423,49 +452,7 @@ def reproject_to_4326_gdal(input_path, output_path):
     gdal.Warp(output_path, src_ds, options=warp_options)
     print(f"---Reprojected raster saved to: {output_path.name}")              
 
-def make_dataset_TSX(folder, event, layerdict):
-    '''
-    'Event' is a single folder conatining flood event data    
-    '''   
-    print(f"\n++++ in make_dataset fn")      
 
-    print(f'---making das from layerdict= {layerdict}')
-    dataarrays, layer_names = make_das_from_layerdict(nan_check, layerdict, dataarrays, layer_names, folder)
-
-    # check_dataarray_list(dataarrays, layer_names)
-    # print('---DATAARRAYS cHECKED OK')
-
-    da = xr.concat(dataarrays, dim='layer').astype('float32')   
-    da = da.assign_coords(layer=layer_names)
-
-    print('---layer names :', da.coords["layer"].values)    
-    print_dataarray_info(da)
-    # Rechunk the final datacube for optimal performance
-    da = da.chunk({'x': 1024, 'y': 1024, 'layer': 1})
-    print('---Rechunked datacube')  
-    # If the 'band' dimension is unnecessary (e.g., single-band layers), squeeze it out
-    if 'band' in da.dims and da.sizes['band'] == 1:
-        da = da.squeeze('band') 
-    print('++++++++++++++++++++++++++END MAKE DATASET TSX ++++++++++++++++++++++++++++++++++\n')
-    return da
-
-
-def tif_checks_TSX(func, image=None, mask=None, ):
-    if image:
-        with rasterio.open(image) as src:
-            print(f'\n>>>CHECKING = {image.name}') 
-            data = src.read()
-            print(f"--- shape: {data.shape}, dtype: {data.dtype}, crs ={src.crs}")
-            func(data)
-    if mask:
-        with rasterio.open(mask) as src:
-            print(f'\n>>>CHECKING= {mask.name}')
-            data = src.read()
-            print(f"--- shape: {data.shape}, dtype: {data.dtype}, crs ={src.crs}")
-            unique_values = np.unique(data)
-            print(f"---Unique values in mask: {unique_values}")
-            func(data)
-    
 def make_layerdict_TSX(extracted):
     '''
     iterates through the files in the event folder and returns a dict of the datas
@@ -494,7 +481,7 @@ def make_layerdict_TSX(extracted):
     
     print("\n+++ Datacube Health Check Completed +++")
 
-def create_event_datacubes_TSX(event, mask_code, VERSION="v1"):
+def create_event_datacube_TSX(event, mask_code, VERSION="v1"):
     '''
     An xarray dataset is created for the event folder and saved as a .nc file.
     '''
@@ -506,8 +493,10 @@ def create_event_datacubes_TSX(event, mask_code, VERSION="v1"):
     print(f'---making das from layerdict= {layerdict}')
     dataarrays, layer_names = make_das_from_layerdict( layerdict, folder)
 
+    # print(f'---CHECKING DATAARRAY LIST')
     # check_dataarray_list(dataarrays, layer_names)
 
+    print(f'---CREATING CONCATERNATED DATASET')
     da = xr.concat(dataarrays, dim='layer').astype('float32')   
     da = da.assign_coords(layer=layer_names)
 
@@ -515,8 +504,9 @@ def create_event_datacubes_TSX(event, mask_code, VERSION="v1"):
     if 'band' in da.dims and da.sizes['band'] == 1:
         da = da.squeeze('band') 
 
+    print(f'---DATAARRAY INFO')
     print_dataarray_info(da)
-    
+    print("Before chunking:", np.unique(da.sel(layer='mask').values))
     da = da.chunk({'x': 1024, 'y': 1024, 'layer': 1})
     print('---Rechunked datacube')  
 
@@ -646,7 +636,7 @@ def clip_image_to_mask_gdal(input_raster, mask_raster, output_raster):
     )
     gdal.Warp(output_raster, input_raster, options=options)
 
-    print(f"Clipped raster saved to: {output_raster}")
+    print(f"Clipped raster saved to: {output_raster.name}")
     mask_ds = None  # Close the mask dataset
     # Delete the original SAR image
     Path(input_raster).unlink()
@@ -722,18 +712,15 @@ def make_das_from_layerdict( layerdict, folder):
         print(f'---band_name= {band_name}')
         filepath = folder / tif_file
         # print(f'---**************filepath = {filepath.name}')
-        try:
-            tiffda = rxr.open_rasterio(filepath)
-            nan_check(tiffda)
+        tiffda = rxr.open_rasterio(filepath)
+        nan_check(tiffda)
+        # print(f'---{band_name}= {tiffda}')   
+        # check num uniqq values
+        print(f"---Unique data: {np.unique(tiffda.data)}")
+        print("----unique values:", np.unique(tiffda.values))
+        dataarrays.append(tiffda)
+        layer_names.append(band_name)
 
-        except Exception as e:
-            print(f"---Error loading {tif_file}: {e}")
-            continue  
-        try:
-            dataarrays.append(tiffda)
-            layer_names.append(band_name)
-        except Exception as e:
-            print(f"---Error creating layers for {tif_file}: {e}")
     return dataarrays, layer_names
 # def set_tif_dtype_to_float32(tif_file):
 
