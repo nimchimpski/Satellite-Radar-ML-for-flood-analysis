@@ -1,3 +1,5 @@
+import torchvision.models as models
+
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
@@ -38,24 +40,38 @@ class FloodDataset(Dataset):
     
     # This returns given an index the i-th sample and label
     def __getitem__(self, idx):
+
+
         filename = self.sample_list[idx]
         tile = tiff.imread(Path(self.tile_root, filename))
 
+        # print tile info and shape
+        print(f"---Tile shape b4 permute: {tile.shape}")
+
+        # Transpose to (C, H, W)
+        tile = torch.tensor(tile, dtype=torch.float32).permute(2, 0, 1)  # Shape: (2, 256, 256)
+
+        print(f"---Tile shape after permute: {tile.shape}")
+
+
         # Select channels based on `inputs` list position
         input_idx = list(range(len(self.inputs)))
-        model_input = tile[:, :, input_idx]  # auto select the channels
-        model_input = torch.tensor(model_input)
+        # model_input = tile[input_idx, :, : ]  # auto select the channels
+        model_input = tile[0, :, : ]  # auto select the channels
+        model_input = torch.tensor(model_input, dtype=torch.float32)    
 
-        model_input = model_input.cuda() #???
+        # model_input = model_input.cuda() #???
 
         # EXTRACT MASK TO BINARY
-        mask = tile[:,:, self.inputs.index('mask')]
+        print('---mask index:', self.inputs.index('mask'))
+        # mask = tile[ self.inputs.index('mask'),:,: ]
+        mask = tile[ 1,:,: ]
         # CONVERT TO TENSOR
-        mask = torch.tensor(mask)
-        mask = (mask > 0.5)
+        mask = torch.tensor(mask,dtype=torch.float32)
+        mask = (mask > 0.5).float()
 
         # Debugging: Check unique values in the mask
-        print("Unique values in mask:", torch.unique(mask))
+        print("---Unique values in mask:", torch.unique(mask))
 
         return [model_input.float(), mask.float()]
         # return model_input.float(), val_mask.float()
@@ -99,6 +115,22 @@ class SimpleCNN(nn.Module):
         # Optional: Use upsampling if necessary to match the size
         x = self.upsample(x)
         return x
+
+class ResNetBinaryClassifier(nn.Module):
+    def __init__(self, encoder_name='resnet34', in_channels=1, pretrained=True):
+        super().__init__()
+        # Load pretrained ResNet
+        self.backbone = models.__dict__[encoder_name](pretrained=pretrained)
+        
+        # Modify the first convolution layer to accept the HH SAR band (in_channels=1)
+        if in_channels != 3:
+            self.backbone.conv1 = nn.Conv2d(in_channels, 64, kernel_size=7, stride=2, padding=3, bias=False)
+        
+        # Replace the fully connected layer to output a single logit for binary classification
+        self.backbone.fc = nn.Linear(self.backbone.fc.in_features, 1)  # Single logit output
+
+    def forward(self, x):
+        return self.backbone(x)
 
 # LOSS FUNCTION
 

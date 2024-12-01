@@ -15,6 +15,7 @@ class Segmentation_training_loop(pl.LightningModule):
         self.save_hyperparameters(ignore = ['model'])   
         self.boundary_loss = BoundaryLoss()
         self.cross_entropy = nn.CrossEntropyLoss()
+        self.loss_fn = nn.BCEWithLogitsLoss()
         # Container to store validation results
         self.validation_outputs = []
 
@@ -32,8 +33,9 @@ class Segmentation_training_loop(pl.LightningModule):
         class_weight[mask == 0] = 0.2
 
         # b_loss = self.boundary_loss(logits, mask.long().squeeze(1))
-        b_loss = F.cross_entropy(logits, mask.squeeze(1).long(), weight=torch.Tensor([0.2, 1]).cuda())
-        total_loss = b_loss
+        # b_loss = F.cross_entropy(logits, mask.squeeze(1).long(), weight=torch.Tensor([0.2, 1]).cuda())
+        # total_loss = b_loss
+        total_loss = self.loss_fn(logits, mask)
 
         self.log('train_loss', total_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         lr = self._get_current_lr()
@@ -55,17 +57,14 @@ class Segmentation_training_loop(pl.LightningModule):
         logits = self.forward(image)
         logits = logits.softmax(1)
         
-        flood_loss = F.cross_entropy(logits, mask.squeeze(1).long(), weight=torch.Tensor([0.2, 1]).cuda())
+        # flood_loss = F.cross_entropy(logits, mask.squeeze(1).long(), weight=torch.Tensor([0.2, 1]).cuda())
+        flood_loss = self.loss_fn(logits, mask)
         tp, fp, fn, tn = smp.metrics.get_stats(logits[:, 1:], mask.long(), mode='binary', threshold=0.5)
         iou = smp.metrics.iou_score(tp, fp, fn, tn)
         self.log('val_loss', flood_loss, on_epoch=True, on_step= True, prog_bar=True, logger=True)
         self.log('iou', iou.mean(), prog_bar=True)
         return {"loss": flood_loss, "iou": iou.mean()}
         
-        # OLD WORKED
-        # self.log('val_loss', flood_loss, prog_bar=True)
-        # self.log('iou', iou.mean(), prog_bar=True)
-        # return {"loss": flood_loss, "iou": iou.mean()}
 
     def test_step(self, batch, batch_idx):
         image, mask, dist = batch
@@ -110,12 +109,15 @@ class Single_channel_training_loop(pl.LightningModule):
         image, mask = batch
 
         # Debugging: Check unique values in the mask
-        print("Unique values in mask:", torch.unique(mask))
+        print("---Unique values in mask:", torch.unique(mask))
+        print(f"---Image shape: {image.shape}, Mask shape: {mask.shape}")
 
         image = image.to('cuda')
         mask = mask.to('cuda')
         logits = self.forward(image)
+        print(f"Logits shape before squeeze: {logits.shape}")
         logits = logits.squeeze(1)
+        print(f"Logits shape after squeeze: {logits.shape}")
 
         # BCE loss for single-channel output
         flood_loss = self.bce_loss(logits, mask.float())        

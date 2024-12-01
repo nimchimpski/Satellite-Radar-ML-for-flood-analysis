@@ -41,10 +41,10 @@ from wandb import Artifact
 
 from scripts.train_modules.z.boundaryloss import BoundaryLoss
 from scripts.train_modules.train_helpers import *
-from scripts.train_modules.train_classes import FloodDataset, UnetModel, SimpleCNN, SurfaceLoss  
+from scripts.train_modules.train_classes import FloodDataset, UnetModel, SimpleCNN, SurfaceLoss , ResNetBinaryClassifier 
 from scripts.train_modules.train_functions import handle_interrupt
 from scripts.train_modules.train_functions import calculate_metrics, log_metrics_to_wandb
-from scripts.train_modules.training_loops import Single_channel_training_loop
+from scripts.train_modules.training_loops import Segmentation_training_loop
 
 #########################################################################
 
@@ -102,7 +102,7 @@ def main(evaluate=None, reproduce=None):
     in_channels = len(inputs)
     DEVRUN = 1
     metric_threshold = 0.9
-    loss = "xentropy"
+    loss = "BCEWithLogitsLoss"
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     input = [i for i in dataset_path.iterdir()]
     assert len(input) == 1
@@ -168,8 +168,8 @@ def main(evaluate=None, reproduce=None):
 
     # MAKE MODEL
     # model = SimpleCNN(in_channels=in_channels, classes=2)
-    model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=2, pretrained=PRETRAINED)
-    print('---model =', model)
+    model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED)
+    # print('---model =', model)
     model = model.to('cuda')  # Ensure the model is on GPU
     device = next(model.parameters()).device
     print(f'---model location: {device}')
@@ -220,7 +220,8 @@ def main(evaluate=None, reproduce=None):
 
     if not evaluate:
         print('---training / val  (NOT test)')
-        training_loop = Single_channel_training_loop(model)
+        training_loop = Segmentation_training_loop(model)
+
         trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl,)
 
         best_val_loss = trainer.callback_metrics.get("val_loss", None)
@@ -239,7 +240,7 @@ def main(evaluate=None, reproduce=None):
 
         ckpt = ckpt_dir / f'{dataset_name} {subset_fraction} {max_epoch:02d}.ckpt'
 
-        training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
+        training_loop = Single_channel_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
         training_loop = training_loop.cuda()
         training_loop.eval()
         # trainer.test(model=training_loop, dataloaders=test_dl)
