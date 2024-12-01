@@ -487,11 +487,11 @@ def create_event_datacube_TSX(event, mask_code, VERSION="v1"):
     '''
     print(f'+++++++++++ IN CREAT EVENT DATACUBE {event.name}+++++++++++++++++')
     # FIND THE EXTRACTED FOLDER
-    folder = event / 'extracted'
-    layerdict = make_layerdict_TSX(folder)
+    extracted_folder = event / 'extracted'
+    layerdict = make_layerdict_TSX(extracted_folder)
 
     print(f'---making das from layerdict= {layerdict}')
-    dataarrays, layer_names = make_das_from_layerdict( layerdict, folder)
+    dataarrays, layer_names = make_das_from_layerdict( layerdict, extracted_folder)
 
     # print(f'---CHECKING DATAARRAY LIST')
     # check_dataarray_list(dataarrays, layer_names)
@@ -502,15 +502,17 @@ def create_event_datacube_TSX(event, mask_code, VERSION="v1"):
 
     # If the 'band' dimension is unnecessary (e.g., single-band layers), squeeze it out
     if 'band' in da.dims and da.sizes['band'] == 1:
+        print('---Squeezing out the "band" dimension')
         da = da.squeeze('band') 
 
-    print(f'---DATAARRAY INFO')
-    print_dataarray_info(da)
-    print("Before chunking:", np.unique(da.sel(layer='mask').values))
-    da = da.chunk({'x': 1024, 'y': 1024, 'layer': 1})
-    print('---Rechunked datacube')  
+    # print_dataarray_info(da)
 
-    output_path = folder / f"{mask_code}.nc"
+    #######   CHUNKING ############
+    # da = da.chunk({'x': 256, 'y': 256, 'layer': 1})
+    # print('---Rechunked datacube')  
+
+    #######   SAVING ############
+    output_path = extracted_folder / f"{mask_code}.nc"
     da.to_netcdf(output_path, mode='w', format='NETCDF4', engine='netcdf4')
     
     print(f'>>>>>>>>>>>  ds saved for= {event.name} bye bye >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n')

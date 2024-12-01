@@ -27,13 +27,13 @@ def main():
 
     print('>>>>>da1 layers=', da1.coords['layer'].values)
 
-    da1.to_netcdf(base_path / 'test1.nc')
+    # da1.to_netcdf(base_path / 'test1.nc')
 
-    da1 = rxr.open_rasterio(base_path / 'test1.nc', decode_coords='all')
-    print('>>>>>da1 layers=', da1.coords['layer'].values)
+    # da1 = rxr.open_rasterio(base_path / 'test1.nc', decode_coords='all')
+    # print('>>>>>da1 layers=', da1.coords['layer'].values)
 
 
-    return
+    # return
 
 
 

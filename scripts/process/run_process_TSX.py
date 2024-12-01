@@ -22,16 +22,19 @@ make_datacubes = 0
 make_tiles = 1
 
 print(f'>>>make_tifs= {make_tifs==1} \nmake_datacubes= {make_datacubes==1} \nmake_tiles= {make_tiles==1}')
-# MOVE THE MASK, IMAGE, AND DEM TO THE EXTRACTED FOLDER
+
+# ITERATE OVER THE DATASET
 for folder in dataset.iterdir(): # ITER ARCHIVE AND CURRENT
     print(f'################### FOLDER={folder.name}  ###################')
     for event in folder.iterdir(): # ITER EVENTS
         print(f'################### EVENT={event.name}  ###################')
-        if make_tifs:
-            orig_mask = list(event.rglob('*MASK.tif'))[0]
-            # GET REGION CODE FROM MASK
-            mask_code = "_".join(orig_mask.name.split('_')[:2])
+        
+        orig_mask = list(event.rglob('*MASK.tif'))[0]
+        # GET REGION CODE FROM MASK
+        mask_code = "_".join(orig_mask.name.split('_')[:2])
 
+        # COPY  THE MASK, IMAGE, AND DEM TO THE EXTRACTED FOLDER
+        if make_tifs:
             extract_folder = event / 'extracted'
             if extract_folder.exists():
                 shutil.rmtree(extract_folder)
@@ -109,6 +112,7 @@ for folder in dataset.iterdir(): # ITER ARCHIVE AND CURRENT
 
             print_tiff_info_TSX(image=final_image, mask=final_mask) 
 
+        # CREATE AN EVENT DATA CUBE
         if make_datacubes:
             print('\n>>>>>>>>>>>>>>>> create 1 event datacube >>>>>>>>>>>>>>>>>')
             create_event_datacube_TSX(event, mask_code)
@@ -122,6 +126,7 @@ if make_tiles:
     total_nomask = 0
     total_nomask_pixels = 0
     total_failed_norm = 0
+    total_num_not_256 = 0
 
     cubes = list(dataset.rglob("*.nc"))   
     print(f'>>>num cubes= ',len(cubes))
@@ -138,9 +143,9 @@ if make_tiles:
 
 
 
-        print(f"################### tiling ###################")
+        print(f"\n################### tiling ###################")
         # DO THE TILING AND GET THE STATISTICS
-        num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask, num_nomask_pixels, num_failed_norm = tile_datacube_rxr(cube, save_tiles_path, tile_size=256, stride=256)
+        num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask, num_nomask_pixels, num_failed_norm , num_not_256= tile_datacube_rxr(cube, save_tiles_path, tile_size=256, stride=256)
 
         print('<<<  num_tiles= ', num_tiles)
         print('<<< num_saved= ', num_saved)  
@@ -150,6 +155,7 @@ if make_tiles:
         print('<<< num_nomask= ', num_nomask)
         print('<<< num_nomask_pixels= ', num_nomask_pixels)
         print('<<< num_failed_norm= ', num_failed_norm)
+        print('<<< num_not_256= ', num_not_256)
 
         total_num_tiles += num_tiles
         total_saved += num_saved
@@ -159,16 +165,19 @@ if make_tiles:
         total_nomask += num_nomask
         total_nomask_pixels += num_nomask_pixels
         total_failed_norm += num_failed_norm
-
-print(f'>>>>total num of tiles: {total_num_tiles}')
-print(f'>>>>total saved tiles: {total_saved}')
-print(f'>>>total has  NANs: {total_has_nans}')
-print(f'>>>total no valid layer : {total_novalid_layer}')
-print(f'>>>total no valid  pixels : {total_novalid_pixels}')
-print(f'>>>total no mask : {total_nomask}')
-print(f'>>>total no mask pixels : {total_nomask_pixels}')
-print(f'>>>num failed normalization : {total_failed_norm}')
-print(f'>>>all tiles tally: {total_num_tiles == total_saved + total_has_nans + total_novalid_layer + total_novalid_pixels + total_nomask + total_nomask_pixels + total_failed_norm}')
+        total_num_not_256 += num_not_256      
+        # END OF ONE CUBE TILE PROCESSING
+    # END OF ALL CUBES TILE PROCESSING  
+    print(f'>>>>total num of tiles: {total_num_tiles}')
+    print(f'>>>>total saved tiles: {total_saved}')
+    print(f'>>>total has  NANs: {total_has_nans}')
+    print(f'>>>total no valid layer : {total_novalid_layer}')
+    print(f'>>>total no valid  pixels : {total_novalid_pixels}')
+    print(f'>>>total no mask : {total_nomask}')
+    print(f'>>>total no mask pixels : {total_nomask_pixels}')
+    print(f'>>>num failed normalization : {total_failed_norm}')
+    print(f'>>>num not 256: {total_num_not_256}')
+    print(f'>>>all tiles tally: {total_num_tiles == total_saved + total_has_nans + total_novalid_layer + total_novalid_pixels + total_nomask + total_nomask_pixels + total_failed_norm + total_num_not_256}')
 
 end = time.time()
 # time taken in minutes to 2 decimal places

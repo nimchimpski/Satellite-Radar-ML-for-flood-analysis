@@ -6,7 +6,7 @@ from scripts.process_modules.process_tiles_module import select_tiles_and_split
 import click
 import shutil
 import signal
-from scripts.process_modules.process_helpers import get_incremental_filename, make_train_folders, handle_interrupt
+from scripts.process_modules.process_tiles_module  import  make_train_folders, handle_interrupt, get_incremental_filename
 
 @click.command()
 @click.option("--testdata",is_flag=True)
@@ -24,24 +24,21 @@ def main(testdata):
     MAKEFOLDER = True
     analysis_threshold=1
     mask_threshold=0.0
-    base_path = Path(r"Y:\1NEW_DATA\1data\2interim")
-    dest_dir = Path(r"Y:\1NEW_DATA\1data\3final")
-    main_dataset ="UNOSAT_FloodAI_Dataset_v2_norm"
-    test_dataset = base_path / "tests" / "testdata_tiles_norm_med"
+
+    src_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim")
+    dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final")
     
     #TO SAVE TO C:/
-    local3final = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final")
-    dest_dir = local3final 
+    dest_dir = dst_base / 'train_input' 
 
     # TEST RUN
     if  testdata:
-        dataset = test_dataset
-        dest_dir = dest_dir / "tests"
+        dataset = src_base / "tests" / "TSX_normalized_tiles"
     # SERIOUS RUN
     else:
-        dataset = base_path / main_dataset
+        dataset = src_base / 'TSX_normalized_tiles'
     
-    dest_dir = get_incremental_filename(dest_dir, f'{dataset.name}_px{mask_threshold}_split')
+    dest_dir = get_incremental_filename(dest_dir, f'{dataset.name}_mt{mask_threshold}_split')
     train_ratio=0.7
     val_ratio=0.15
     test_ratio=0.15
@@ -52,10 +49,10 @@ def main(testdata):
     if not dest_dir.exists():
         print(f"Failed to create {dest_dir}")
         return
-    print(f">>>dest dir name: {dest_dir.name}")
     print('>>>mask threshold:', mask_threshold)
     print('>>>analysis threshold:', analysis_threshold)
     make_train_folders(dest_dir)
+    print('>>>dataset:', dataset)   
 
     total = 0
     rejected = 0
@@ -63,7 +60,8 @@ def main(testdata):
     tot_missing_mask = 0
     low_selection = []
     #GET ALL NORMALIZED FOLDERS
-    recursive_list = list(dataset.rglob('normalized_minmax_tiles'))
+    recursive_list = list(dataset.rglob('*normalized_tiles'))
+    print(f'>>>len recursive_list= {len(recursive_list)}')
     if not recursive_list:
         print(">>>No normalized folders found.")
         return

@@ -98,7 +98,7 @@ def main(evaluate=None, reproduce=None):
     LOGSTEPS = 50 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
     # MODEL PARAMS
     PRETRAINED = True
-    inputs = ['vv', 'vh', 'grd', 'dem' , 'slope', 'mask'] 
+    inputs = ['hh' , 'mask'] 
     in_channels = len(inputs)
     DEVRUN = 1
     metric_threshold = 0.9

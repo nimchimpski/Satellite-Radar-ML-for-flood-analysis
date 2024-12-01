@@ -18,6 +18,8 @@ def print_dataarray_info(da):
         layer_data = da.sel(layer=layer)
         print(f"---Layer '{layer}': Min={layer_data.min().item()}, Max={layer_data.max().item()}")
         print(f"---num unique vals = {len(np.unique(layer_data.values))}")
+        if len(np.unique(layer_data.values)) < 4:
+            print(f"---unique vals = {np.unique(layer_data.values)}")
         print(f'---Layer crs={layer_data.rio.crs}')   
         print('-------------------------') 
 
@@ -77,3 +79,15 @@ def print_tiff_info_TSX( image=None, mask=None):
         nan_check(data)
     print('-----------------------')
     
+
+def pad_tile(tile, expected_size=250, pad_value=0):
+    current_x = tile.sizes["x"]
+    current_y = tile.sizes["y"]
+
+    # Calculate padding amounts
+    pad_x = max(0, expected_size - current_x)
+    pad_y = max(0, expected_size - current_y)
+
+    if pad_x == 0 and pad_y == 0:
+        # No padding needed
+        return tile

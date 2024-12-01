@@ -10,21 +10,22 @@ __pycache__/
 # Ignore Jupyter Notebook checkpoints
 .ipynb_checkpoints/
 
-
 # Ignore OS-specific files (macOS)
 .DS_Store
 
 # Ignore log files
 *.log
 
+# general
 .env
 tiles/
 ignore/
+.xml
 
 # Ignore specific config or sensitive files
 configs/secrets.yaml
-
 wandb/
+
 # ignore checkpoint files
 *.ckpt
 
@@ -34,15 +35,13 @@ wandb/
 data/
 datacopy/
 oldcode.py
-
 1data/1raw/
 1data/2interim/
 1data/3final/*
 1data/3final/ds*
 
-vc
+*.nc
 
-#DVC
 # But allow .dvc files
 !1data/3final/*.dvc
 !1data/**/*.dvc

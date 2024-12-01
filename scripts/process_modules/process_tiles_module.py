@@ -20,7 +20,7 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 import rioxarray as rxr
 from rioxarray import open_rasterio
 from rasterio.windows import Window
-from scripts.process_modules.process_helpers import dataset_type, print_dataarray_info, nan_check
+from scripts.process_modules.process_helpers import dataset_type, print_dataarray_info, nan_check, pad_tile
 
 
 # NORMALIZE
@@ -434,7 +434,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
     TODO add date etc to saved tile name?
     TODO add json file with metadata for each tile inv mask and anal_ext pixel count etc
     """
-    print('\n+++++++in tile_datacube fn ++++++++')
+    print('+++++++in tile_datacube rxr fn ++++++++')
     num_tiles = 0
     num_saved = 0
     num_has_nans = 0
@@ -443,14 +443,19 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
     num_nomask = 0
     num_nomask_pixels = 0
     num_failed_norm = 0
+    num_not_256 = 0
 
     ds = xr.open_dataset(datacube_path)
     var = list(ds.data_vars)[0]
     da = ds[var]
 
-    print('---ds vars= ', list(ds.data_vars))
+    print('---DA BEFORE TILING= ', list(ds.data_vars))
 
-    print_dataarray_info(da)
+    # print_dataarray_info(da)
+    if da.chunks:
+        for dim, chunk in zip(da.dims, da.chunks):
+            print(f"---Dimension '{dim}' has chunk sizes: {chunk}")
+
 
     print('----START TILING----------------')
     for y_start in tqdm(range(0, da.y.size, stride), desc="### Processing tiles by row"):
@@ -460,6 +465,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
             x_end = min(x_start + tile_size, da.x.size)
             y_end = min(y_start + tile_size, da.y.size)
 
+
             # Select the subset of data for the current tile
             try:
                 tile = da.isel(y=slice(y_start, y_end), x=slice(x_start, x_end))
@@ -467,16 +473,26 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
                 print("---Error: tiling.")
                 return
             
+            num_tiles += 1    
+
+            # print('---TILE INFO AT START')
             # print_dataarray_info(tile)
 
-            # Skip empty tiles
-            if tile.sizes["x"] == 0 or tile.sizes["y"] == 0:
-                print("---Empty tile encountered; skipping.")
+            if has_no_mask_pixels(tile):
+                num_nomask_pixels +=1
+                # print('---tile has no mask pixels')
                 continue
 
-            num_tiles += 1
-            # if  num_tiles % 1000 == 0:
-            #     print(f"Counted { num_tiles} tiles")
+            if int(tile.sizes["x"]) != tile_size or int(tile.sizes["y"]) != tile_size:
+                print("---odd shaped encountered; skipping.")
+                # padtile = pad_tile(tile, 250)
+                # tile = padtile
+                print(f"---Tile dimensions: {tile.sizes['x']}x{tile.sizes['y']}")
+                # print("---Tile coords:", tile.coords)
+                print("---Tile sizes:", tile.sizes)
+                num_not_256 += 1
+                continue
+                
 
             # #   FILTER OUT TILES WITH NO DATA
             # # print('---filtering out bad tiles')
@@ -485,7 +501,10 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
                 print('---tile has nans')
                 continue
 
-
+            # if is_not_256(tile):
+            #     num_not_256 += 1
+            #     print('---tile not 256')
+            #     continue
             # if has_no_valid_layer(tile):
             #     num_novalid_layer += 1
             #     # print('---tile has no valid layer')
@@ -499,10 +518,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
             #     # print('---tile has no mask')
             #     continue
             # print('---MASK CHECK')
-            if has_no_mask_pixels(tile):
-                num_nomask_pixels +=1
-                # print('---tile has no mask pixels')
-                continue
+
 
             # print("---PRINTING DA INFO B4 NORM-----")
             # print_dataarray_info(tile)
@@ -514,7 +530,6 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
                 continue
 
 
-            # TODO  add to json
             tile_name = f"tile_{datacube_path.parent.name}_{x_start}_{y_start}.tif"
             # print('---tile_name= ', tile_name)
 
@@ -542,17 +557,17 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
                                 dtype=tile_data.dtype,
                                 crs=crs,
                                 transform=transform,
-                                compress='deflate') as dst:
+                                compress=None) as dst:
                 for i in range(1, num_layers + 1):
                     dst.write(tile_data[i - 1], i)
                     dst.set_band_description(i, layer_names[i-1])  # Add band descriptions
 
-
             num_saved += 1
-            if num_saved  >= 10:
-                break
-        if num_saved  >= 10:
-            break
+
+        #     if num_saved  == 100:
+        #         break
+        # if num_saved  == 100:
+        #     break
     print('--- num_tiles= ', num_tiles)
     print('---num_saved= ', num_saved)  
     print('---num_has_nans= ', num_has_nans)
@@ -561,7 +576,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
     print('---num_nomask= ', num_nomask)
     print('---num_nomask_pixels= ', num_nomask_pixels)
     print('---num_failed_norm= ', num_failed_norm)
-    return num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask, num_nomask_pixels, num_failed_norm
+    return num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask, num_nomask_pixels, num_failed_norm, num_not_256
 
 def tile_datacube_rasterio(datacube_path, save_tiles_path, tile_size=256, stride=256):
     """
@@ -778,7 +793,15 @@ def has_no_mask_pixels(da):
         return True
     return False
 
-
+def is_not_256(data):
+    if data.shape[0] != 256 or data.shape[1] != 256:
+        # print('---padding')
+        # pad_width = 256 - data.shape[1]
+        # pad_height = 256 - data.shape[0]
+        # data = np.pad(data, ((0, pad_height), (0, pad_width)), mode='reflect')
+        return False
+    else:
+        return True
 
 
 
