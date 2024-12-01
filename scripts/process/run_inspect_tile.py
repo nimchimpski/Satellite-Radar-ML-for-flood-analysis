@@ -71,6 +71,9 @@ import shutil  # For safely replacing files
 
 
 def main():
+    '''
+    checks tile size and pads if necessarys
+    '''
     tiles_path = Path(r'C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_input\UNOSAT_FloodAI_Dataset_v2_norm_px0.0_split')
     padded = 0
     problems = 0
