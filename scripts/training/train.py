@@ -41,10 +41,10 @@ from wandb import Artifact
 
 from scripts.train_modules.z.boundaryloss import BoundaryLoss
 from scripts.train_modules.train_helpers import *
-from scripts.train_modules.train_classes import FloodDataset, UnetModel, SimpleCNN, SurfaceLoss , ResNetBinaryClassifier 
+from scripts.train_modules.train_classes import  UnetModel,   Segmentation_training_loop 
 from scripts.train_modules.train_functions import handle_interrupt
 from scripts.train_modules.train_functions import calculate_metrics, log_metrics_to_wandb
-from scripts.train_modules.training_loops import Segmentation_training_loop
+
 
 #########################################################################
 
@@ -84,7 +84,7 @@ def main(evaluate=None, reproduce=None):
     # dataset_name = 'ds_flaiv2_split'
     # dataset_path  = repo_path / "1data" / "3final" / dataset_name
     # dataset_name = 'ds_flaiv2_split'
-    dataset_path  = repo_path / "1data" / "3final" / "train_input"
+    dataset_path  = repo_path / "1data" / "3final" / "train_input_1"
     project = "floodai_v2"
     # DATA PARAMS
     dataset_version = 'pixel threshold 0.5'
@@ -99,8 +99,8 @@ def main(evaluate=None, reproduce=None):
     # MODEL PARAMS
     PRETRAINED = True
     inputs = ['hh' , 'mask'] 
-    in_channels = len(inputs)
-    DEVRUN = 1
+    in_channels = 1
+    DEVRUN = 0
     metric_threshold = 0.9
     loss = "BCEWithLogitsLoss"
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -108,7 +108,7 @@ def main(evaluate=None, reproduce=None):
     assert len(input) == 1
     dataset_name = input[0].name
     dataset_path = dataset_path / dataset_name
-    print(f'---dataset path = {dataset_path}')
+    print(f'>>>dataset path = {dataset_path}')
 
     mode = "train"
     if evaluate:
@@ -118,10 +118,10 @@ def main(evaluate=None, reproduce=None):
         persistent_workers = True
 
     if not dataset_path.exists():
-        print('---base path not exists')
+        print('>>>base path not exists')
 
     if not reproduce:
-        print('---start train')
+        print('>>>-start train')
         # itereate through dataset_paths here 
         train_list = dataset_path / "train.txt" # converts to absolute path with resolve
         test_list = dataset_path / "test.txt"
@@ -163,16 +163,41 @@ def main(evaluate=None, reproduce=None):
             val_list = Path(metadata_data['val_list'])    
     # TODO check the path chains here
     train_dl = create_subset(train_list, dataset_path, 'train' , subset_fraction, inputs, bs, num_workers, persistent_workers)
+
+    # for batch in train_dl:
+    #     print('>>>batch+ ',batch)  # Ensure batches are correctly created
+    #     break
+
+    # for model_input, mask in train_dl:
+    #     print(f">>>///Model input shape: {model_input.shape}, Mask shape: {mask.shape}")
+    #     break
+
     test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs, num_workers, persistent_workers)   
     val_dl = create_subset(val_list, dataset_path, 'val',  subset_fraction, inputs, bs, num_workers, persistent_workers)  
+
 
     # MAKE MODEL
     # model = SimpleCNN(in_channels=in_channels, classes=2)
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED)
     # print('---model =', model)
+
+    # Check the first convolution layer
+    print(model.model.encoder.conv1)
+
+    # Verify the weight shape of the first convolution
+    # print("---Conv1 weight shape:", model.model.encoder.conv1.weight.shape)
+
+    # print(model.model.decoder.final_conv)
+
+    # dummy_input = torch.randn(16, 1, 256, 256).to('cuda')  # Batch size 16, 1 input channel
+    # with torch.no_grad():
+    #     outputd = model(dummy_input)
+    # print(f"---/// dummy model output shape: {outputd.shape}")# Expected: torch.Size([16, 1, 256, 256])
+
+
     model = model.to('cuda')  # Ensure the model is on GPU
     device = next(model.parameters()).device
-    print(f'---model location: {device}')
+
 
     run_name = f'm:{mode}_FR:{subset_fraction}_BS:{bs}_CH{in_channels}_EP:{max_epoch}_{loss}'
     print(f'---RUN NAME= {run_name}')
@@ -203,7 +228,7 @@ def main(evaluate=None, reproduce=None):
         mode="min",                      # Save the model with the lowest validation loss
         save_top_k=1                   # Only keep the best model
     )
-    
+    # print(f'>>>///model location: {device}')
     print('---trainer')
     trainer= pl.Trainer(
         logger=wandb_logger,
@@ -216,10 +241,10 @@ def main(evaluate=None, reproduce=None):
         num_sanity_val_steps=2,
         callbacks = [checkpoint_callback]
     )
-    print('---trainer done')
+    # print('>>>trainer done')
 
     if not evaluate:
-        print('---training / val  (NOT test)')
+        print('>>>>>>>>>>>>>>>>>>>>   training / val  (NOT test)')
         training_loop = Segmentation_training_loop(model)
 
         trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl,)
@@ -233,14 +258,14 @@ def main(evaluate=None, reproduce=None):
         
         
     else:
-        print('---evaluate')
+        print('>>> evaluate /  test')
         
         # TODO encapuulate in 'get checkpoint name' function
         # ckpt = ckpt_dir / f"{dataset_name} f{subset_fraction} ep{max_epoch:02d}.ckpt"
 
         ckpt = ckpt_dir / f'{dataset_name} {subset_fraction} {max_epoch:02d}.ckpt'
 
-        training_loop = Single_channel_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
+        training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
         training_loop = training_loop.cuda()
         training_loop.eval()
         # trainer.test(model=training_loop, dataloaders=test_dl)

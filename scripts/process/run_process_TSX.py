@@ -17,9 +17,9 @@ data_root = Path(r'C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim')
 dataset =  data_root / 'TSX_process1' 
 
 
-make_tifs = 0
-make_datacubes = 0
-make_tiles = 1
+make_tifs = 1
+make_datacubes = 1
+make_tiles = 0
 
 print(f'>>>make_tifs= {make_tifs==1} \nmake_datacubes= {make_datacubes==1} \nmake_tiles= {make_tiles==1}')
 

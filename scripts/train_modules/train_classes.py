@@ -40,54 +40,182 @@ class FloodDataset(Dataset):
     
     # This returns given an index the i-th sample and label
     def __getitem__(self, idx):
-
+        # print(f'+++++++++++++++++++ get item')
 
         filename = self.sample_list[idx]
         tile = tiff.imread(Path(self.tile_root, filename))
 
         # print tile info and shape
-        print(f"---Tile shape b4 permute: {tile.shape}")
+        # print(f"---Tile shape b4 permute: {tile.shape}")
 
         # Transpose to (C, H, W)
         tile = torch.tensor(tile, dtype=torch.float32).permute(2, 0, 1)  # Shape: (2, 256, 256)
 
-        print(f"---Tile shape after permute: {tile.shape}")
+        # print(f"---Tile shape after permute: {tile.shape}")
 
-
+        # Ensure the tile has 2 channels
+        assert tile.shape[0] == 2, f"Unexpected number of channels: {tile.shape[0]}"    
         # Select channels based on `inputs` list position
-        input_idx = list(range(len(self.inputs)))
+        # input_idx = list(range(len(self.inputs)))
         # model_input = tile[input_idx, :, : ]  # auto select the channels
-        model_input = tile[0, :, : ]  # auto select the channels
-        model_input = torch.tensor(model_input, dtype=torch.float32)    
+        model_input = tile[:1, :, : ].clone()  # auto select the channels
+        model_input = torch.tensor(model_input, dtype=torch.float32)  
 
-        # model_input = model_input.cuda() #???
+        # print(f"---model_input shape: {model_input.shape}")  # Should print torch.Size([batch_size, 2, 256, 256])  
+
+        model_input = model_input.cuda() #???
 
         # EXTRACT MASK TO BINARY
-        print('---mask index:', self.inputs.index('mask'))
+        # print('---mask index:', self.inputs.index('mask'))
         # mask = tile[ self.inputs.index('mask'),:,: ]
-        mask = tile[ 1,:,: ]
+        mask = tile[ 1,:,: ].clone()
+        mask = mask.unsqueeze(0)  # Add a channel dimension
         # CONVERT TO TENSOR
         mask = torch.tensor(mask,dtype=torch.float32)
         mask = (mask > 0.5).float()
 
-        # Debugging: Check unique values in the mask
-        print("---Unique values in mask:", torch.unique(mask))
+        # print(f"---mask shape: {mask.shape}")  # Should print torch.Size([batch_size, 1, 256, 256])
 
-        return [model_input.float(), mask.float()]
+        assert mask.shape == (1, 256, 256), f"Unexpected mask shape: {mask.shape}"
+
+        # Debugging: Check unique values in the mask
+        # print("---Unique values in mask:", torch.unique(mask))
+
+        # Combine HH and MASK into a single input tensor
+        # input_tensor = torch.stack([model_input, mask], dim=0)  # Shape: (2, 256, 256)
+        return [model_input, mask]
         # return model_input.float(), val_mask.float()
+
+
+class Segmentation_training_loop(pl.LightningModule):
+
+    def __init__(self, model):
+        super().__init__()
+        self.model = model
+
+        self.save_hyperparameters(ignore = ['model'])   
+        # self.boundary_loss = BoundaryLoss()
+        # self.cross_entropy = nn.CrossEntropyLoss()
+        self.loss_fn = nn.BCEWithLogitsLoss()
+        # Container to store validation results
+        self.validation_outputs = []
+
+    def forward(self, batch):
+        return self.model(batch)
+
+    def training_step(self, batch, batch_idx):
+        # print(f'+++++++++++++++++++   training step') 
+        image, mask = batch
+        image, mask = image.to(self.device), mask.to(self.device)
+        # print(f"---///Model device: {next(self.model.parameters()).device}")
+        # print(f"---///Image device: {image.device}, Mask device: {mask.device}")
+        # print(f"---Model running on device: {self.device}")
+        # print(f"---^^^^^^^^Model device: {next(self.model.parameters()).device}")
+
+
+        logits = self(image)
+        total_loss = 0
+        class_weight = torch.ones_like(mask).to(self.device)
+        class_weight[mask == 0] = 0.2
+
+        # b_loss = self.boundary_loss(logits, mask.long().squeeze(1))
+        # b_loss = F.cross_entropy(logits, mask.squeeze(1).long(), weight=torch.Tensor([0.2, 1]).cuda())
+        # total_loss = b_loss
+        total_loss = self.loss_fn(logits, mask)
+
+        self.log('train_loss', total_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        lr = self._get_current_lr()
+        self.log('lr', lr, on_step=True, on_epoch=True, prog_bar=False, logger=True)
+        return total_loss
+
+    def _get_current_lr(self):
+        # print(f'+++++++++++++    get current lr')
+        lr = [x["lr"] for x in self.optimizers().param_groups]
+        return torch.Tensor([lr]).cuda()
+    
+    # def _get_current_lr(self):
+    #     # Access the optimizer through self.optimizers() in PyTorch Lightning
+    #     optimizer = self.optimizers()
+    #     lr = [param_group["lr"] for param_group in optimizer.param_groups]
+    #     return lr
+
+    def validation_step(self, batch, batch_idx):
+        # print(f'+++++++++++++    validation step')
+        image, mask = batch
+        logits = self.forward(image)
+        probs = torch.sigmoid(logits)
+        preds = (probs > 0.5).int()
+        logits = self.forward(image)
+        logits = logits.softmax(1)
+
+        # print(f"---Preds dtype: {preds.dtype}, unique values: {torch.unique(preds)}")
+        # print(f"---Mask dtype: {mask.dtype}, unique values: {torch.unique(mask)}")
+
+        
+        # flood_loss = F.cross_entropy(logits, mask.squeeze(1).long(), weight=torch.Tensor([0.2, 1]).cuda())
+        flood_loss = self.loss_fn(logits, mask)
+        tp, fp, fn, tn = smp.metrics.get_stats(preds, mask.long(), mode='binary')
+        iou = smp.metrics.iou_score(tp, fp, fn, tn)
+        self.log('val_loss', flood_loss, on_epoch=True, on_step= True, prog_bar=True, logger=True)
+        self.log('iou', iou.mean(), prog_bar=True)
+        return {"loss": flood_loss, "iou": iou.mean()}
+        
+
+    def test_step(self, batch, batch_idx):
+        image, mask, dist = batch
+        logits = self.forward(image)
+        pd = logits.cpu().numpy()
+        gt = mask.cpu().numpy()
+        # test logic here
+        return {"results": None}
+
+    
+    def configure_optimizers(self):
+        print(f'+++++++++++++    configure optimizers')
+        params = [x for x in self.model.parameters() if x.requires_grad]
+        optimizer = torch.optim.AdamW(params, lr=1e-3)
+        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[8], gamma=0.1)
+
+        # Return as a list of dictionaries with `scheduler` and `interval` specified
+        return {
+            "optimizer": optimizer,
+            "lr_scheduler": {
+                "scheduler": scheduler,
+                "interval": "epoch",  # or "step" if you want to step every batch
+                "frequency": 1
+            }
+        }
+    
+
+
 
 # MODELS
 
 class UnetModel(nn.Module):
-    def __init__(self,encoder_name='resnet34', in_channels=3, classes=1, pretrained=False):
+    def __init__(self,encoder_name='resnet34', in_channels=1, classes=1, pretrained=True):
         super().__init__()
         self.model= smp.Unet(
             encoder_name=encoder_name, 
-            encoder_weights='imagenet',
+            encoder_weights='imagenet' if pretrained else None,
             in_channels=in_channels, 
             classes=classes,
             activation=None)
         
+        # Fix the first convolutional layer
+        self.model.encoder.conv1 = nn.Conv2d(
+            in_channels=1,     # Match your input channel count
+            out_channels=64,   # Keep the same number of filters
+            kernel_size=7, 
+            stride=2, 
+            padding=3, 
+            bias=False
+        )
+        self.model.decoder.final_conv = nn.Conv2d(
+        in_channels=1,  # Use the appropriate number of input channels from the decoder
+        out_channels=1,  # Single output channel for binary segmentation
+        kernel_size=1
+)
+
         # if pretrained:
         #     checkpoint_dict= torch.load(f'/kaggle/working/Fold={index}_Model=mobilenet_v2.ckpt')['state_dict']
         #     self.model.load_state_dict(load_weights(checkpoint_dict))
@@ -96,7 +224,7 @@ class UnetModel(nn.Module):
         return x
  
 class SimpleCNN(nn.Module):
-    def __init__(self, in_channels=3, classes=2):
+    def __init__(self, in_channels=1, classes=1):
         super(SimpleCNN, self).__init__()
         self.conv1 = nn.Conv2d(in_channels, 16, kernel_size=3, padding=1)
         self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
@@ -226,3 +354,4 @@ class SurfaceLoss():
 
         return loss
    
+
