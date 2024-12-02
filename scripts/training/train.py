@@ -84,7 +84,7 @@ def main(evaluate=None, reproduce=None):
     # dataset_name = 'ds_flaiv2_split'
     # dataset_path  = repo_path / "1data" / "3final" / dataset_name
     # dataset_name = 'ds_flaiv2_split'
-    dataset_path  = repo_path / "1data" / "3final" / "train_input_1"
+    dataset_path  = repo_path / "1data" / "3final" / "train_input"
     project = "floodai_v2"
     # DATA PARAMS
     dataset_version = 'pixel threshold 0.5'
@@ -95,6 +95,7 @@ def main(evaluate=None, reproduce=None):
     num_workers = 0
     # WANDB PARAMS
     WBOFFLINE = True
+    WBMODE = "online"
     LOGSTEPS = 50 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
     # MODEL PARAMS
     PRETRAINED = True
@@ -103,6 +104,7 @@ def main(evaluate=None, reproduce=None):
     DEVRUN = 0
     metric_threshold = 0.9
     loss = "BCEWithLogitsLoss"
+    MASK_THRESHOLD = 0.5
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     input = [i for i in dataset_path.iterdir()]
     assert len(input) == 1
@@ -131,7 +133,7 @@ def main(evaluate=None, reproduce=None):
         with wandb.init(project=project, 
                         job_type="data-process", 
                         name='load-data', 
-                        mode="online",
+                        mode=WBMODE,
                         dir=repo_path / "4results", 
                         settings=wandb.Settings(program=__file__)
                         ) as run:
@@ -199,7 +201,7 @@ def main(evaluate=None, reproduce=None):
     device = next(model.parameters()).device
 
 
-    run_name = f'm:{mode}_FR:{subset_fraction}_BS:{bs}_CH{in_channels}_EP:{max_epoch}_{loss}'
+    run_name = f'm:{mode}_FR:{subset_fraction}_BS:{bs}_CH{in_channels}_EP:{max_epoch}_{MASK_THRESHOLD}_{loss}'
     print(f'---RUN NAME= {run_name}')
 
     wandb_logger = WandbLogger(

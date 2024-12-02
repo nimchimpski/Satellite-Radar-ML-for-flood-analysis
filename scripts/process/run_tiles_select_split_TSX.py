@@ -23,7 +23,7 @@ def main(testdata):
     #######################!!!!!!!!!!!!!!!!!
     MAKEFOLDER = True
     analysis_threshold=1
-    mask_threshold=0.0
+    mask_threshold=0.5
 
     src_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim")
     dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final")

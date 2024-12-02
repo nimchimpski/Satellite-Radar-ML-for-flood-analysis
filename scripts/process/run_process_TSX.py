@@ -17,11 +17,11 @@ data_root = Path(r'C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim')
 dataset =  data_root / 'TSX_process1' 
 
 
-make_tifs = 1
-make_datacubes = 1
-make_tiles = 0
+make_tifs = 0
+make_datacubes = 0
+make_norm_tiles = 1 # PADDING HAPPENS HERE
 
-print(f'>>>make_tifs= {make_tifs==1} \nmake_datacubes= {make_datacubes==1} \nmake_tiles= {make_tiles==1}')
+print(f'>>>make_tifs= {make_tifs==1} \nmake_datacubes= {make_datacubes==1} \nmake_tiles= {make_norm_tiles==1}')
 
 # ITERATE OVER THE DATASET
 for folder in dataset.iterdir(): # ITER ARCHIVE AND CURRENT
@@ -35,7 +35,7 @@ for folder in dataset.iterdir(): # ITER ARCHIVE AND CURRENT
 
         # COPY  THE MASK, IMAGE, AND DEM TO THE EXTRACTED FOLDER
         if make_tifs:
-            extract_folder = event / 'extracted'
+            extract_folder = event / f'{mask_code}_extracted'
             if extract_folder.exists():
                 shutil.rmtree(extract_folder)
             extract_folder.mkdir(exist_ok=True)
@@ -117,7 +117,7 @@ for folder in dataset.iterdir(): # ITER ARCHIVE AND CURRENT
             print('\n>>>>>>>>>>>>>>>> create 1 event datacube >>>>>>>>>>>>>>>>>')
             create_event_datacube_TSX(event, mask_code)
 
-if make_tiles:
+if make_norm_tiles:
     total_num_tiles = 0
     total_saved = 0
     total_has_nans = 0

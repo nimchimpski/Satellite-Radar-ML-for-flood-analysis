@@ -487,7 +487,7 @@ def create_event_datacube_TSX(event, mask_code, VERSION="v1"):
     '''
     print(f'+++++++++++ IN CREAT EVENT DATACUBE {event.name}+++++++++++++++++')
     # FIND THE EXTRACTED FOLDER
-    extracted_folder = event / 'extracted'
+    extracted_folder = list(event.rglob(f'*{mask_code}_extracted'))[0]
     layerdict = make_layerdict_TSX(extracted_folder)
 
     print(f'---making das from layerdict= {layerdict}')

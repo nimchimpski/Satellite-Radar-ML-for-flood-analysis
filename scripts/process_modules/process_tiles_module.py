@@ -484,14 +484,17 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
                 continue
 
             if int(tile.sizes["x"]) != tile_size or int(tile.sizes["y"]) != tile_size:
-                print("---odd shaped encountered; skipping.")
+                print("---odd shaped encountered; padding.")
                 # padtile = pad_tile(tile, 250)
                 # tile = padtile
-                print(f"---Tile dimensions: {tile.sizes['x']}x{tile.sizes['y']}")
+                print(f"---Tile dimensions b4 padding: {tile.sizes['x']}x{tile.sizes['y']}")
+                padded_tile = pad_tile(tile, tile_size)
                 # print("---Tile coords:", tile.coords)
-                print("---Tile sizes:", tile.sizes)
+                print(f"---Tile dimensions after padding: {padded_tile.sizes['x']}x{padded_tile.sizes['y']}")
+
                 num_not_256 += 1
-                continue
+
+                tile = padded_tile
                 
 
             # #   FILTER OUT TILES WITH NO DATA
@@ -501,10 +504,6 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
                 print('---tile has nans')
                 continue
 
-            # if is_not_256(tile):
-            #     num_not_256 += 1
-            #     print('---tile not 256')
-            #     continue
             # if has_no_valid_layer(tile):
             #     num_novalid_layer += 1
             #     # print('---tile has no valid layer')
@@ -836,7 +835,7 @@ def remove_nodata_from_tiff(input_tiff, output_tiff):
         
     print(f"Saved new TIFF without NoData to {output_tiff}")
 
-# GENERAL
+# UTILITIES
 
 def get_incremental_filename(base_dir, base_name):
     """
@@ -872,13 +871,67 @@ def handle_interrupt(signal, frame):
     # Add any necessary cleanup code here (e.g., saving model checkpoints)
     sys.exit(0)
 
+def pad_tile(tile, target_size):
+    # Get the current dimensions
+    current_x = int(tile.sizes["x"])
+    current_y = int(tile.sizes["y"])
+    
+    pad_x = target_size - current_x
+    pad_y = target_size - current_y
+
+    # Ensure padding is non-negative
+    if pad_x < 0 or pad_y < 0:
+        raise ValueError("Target size must be larger than current dimensions")
+
+    # Calculate padding for both dimensions
+    pad_x_before = pad_x // 2
+    pad_x_after = pad_x - pad_x_before
+    pad_y_before = pad_y // 2
+    pad_y_after = pad_y - pad_y_before
+
+    # Pad the data using numpy
+    padded_data = np.pad(
+        tile.data,  # Extract the underlying numpy array
+        pad_width=((0, 0),  # No padding for the layer dimension
+                   (pad_y_before, pad_y_after),  # Padding for y dimension
+                   (pad_x_before, pad_x_after)),  # Padding for x dimension
+        mode='reflect'
+    )
+
+    # Calculate resolution from coordinates if `res` is not present
+    if 'res' in tile.attrs:
+        res = tile.attrs['res']
+    else:
+        # Calculate resolution from coordinate spacing
+        res_x = (tile.coords["x"].values[-1] - tile.coords["x"].values[0]) / (current_x - 1)
+        res_y = (tile.coords["y"].values[-1] - tile.coords["y"].values[0]) / (current_y - 1)
+        res = min(res_x, res_y)  # Use the smaller resolution as the default
+    
+    # Update coordinates
+    new_x = np.linspace(
+        float(tile.coords["x"].values[0]) - pad_x_before * res,
+        float(tile.coords["x"].values[-1]) + pad_x_after * res,
+        target_size
+    )
+    new_y = np.linspace(
+        float(tile.coords["y"].values[0]) - pad_y_before * res,
+        float(tile.coords["y"].values[-1]) + pad_y_after * res,
+        target_size
+    )
+    
+    # Create new DataArray with updated data and coordinates
+    padded_tile = xr.DataArray(
+        padded_data,
+        dims=("layer", "y", "x"),
+        coords={"layer": tile.coords["layer"], "y": new_y, "x": new_x},
+        attrs=tile.attrs  # Preserve the original attributes
+    )
+    
+    return padded_tile
+
 
 
 # MAYBE NOT NEEDED
-
-
-
-
  
 def compress_geotiff_rasterio(input_tile_path, output_tile_path, compression="lzw"):
     with rasterio.open(input_tile_path) as src:
