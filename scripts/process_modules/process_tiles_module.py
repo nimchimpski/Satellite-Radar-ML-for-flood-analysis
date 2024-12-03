@@ -127,12 +127,47 @@ def normalize_inmemory_tile(tile):
         # print(f"---Layer '{layer}': Min={layer_min}, Max={layer_max}")
         if layer_min != layer_max:  # Avoid division by zero
             normalized_tile.loc[dict(layer=layer)] = (layer_data - layer_min) / (layer_max - layer_min)
-            return normalized_tile.astype('float32')
+            normalized=True
         else:
             print(f"---Layers '{layer}' has constant values; skipping normalization")
-            return None
+            normalized=False
+        return tile.astype('float32'), normalized
 
+def log_clip_minmaxnorm(tile):
+    """
+    Preprocess SAR data for U-Net segmentation.
+    1. Log Transform
+    2. Clip Extreme Values
+    3. Normalize to [0, 1]
+    """
+    skip_layers = ['mask', 'valid']
+    preprocessed_tile = tile.copy()
 
+    for layer in tile.coords['layer'].values:
+        try:
+            if layer not in skip_layers:
+                # Log Transform
+                layer_data = np.log1p(tile.sel(layer=layer))
+
+                # Clip Extreme Values
+                lower_bound = np.percentile(layer_data, 2)
+                upper_bound = np.percentile(layer_data, 98)
+                layer_data = np.clip(layer_data, lower_bound, upper_bound)
+
+                # Min-Max Normalize
+                layer_min = layer_data.min().item()
+                layer_max = layer_data.max().item()
+                if layer_min != layer_max:
+                    preprocessed_tile.loc[dict(layer=layer)] = (layer_data - layer_min) / (layer_max - layer_min)
+                    normalized= True
+                else:
+                    print(f"---Layer '{layer}' has constant values; skipping normalization")
+                    normalized= False
+        except Exception as e:
+            print(f"---Error processing layer '{layer}': {e}")
+            normalized= False
+    
+    return preprocessed_tile.astype('float32'), normalized
 
 # SELECT AND SPLIT
 def has_enough_valid_pixels(file_path, analysis_threshold, mask_threshold):
@@ -522,13 +557,16 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
             # print("---PRINTING DA INFO B4 NORM-----")
             # print_dataarray_info(tile)
 
-            # Normalize the tile TODO WHAT ABOUT SKUPPED TILES? DELETED?
-            normalized_tile = normalize_inmemory_tile(tile)
-            if normalized_tile is None:
+            # normalized_tile, normalized = normalize_inmemory_tile(tile)
+            if norm_fn == 'logclipmm:':
+                normalized_tile, normalized = log_clip_minmaxnorm(tile) 
+            # print('---NORMALIZED= ', normalized)
+            if not normalized:
                 num_failed_norm += 1
                 continue
 
-
+            
+            
             tile_name = f"tile_{datacube_path.parent.name}_{x_start}_{y_start}.tif"
             # print('---tile_name= ', tile_name)
 

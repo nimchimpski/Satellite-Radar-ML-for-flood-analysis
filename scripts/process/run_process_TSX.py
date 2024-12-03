@@ -20,6 +20,7 @@ dataset =  data_root / 'TSX_process1'
 make_tifs = 0
 make_datacubes = 0
 make_norm_tiles = 1 # PADDING HAPPENS HERE
+norm_func = 'logclipmm' # 'mm' or 'logclipmm'
 
 print(f'>>>make_tifs= {make_tifs==1} \nmake_datacubes= {make_datacubes==1} \nmake_tiles= {make_norm_tiles==1}')
 
@@ -134,7 +135,7 @@ if make_norm_tiles:
         event_code = "_".join(cube.name.split('_')[:2])
         print("cube=", cube.name)
         print("event_code=", event_code)
-        save_tiles_path = data_root / 'TSX_normalized_tiles' / f"{event_code}_normalized_tiles"
+        save_tiles_path = data_root /  'new'  /f"{event_code}_normalized_tiles_{norm_func}"
         if save_tiles_path.exists():
             print(f"### Deleting existing tiles folder: {save_tiles_path}")
             # delete the folder and create a new one
@@ -177,7 +178,7 @@ if make_norm_tiles:
     print(f'>>>total no mask pixels : {total_nomask_pixels}')
     print(f'>>>num failed normalization : {total_failed_norm}')
     print(f'>>>num not 256: {total_num_not_256}')
-    print(f'>>>all tiles tally: {total_num_tiles == total_saved + total_has_nans + total_novalid_layer + total_novalid_pixels + total_nomask + total_nomask_pixels + total_failed_norm + total_num_not_256}')
+    print(f'>>>all tiles tally: {total_num_tiles == total_saved + total_has_nans + total_novalid_layer + total_novalid_pixels + total_nomask + total_nomask_pixels + total_failed_norm }')
 
 end = time.time()
 # time taken in minutes to 2 decimal places

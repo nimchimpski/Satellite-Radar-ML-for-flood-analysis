@@ -1,5 +1,4 @@
 import sys
-# print('---sys path= ',sys.path)
 import os
 import click
 from typing import Callable, BinaryIO, Match, Pattern, Tuple, Union, Optional, List
@@ -11,9 +10,7 @@ import os.path as osp
 from pathlib import Path 
 from dotenv import load_dotenv  
 import sys
-
 # -------------------------------------------
-
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
@@ -38,52 +35,35 @@ from operator import itemgetter, mul
 from functools import partial
 from wandb import Artifact
 #--------------------------------------------
-
 from scripts.train_modules.z.boundaryloss import BoundaryLoss
 from scripts.train_modules.train_helpers import *
 from scripts.train_modules.train_classes import  UnetModel,   Segmentation_training_loop 
 from scripts.train_modules.train_functions import handle_interrupt
 from scripts.train_modules.train_functions import calculate_metrics, log_metrics_to_wandb
-
-
 #########################################################################
-
 
 load_dotenv()
 os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
 
-#TODO add DICE , NSD, IOU, PRECISION, RECALL metrics
-
 @click.command()
 @click.option('--evaluate', is_flag=True, show_default=False)
 @click.option('--reproduce', is_flag=True, show_default=False)
-
 #########################################################################
 
 def main(evaluate=None, reproduce=None):
     '''
     CONDA ENVIRONMENT = 'floodenv2"
-
     expects that the data is in tile_root, with 3 tile_lists for train, test and val
     ***NAVIGATE IN TERMINAL TO THE UNMAPPED ADRESS TO RUN THIS SCRIPT.***
-
     cd //cerndata100/AI_files/users/ai_flood_service/1new_data/3scripts/training
-
-    TODO poss switch to ClearML (opensource)
     '''
     print('---in main')
     start = time.time()
-
     signal.signal(signal.SIGINT, handle_interrupt)
-
     torch.set_float32_matmul_precision('medium')  # TODO try high
     pl.seed_everything(42, workers=True, verbose = False)
-
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     repo_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2")
-    # dataset_name = 'ds_flaiv2_split'
-    # dataset_path  = repo_path / "1data" / "3final" / dataset_name
-    # dataset_name = 'ds_flaiv2_split'
     dataset_path  = repo_path / "1data" / "3final" / "train_input"
     project = "floodai_v2"
     # DATA PARAMS
@@ -104,15 +84,18 @@ def main(evaluate=None, reproduce=None):
     DEVRUN = 0
     metric_threshold = 0.9
     loss = "BCEWithLogitsLoss"
-    MASK_THRESHOLD = 0.5
+    mode = "train"
+    MASK_THRESHOLD = 0.3 # just for naming
+    #
+    NAME = f'm:{mode}__BS:{bs}__EP:{max_epoch}_{MASK_THRESHOLD}_{loss}'
+
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
-    input = [i for i in dataset_path.iterdir()]
-    assert len(input) == 1
-    dataset_name = input[0].name
+    input_folders = [i for i in dataset_path.iterdir()]
+    assert len(input_folders) == 1
+    dataset_name = input_folders[0].name
     dataset_path = dataset_path / dataset_name
     print(f'>>>dataset path = {dataset_path}')
 
-    mode = "train"
     if evaluate:
         mode = "test"
     persistent_workers = False
@@ -169,7 +152,6 @@ def main(evaluate=None, reproduce=None):
     # for batch in train_dl:
     #     print('>>>batch+ ',batch)  # Ensure batches are correctly created
     #     break
-
     # for model_input, mask in train_dl:
     #     print(f">>>///Model input shape: {model_input.shape}, Mask shape: {mask.shape}")
     #     break
@@ -177,31 +159,25 @@ def main(evaluate=None, reproduce=None):
     test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs, num_workers, persistent_workers)   
     val_dl = create_subset(val_list, dataset_path, 'val',  subset_fraction, inputs, bs, num_workers, persistent_workers)  
 
-
     # MAKE MODEL
     # model = SimpleCNN(in_channels=in_channels, classes=2)
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED)
     # print('---model =', model)
-
     # Check the first convolution layer
     print(model.model.encoder.conv1)
 
     # Verify the weight shape of the first convolution
     # print("---Conv1 weight shape:", model.model.encoder.conv1.weight.shape)
-
     # print(model.model.decoder.final_conv)
-
     # dummy_input = torch.randn(16, 1, 256, 256).to('cuda')  # Batch size 16, 1 input channel
     # with torch.no_grad():
     #     outputd = model(dummy_input)
     # print(f"---/// dummy model output shape: {outputd.shape}")# Expected: torch.Size([16, 1, 256, 256])
 
-
     model = model.to('cuda')  # Ensure the model is on GPU
     device = next(model.parameters()).device
 
-
-    run_name = f'm:{mode}_FR:{subset_fraction}_BS:{bs}_CH{in_channels}_EP:{max_epoch}_{MASK_THRESHOLD}_{loss}'
+    run_name = NAME
     print(f'---RUN NAME= {run_name}')
 
     wandb_logger = WandbLogger(
@@ -258,14 +234,10 @@ def main(evaluate=None, reproduce=None):
         # RUN A TRAINER.TEST HERE FOR A SIMPLE ONE RUN TRAIN/TEST CYCLE        
         # trainer.test(model=training_loop, dataloaders=test_dl, ckpt_path='best')
         
-        
     else:
         print('>>> evaluate /  test')
         
-        # TODO encapuulate in 'get checkpoint name' function
-        # ckpt = ckpt_dir / f"{dataset_name} f{subset_fraction} ep{max_epoch:02d}.ckpt"
-
-        ckpt = ckpt_dir / f'{dataset_name} {subset_fraction} {max_epoch:02d}.ckpt'
+        ckpt = ckpt_dir / f'{NAME}.ckpt'
 
         training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
         training_loop = training_loop.cuda()
@@ -275,7 +247,6 @@ def main(evaluate=None, reproduce=None):
         for batch in tqdm(test_dl, total=len(test_dl)):
             images, masks = batch
             # im = Func.normalize(image.repeat(1,3,1,1)/255, mean=imagenet_stats[0], std=imagenet_stats[1])
-
             with torch.no_grad():
                 logits = training_loop(images.cuda())
                 logits = logits.cpu().softmax(1)[:,1:] # Softmax + select "flood" class
@@ -298,7 +269,6 @@ def main(evaluate=None, reproduce=None):
     # end timing
     
     print(f'>>>total time = {run_time} minutes')  
-
 
 if __name__ == '__main__':
     main()

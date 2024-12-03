@@ -21,9 +21,11 @@ def main(testdata):
     else:
         click.echo("SERIOUS DATA")
     #######################!!!!!!!!!!!!!!!!!
+
     MAKEFOLDER = True
     analysis_threshold=1
-    mask_threshold=0.5
+    mask_threshold=0.3
+    norm_tiles_folder = "TSX_normalized_tiles"
 
     src_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim")
     dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final")
@@ -36,7 +38,7 @@ def main(testdata):
         dataset = src_base / "tests" / "TSX_normalized_tiles"
     # SERIOUS RUN
     else:
-        dataset = src_base / 'TSX_normalized_tiles'
+        dataset = src_base / norm_tiles_folder
     
     dest_dir = get_incremental_filename(dest_dir, f'{dataset.name}_mt{mask_threshold}_split')
     train_ratio=0.7
