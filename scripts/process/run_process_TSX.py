@@ -146,7 +146,7 @@ if make_norm_tiles:
 
         print(f"\n################### tiling ###################")
         # DO THE TILING AND GET THE STATISTICS
-        num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask, num_nomask_pixels, num_failed_norm , num_not_256= tile_datacube_rxr(cube, save_tiles_path, tile_size=256, stride=256)
+        num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask, num_nomask_pixels, num_failed_norm , num_not_256= tile_datacube_rxr(cube, save_tiles_path, tile_size=256, stride=256, norm_func=norm_func)
 
         print('<<<  num_tiles= ', num_tiles)
         print('<<< num_saved= ', num_saved)  
