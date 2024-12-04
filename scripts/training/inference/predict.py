@@ -6,12 +6,16 @@ import xarray as xr
 from pathlib import Path
 import tifffile as tiff
 from model_definition import UnetModel  # Adjust the import to your model definition
-from scripts.process_modules.process_tiles_module import log_clip_minmaxnorm  # Adjust the import to your preprocessing function
+from scripts.process_modules.process_dataarrays_module import log_clip_minmaxnorm  # Adjust the import to your preprocessing function
 
-checkpoint_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\checkpoints")
+
+input_file_name = ''
+input_path = Path(f'C:\Users\floodai\UNOSAT_FloodAI_v2\prediction' / input_file_name)
 checkpoint = xxxxx
+checkpoint_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\checkpoints" / checkpoint)
+output_path =  input_path / 'predictions'
 
-# 1. Load the model
+
 def load_model(checkpoint_path, device='cuda'):
     model = UnetModel(encoder_name='resnet34', in_channels=2, classes=1)  # Update based on your architecture
     model.load_state_dict(torch.load(checkpoint_path, map_location=device))
@@ -19,60 +23,84 @@ def load_model(checkpoint_path, device='cuda'):
     model.eval()
     return model
 
-# 2. Preprocess input data
 def preprocess_tile(tile, device):
-    """
-    Preprocess SAR tile for inference.
-    - Normalize or log-transform the data to match training preprocessing.
-    - Convert to PyTorch tensor and move to the correct device.
-    """
-    # Log-transform and normalize (example preprocessing; adjust based on your pipeline)
-    log_clip_minmaxnorm(tile)
-
-    # Convert to PyTorch tensor
+    preprocessed_tile, _ = log_clip_minmaxnorm(tile)
+    tile_data = preprocessed_tile.values
     tensor = torch.tensor(tile_data, dtype=torch.float32).unsqueeze(0)  # Add batch dimension
     return tensor.to(device)
 
-# 3. Post-process predictions
 def postprocess_predictions(predictions, threshold=0.5):
-    """
-    Post-process model predictions.
-    - Apply a threshold to convert logits to binary mask.
-    """
-    binary_mask = (predictions > threshold).float().squeeze(0).cpu().numpy()
+    binary_mask = (predictions > threshold).float().cpu().numpy()
     return binary_mask
 
-# 4. Run inference
-def run_inference(model, tile, device='cuda'):
-    preprocessed_tile = preprocess_tile(tile, device)
-    with torch.no_grad():
-        predictions = model(preprocessed_tile)
-    return postprocess_predictions(predictions)
+def split_into_tiles(image, tile_size, overlap):
+    """Split a large image into overlapping tiles."""
+    _, height, width = image.shape
+    stride = tile_size - overlap
+    tiles = []
+    positions = []
 
-# 5. Main function
-def main(input_path, checkpoint_path, output_path, device='cuda'):
+    for y in range(0, height - tile_size + 1, stride):
+        for x in range(0, width - tile_size + 1, stride):
+            tile = image[:, y:y + tile_size, x:x + tile_size]
+            tiles.append(tile)
+            positions.append((y, x))
+    return tiles, positions
+
+def stitch_tiles(tiles, positions, image_shape, tile_size, overlap):
+    """Stitch tiles back together into a single image."""
+    _, height, width = image_shape
+    full_mask = np.zeros((1, height, width))
+    count = np.zeros((1, height, width))
+
+    stride = tile_size - overlap
+    for tile, (y, x) in zip(tiles, positions):
+        full_mask[:, y:y + tile_size, x:x + tile_size] += tile
+        count[:, y:y + tile_size, x:x + tile_size] += 1
+
+    return (full_mask / count).squeeze(0)  # Normalize and return
+
+def run_inference_on_image(model, image, tile_size, overlap, device='cuda'):
+    """Run inference on a full image."""
+    tiles, positions = split_into_tiles(image, tile_size, overlap)
+    predictions = []
+
+    for tile in tiles:
+        tile_tensor = preprocess_tile(xr.DataArray(tile), device)
+        with torch.no_grad():
+            prediction = model(tile_tensor).squeeze(0).cpu().numpy()
+        predictions.append(prediction)
+
+    full_mask = stitch_tiles(predictions, positions, image.shape, tile_size, overlap)
+    return postprocess_predictions(full_mask)
+
+
+
+def main(input_path, checkpoint_path, output_path, tile_size=256, overlap=32, device='cuda'):
     # Load the trained model
     model = load_model(checkpoint_path, device)
 
-    # Load the input SAR tile
-    input_tile = xr.open_dataset(input_path)['tile']  # Adjust based on your dataset format
+    # Load the input SAR image
+    input_image = xr.open_dataset(input_path)['tile'].values  # Adjust based on dataset format
+    input_image = np.expand_dims(input_image, axis=0)  # Add channel dimension if needed
 
-    # Run inference
-    predictions = run_inference(model, input_tile, device)
+    # Run inference on the full image
+    predictions = run_inference_on_image(model, input_image, tile_size, overlap, device)
 
-    # Save predictions
+    # Save the output prediction
     output_file = Path(output_path) / f"{Path(input_path).stem}_prediction.tif"
-    tiff.imwrite(output_file, predictions.astype(np.uint8) * 255)  # Save as binary mask
+    tiff.imwrite(output_file, (predictions * 255).astype(np.uint8))  # Save as binary mask
     print(f"Predictions saved to {output_file}")
 
-# Run the script
 if __name__ == "__main__":
     import argparse
-    parser = argparse.ArgumentParser(description="Run inference with a trained U-Net model.")
-    parser.add_argument("--input", type=str, required=True, help="Path to input SAR tile (GeoTIFF or NetCDF).")
+    parser = argparse.ArgumentParser(description="Run inference on a full image using a trained U-Net model.")
+    parser.add_argument("--input", type=str, required=True, help="Path to input SAR image (GeoTIFF or NetCDF).")
     parser.add_argument("--checkpoint", type=str, required=True, help="Path to model checkpoint.")
     parser.add_argument("--output", type=str, required=True, help="Directory to save the output prediction.")
+    parser.add_argument("--tile_size", type=int, default=256, help="Size of the tiles for inference.")
+    parser.add_argument("--overlap", type=int, default=32, help="Overlap between tiles.")
     parser.add_argument("--device", type=str, default="cuda", help="Device to run inference on ('cuda' or 'cpu').")
     args = parser.parse_args()
 
-    main(args.input, args.checkpoint, args.output, args.device)
+    main(args.input, args.checkpoint, args.output, args.tile_size, args.overlap, args.device)

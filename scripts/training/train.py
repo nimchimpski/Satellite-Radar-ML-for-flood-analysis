@@ -67,7 +67,7 @@ def main(evaluate=None, reproduce=None):
     dataset_path  = repo_path / "1data" / "3final" / "train_input"
     project = "floodai_v2"
     # DATA PARAMS
-    dataset_version = 'pixel threshold 0.5'
+    
     subset_fraction = 1 # 1 = full dataset
     bs = 16
     max_epoch = 10
@@ -83,11 +83,9 @@ def main(evaluate=None, reproduce=None):
     in_channels = 1
     DEVRUN = 0
     metric_threshold = 0.9
+    # just names - bullshit
     loss = "BCEWithLogitsLoss"
     mode = "train"
-    MASK_THRESHOLD = 0.3 # just for naming
-    #
-    NAME = f'm:{mode}__BS:{bs}__EP:{max_epoch}_{MASK_THRESHOLD}_{loss}'
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     input_folders = [i for i in dataset_path.iterdir()]
@@ -95,6 +93,9 @@ def main(evaluate=None, reproduce=None):
     dataset_name = input_folders[0].name
     dataset_path = dataset_path / dataset_name
     print(f'>>>dataset path = {dataset_path}')
+    run_name = f'{mode}_{dataset_name}__BS{bs}__EP{max_epoch}_{loss}'
+    print(f'>>>run name = {run_name}')
+    dataset_version = run_name
 
     if evaluate:
         mode = "test"
@@ -106,7 +107,7 @@ def main(evaluate=None, reproduce=None):
         print('>>>base path not exists')
 
     if not reproduce:
-        print('>>>-start train')
+        print('>>>-start train ? eval')
         # itereate through dataset_paths here 
         train_list = dataset_path / "train.txt" # converts to absolute path with resolve
         test_list = dataset_path / "test.txt"
@@ -177,7 +178,7 @@ def main(evaluate=None, reproduce=None):
     model = model.to('cuda')  # Ensure the model is on GPU
     device = next(model.parameters()).device
 
-    run_name = NAME
+
     print(f'---RUN NAME= {run_name}')
 
     wandb_logger = WandbLogger(
@@ -200,7 +201,7 @@ def main(evaluate=None, reproduce=None):
           # DEFINE THE TRAINER
     checkpoint_callback = ModelCheckpoint(
         dirpath=ckpt_dir,  # Save checkpoints locally in this directory
-        filename=f"{dataset_name} {subset_fraction} {max_epoch:02d}",  # Custom filename format
+        filename=run_name,  # Custom filename format
         # filename="best-checkpoint",  # Custom filename format
         monitor="val_loss",              # Monitor validation loss
         mode="min",                      # Save the model with the lowest validation loss
@@ -237,25 +238,35 @@ def main(evaluate=None, reproduce=None):
     else:
         print('>>> evaluate /  test')
         
-        ckpt = ckpt_dir / f'{NAME}.ckpt'
+        ckpt = ckpt_dir / f'{run_name}.ckpt'
+        print(f'>>>evaluation ckpt = {ckpt.name}')
 
         training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
+        print(f'>>>checkpoint loaded ok {ckpt.name}')
+        # print(f'>>>ckpt test = {torch.load(ckpt)}')
         training_loop = training_loop.cuda()
         training_loop.eval()
         # trainer.test(model=training_loop, dataloaders=test_dl)
+        print('>>>test done')
+
 
         for batch in tqdm(test_dl, total=len(test_dl)):
             images, masks = batch
             # im = Func.normalize(image.repeat(1,3,1,1)/255, mean=imagenet_stats[0], std=imagenet_stats[1])
             with torch.no_grad():
                 logits = training_loop(images.cuda())
-                logits = logits.cpu().softmax(1)[:,1:] # Softmax + select "flood" class
+                logits = torch.sigmoid(logits) # Softmax + select "flood" class
+            logits = logits.cuda()
+            masks = masks.cuda()
+            try:
+                metrics = calculate_metrics(logits, masks, metric_threshold)
+            except Exception as e:
+                print(f"Error in calculate_metrics: {e}")
+                continue
 
-            metrics = calculate_metrics(logits, masks, metric_threshold)
 
             # Log metrics and visualizations to wandb
             log_metrics_to_wandb(metrics, wandb_logger, logits, masks)
-
     # Ensure the model is on GPU
     model = model.to('cuda')
     end = time.time()

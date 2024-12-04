@@ -2,7 +2,7 @@
 from tqdm import tqdm
 from pathlib import Path
 from scripts.process_modules.process_tiffs_module import create_event_datacubes
-from scripts.process_modules.process_tiles_module import tile_datacube_rasterio
+from scripts.process_modules.process_dataarrays_module import tile_datacube_rasterio
 import rioxarray as rxr
 import time
 from scripts.process_modules.process_tiffs_module import create_slope_from_dem

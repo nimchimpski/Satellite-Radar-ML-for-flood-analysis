@@ -7,20 +7,22 @@ import time
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from scripts.process_modules.process_tiffs_module import match_dem_to_mask, clip_image_to_mask_gdal
 from scripts.process_modules.process_tiffs_module import calculate_and_normalize_slope, create_event_datacube_TSX,         reproject_layers_to_4326_TSX, nan_check, remove_mask_3_vals, reproject_to_4326_gdal, make_float32, make_float32_inmem
-from scripts.process_modules.process_tiles_module import tile_datacube_rxr
+from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr, calculate_global_min_max_nc, get_global_min_max
 from scripts.process_modules.process_helpers import  print_tiff_info_TSX
-
 
 start=time.time()
 
+############################################################################
 data_root = Path(r'C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim')
-dataset =  data_root / 'TSX_process1' 
+dataset =  data_root / 'TSX_to_process' 
+min_max_file = data_root / 'TSX_process1_stats.csv'
 
-
-make_tifs = 0
-make_datacubes = 0
+make_tifs = 1
+make_datacubes = 1
 make_norm_tiles = 1 # PADDING HAPPENS HERE
-norm_func = 'logclipmm' # 'mm' or 'logclipmm'
+norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
+stats = None
+############################################################################
 
 print(f'>>>make_tifs= {make_tifs==1} \nmake_datacubes= {make_datacubes==1} \nmake_tiles= {make_norm_tiles==1}')
 
@@ -129,24 +131,27 @@ if make_norm_tiles:
     total_failed_norm = 0
     total_num_not_256 = 0
 
+ 
+
     cubes = list(dataset.rglob("*.nc"))   
     print(f'>>>num cubes= ',len(cubes))
     for cube in tqdm(cubes, desc="### Datacubes tiled"):
         event_code = "_".join(cube.name.split('_')[:2])
         print("cube=", cube.name)
         print("event_code=", event_code)
-        save_tiles_path = data_root /  'new'  /f"{event_code}_normalized_tiles_{norm_func}"
+        save_tiles_path = data_root /  'TSX_new_normalized_tiles' / f"{event_code}_normalized_tiles_{norm_func}"
         if save_tiles_path.exists():
             print(f"### Deleting existing tiles folder: {save_tiles_path}")
             # delete the folder and create a new one
             shutil.rmtree(save_tiles_path)
         save_tiles_path.mkdir(exist_ok=True, parents=True)
 
-
-
+           # CALCULATE THE STATISTICS
+        min_max_file = cube.parent / f'{event_code}_min_max.csv'
+        stats = get_global_min_max(cube, 'hh', min_max_file= min_max_file)
         print(f"\n################### tiling ###################")
         # DO THE TILING AND GET THE STATISTICS
-        num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask, num_nomask_pixels, num_failed_norm , num_not_256= tile_datacube_rxr(cube, save_tiles_path, tile_size=256, stride=256, norm_func=norm_func)
+        num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask, num_nomask_pixels, num_failed_norm , num_not_256= tile_datacube_rxr(cube, save_tiles_path, tile_size=256, stride=256, norm_func=norm_func, stats=stats )
 
         print('<<<  num_tiles= ', num_tiles)
         print('<<< num_saved= ', num_saved)  

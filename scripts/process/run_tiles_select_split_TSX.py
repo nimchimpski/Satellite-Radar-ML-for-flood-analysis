@@ -2,11 +2,11 @@ from pathlib import Path
 import sys
 import os
 from tqdm import tqdm
-from scripts.process_modules.process_tiles_module import select_tiles_and_split
+from scripts.process_modules.process_dataarrays_module import select_tiles_and_split
 import click
 import shutil
 import signal
-from scripts.process_modules.process_tiles_module  import  make_train_folders, handle_interrupt, get_incremental_filename
+from scripts.process_modules.process_dataarrays_module  import  make_train_folders, handle_interrupt, get_incremental_filename
 
 @click.command()
 @click.option("--testdata",is_flag=True)
@@ -20,32 +20,44 @@ def main(testdata):
         click.echo("TEST DATA")
     else:
         click.echo("SERIOUS DATA")
-    #######################!!!!!!!!!!!!!!!!!
 
+    dataset_name = None
+    ############################################
     MAKEFOLDER = True
     analysis_threshold=1
     mask_threshold=0.3
-    norm_tiles_folder = "TSX_normalized_tiles"
-
-    src_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim")
-    dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final")
-    
-    #TO SAVE TO C:/
-    dest_dir = dst_base / 'train_input' 
-
-    # TEST RUN
-    if  testdata:
-        dataset = src_base / "tests" / "TSX_normalized_tiles"
-    # SERIOUS RUN
-    else:
-        dataset = src_base / norm_tiles_folder
-    
-    dest_dir = get_incremental_filename(dest_dir, f'{dataset.name}_mt{mask_threshold}_split')
+    src_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\norm_tiles_for_select_and_split")
+    dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_input")
+  
     train_ratio=0.7
     val_ratio=0.15
     test_ratio=0.15
-
     ########################################
+
+    total = 0
+    rejected = 0
+    tot_missing_extent = 0
+    tot_missing_mask = 0
+    low_selection = []
+
+    # GET EVENT FOLDER NAME
+    folder_to_process = list(f for f  in iter(src_base.iterdir()) if f.is_dir())
+    if len(folder_to_process) == 0:
+        print(">>>No event folder found.")
+        return
+    elif len(folder_to_process) > 1:
+        print(">>>Multiple event folders found.")
+        return
+    else:
+        src_tiles = folder_to_process[0]
+        print(f'>>>src_tiles_name name= {src_tiles.name}')
+    parts = src_tiles.name.split('_')[:3]
+    print(f'>>>newname= {parts}')
+    newname = '_'.join(parts)
+    print(f'>>>newname= {newname}')
+    dest_dir = get_incremental_filename(dst_base, f'{newname}_mt{mask_threshold}')
+
+    print(f'>>>source dir = {src_tiles.parents[1]}')
     dest_dir.mkdir(parents=True, exist_ok=True)
     print(f'>>>dest dir: {dest_dir}')   
     if not dest_dir.exists():
@@ -54,15 +66,9 @@ def main(testdata):
     print('>>>mask threshold:', mask_threshold)
     print('>>>analysis threshold:', analysis_threshold)
     make_train_folders(dest_dir)
-    print('>>>dataset:', dataset)   
 
-    total = 0
-    rejected = 0
-    tot_missing_extent = 0
-    tot_missing_mask = 0
-    low_selection = []
     #GET ALL NORMALIZED FOLDERS
-    recursive_list = list(dataset.rglob('*normalized_tiles'))
+    recursive_list = list(src_base.rglob('*normalized_tiles*'))
     print(f'>>>len recursive_list= {len(recursive_list)}')
     if not recursive_list:
         print(">>>No normalized folders found.")
@@ -73,7 +79,7 @@ def main(testdata):
         print(f">>> {folder.parent.name}/{folder.name}")
         foldertotal, selected_tiles, folderrejected, tot_missing_extent, tot_missing_mask = select_tiles_and_split(folder, dest_dir, train_ratio, val_ratio, test_ratio, analysis_threshold, mask_threshold, MAKEFOLDER)
         if len(selected_tiles) < 10:
-            low_selection.append(folder.parent.name)
+            low_selection.append(folder.name)
 
         total += foldertotal
         rejected += folderrejected   

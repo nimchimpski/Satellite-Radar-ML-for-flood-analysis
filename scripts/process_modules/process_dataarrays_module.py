@@ -133,7 +133,7 @@ def normalize_inmemory_tile(tile):
             normalized=False
         return tile.astype('float32'), normalized
 
-def log_clip_minmaxnorm(tile):
+def log_clip_minmaxnorm_layer(tile):
     """
     Preprocess SAR data for U-Net segmentation.
     1. Log Transform
@@ -144,30 +144,132 @@ def log_clip_minmaxnorm(tile):
     preprocessed_tile = tile.copy()
 
     for layer in tile.coords['layer'].values:
-        try:
-            if layer not in skip_layers:
-                # Log Transform
-                layer_data = np.log1p(tile.sel(layer=layer))
-
-                # Clip Extreme Values
-                lower_bound = np.percentile(layer_data, 2)
-                upper_bound = np.percentile(layer_data, 98)
-                layer_data = np.clip(layer_data, lower_bound, upper_bound)
-
-                # Min-Max Normalize
-                layer_min = layer_data.min().item()
-                layer_max = layer_data.max().item()
-                if layer_min != layer_max:
-                    preprocessed_tile.loc[dict(layer=layer)] = (layer_data - layer_min) / (layer_max - layer_min)
-                    normalized= True
-                else:
-                    print(f"---Layer '{layer}' has constant values; skipping normalization")
-                    normalized= False
-        except Exception as e:
-            print(f"---Error processing layer '{layer}': {e}")
-            normalized= False
-    
+        if layer not in skip_layers:
+            # Log Transform
+            layer_data = np.log1p(tile.sel(layer=layer))
+            # Clip Extreme Values
+            lower_bound = np.percentile(layer_data, 2)
+            upper_bound = np.percentile(layer_data, 98)
+            layer_data = np.clip(layer_data, lower_bound, upper_bound)
+            # Min-Max Normalize
+            layer_min = layer_data.min().item()
+            layer_max = layer_data.max().item()
+            if layer_min != layer_max:
+                preprocessed_tile.loc[dict(layer=layer)] = (layer_data - layer_min) / (layer_max - layer_min)
+                normalized= True
+            else:
+                print(f"---Layer '{layer}' in tile '{tile.attrs['filename']}' is uniform; skipping normalization")
+                normalized= False
     return preprocessed_tile.astype('float32'), normalized
+
+def log_clip_minmaxnorm(tile, global_min, global_max):
+    """
+    Preprocess SAR data for U-Net segmentation using global min and max.
+    1. Log Transform
+    2. Clip Extreme Values
+    3. Normalize to [0, 1]
+    """
+    # print('+++in log_clip_minmaxnorm')
+    skip_layers = ['mask', 'valid']
+    preprocessed_tile = tile.copy()
+
+    for layer in tile.coords['layer'].values:
+        if layer not in skip_layers:
+            # Log Transform
+            layer_data = np.log1p(tile.sel(layer=layer))
+
+            # Clip Extreme Values
+            lower_bound = np.percentile(layer_data, 2)  # This can still be computed if necessary
+            upper_bound = np.percentile(layer_data, 98)
+            layer_data = np.clip(layer_data, lower_bound, upper_bound)
+
+            # Min-Max Normalize using global_min and global_max
+            if global_min != global_max:
+                preprocessed_tile.loc[dict(layer=layer)] = (layer_data - global_min) / (global_max - global_min)
+                normalized = True
+            else:
+                print(f"---Global min and max are identical for layer '{layer}'; skipping normalization.")
+                normalized = False
+    return preprocessed_tile.astype('float32'), normalized
+
+
+
+def calculate_global_min_max_nc(datacube, layer_name, percentile_min=2, percentile_max=98):
+    """
+    Calculate global min and max percentiles for dataset normalization from xarray.DataArray.
+    Args:
+        datacube (str): Path to the NetCDF file or DataArray.
+        layer_name (str): Name of the layer to use for normalization (e.g., "HH").
+        percentile_min (int): Lower percentile for clipping.
+        percentile_max (int): Upper percentile for clipping.
+    Returns:
+        tuple: (global_min, global_max)
+    """
+    print('+++in calculate_global_min_max_nc')
+    print('---layer_name= ', layer_name)
+    
+    # Open dataset
+    ds = xr.open_dataset(datacube)
+    print('---ds= ', ds)
+    var = list(ds.data_vars)[0]
+    da = ds[var]
+
+    print('---da layers= ', da.coords["layer"].values)
+    
+    # Check if the required layer exists
+    if layer_name not in da.coords["layer"].values:
+        raise ValueError(f"Layer '{layer_name}' not found in dataset. Available layers: {list(da.coords["layer"].values)}")
+    
+    # Extract layer data
+    layer_data = da.sel(layer=layer_name)  # Extract the variable as a NumPy array
+    print(f"Extracted data for layer '{layer_name}', shape: {layer_data.shape}")
+    
+    # Flatten pixel values
+    all_pixel_values = layer_data.values.flatten()  # Access NumPy array and flatten
+    print(f"Flattened pixel values, total: {len(all_pixel_values)}")
+    
+    # Compute percentiles
+    global_min = np.percentile(all_pixel_values, percentile_min)
+    global_max = np.percentile(all_pixel_values, percentile_max)
+    print(f"Calculated global min={global_min}, max={global_max}")
+    
+    return global_min, global_max
+
+
+
+def get_global_min_max(data_path, layer_name, min_max_file=None, percentile_min=2, percentile_max=98):
+    """
+    Calculate or load global min and max for dataset normalization.
+    Args:
+        data_path (str): Path to the dataset directory.
+        layer_name (str): Layer to use for normalization.
+        min_max_file (str): Path to the file storing min-max values.
+        percentile_min (int): Lower percentile for clipping.
+        percentile_max (int): Upper percentile for clipping.
+    Returns:
+        tuple: (global_min, global_max)
+    """
+    print('+++in get_global_min_max')
+    print('---data_path= ', data_path)
+    print('---layer_name= ', layer_name)
+    # Check if the file exists
+    if os.path.exists(min_max_file):
+        # Load existing min-max values
+        with open(min_max_file, "r") as f:
+            global_min, global_max = map(float, f.readline().split(","))
+        print(f"Loaded global min-max from {min_max_file}: Min={global_min}, Max={global_max}")
+    else:
+        # Calculate min-max values
+        global_min, global_max = calculate_global_min_max_nc(data_path, layer_name, percentile_min, percentile_max)
+        # Save to file
+        with open(min_max_file, "w") as f:
+            f.write(f"{global_min},{global_max}")
+        print(f"Calculated and saved global min-max: Min={global_min}, Max={global_max}")
+    
+    stats = (global_min, global_max)
+    return stats
+
+
 
 # SELECT AND SPLIT
 def has_enough_valid_pixels(file_path, analysis_threshold, mask_threshold):
@@ -460,7 +562,7 @@ def location_to_crs(location, crs):
 
 
 # TILING
-def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256):
+def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_func, stats):
     """
     Tile a DATASET (extracted from a dataarray is selected) and save to 'tiles' dir in same location.
     'ARGs:
@@ -470,6 +572,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
     TODO add json file with metadata for each tile inv mask and anal_ext pixel count etc
     """
     print('+++++++in tile_datacube rxr fn ++++++++')
+    global_min, global_max = stats
     num_tiles = 0
     num_saved = 0
     num_has_nans = 0
@@ -521,16 +624,11 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
             if int(tile.sizes["x"]) != tile_size or int(tile.sizes["y"]) != tile_size:
                 print("---odd shaped encountered; padding.")
                 # padtile = pad_tile(tile, 250)
-                # tile = padtile
                 print(f"---Tile dimensions b4 padding: {tile.sizes['x']}x{tile.sizes['y']}")
-                padded_tile = pad_tile(tile, tile_size)
+                tile = pad_tile(tile, tile_size)
                 # print("---Tile coords:", tile.coords)
-                print(f"---Tile dimensions after padding: {padded_tile.sizes['x']}x{padded_tile.sizes['y']}")
-
+                print(f"---Tile dimensions after padding: {tile.sizes['x']}x{tile.sizes['y']}")
                 num_not_256 += 1
-
-                tile = padded_tile
-                
 
             # #   FILTER OUT TILES WITH NO DATA
             # # print('---filtering out bad tiles')
@@ -551,22 +649,20 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size=256, stride=256)
             #     num_nomask +=1
             #     # print('---tile has no mask')
             #     continue
-            # print('---MASK CHECK')
-
 
             # print("---PRINTING DA INFO B4 NORM-----")
             # print_dataarray_info(tile)
-
+            normalized = False
             # normalized_tile, normalized = normalize_inmemory_tile(tile)
-            if norm_fn == 'logclipmm:':
-                normalized_tile, normalized = log_clip_minmaxnorm(tile) 
-            # print('---NORMALIZED= ', normalized)
+            # print('---norm_func= ', norm_func)  
+            if norm_func == 'logclipmm_g':
+                normalized_tile, normalized = log_clip_minmaxnorm(tile, global_min, global_max) 
+        
             if not normalized:
+                print('---Failed to normalize tile')
                 num_failed_norm += 1
                 continue
 
-            
-            
             tile_name = f"tile_{datacube_path.parent.name}_{x_start}_{y_start}.tif"
             # print('---tile_name= ', tile_name)
 
