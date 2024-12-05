@@ -10,7 +10,7 @@ import os.path as osp
 from pathlib import Path 
 from dotenv import load_dotenv  
 import sys
-# -------------------------------------------
+# .............................................................
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
@@ -25,7 +25,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint,EarlyStopping
 from iglovikov_helper_functions.dl.pytorch.lightning import find_average
 from surface_distance.metrics import compute_surface_distances, compute_surface_dice_at_tolerance
-#-------------------------------------------
+# .............................................................
 import tifffile as tiff
 import matplotlib.pyplot as plt
 import signal
@@ -34,10 +34,10 @@ from tqdm import tqdm
 from operator import itemgetter, mul
 from functools import partial
 from wandb import Artifact
-#--------------------------------------------
-from scripts.train_modules.z.boundaryloss import BoundaryLoss
+# .............................................................
+
 from scripts.train_modules.train_helpers import *
-from scripts.train_modules.train_classes import  UnetModel,   Segmentation_training_loop 
+from scripts.train_modules.train_classes import  UnetModel,   Segmentation_training_loop , BoundaryLoss, SurfaceLoss, DiceLoss, FocalLoss
 from scripts.train_modules.train_functions import handle_interrupt
 from scripts.train_modules.train_functions import calculate_metrics, log_metrics_to_wandb
 #########################################################################
@@ -48,16 +48,17 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
 @click.command()
 @click.option('--evaluate', is_flag=True, show_default=False)
 @click.option('--reproduce', is_flag=True, show_default=False)
+@click.option('--test', is_flag=True, show_default=False)
 #########################################################################
 
-def main(evaluate=None, reproduce=None):
+def main(evaluate=None, reproduce=None, test=None):
     '''
     CONDA ENVIRONMENT = 'floodenv2"
     expects that the data is in tile_root, with 3 tile_lists for train, test and val
     ***NAVIGATE IN TERMINAL TO THE UNMAPPED ADRESS TO RUN THIS SCRIPT.***
     cd //cerndata100/AI_files/users/ai_flood_service/1new_data/3scripts/training
     '''
-    print('---in main')
+    print('>>>in main')
     start = time.time()
     signal.signal(signal.SIGINT, handle_interrupt)
     torch.set_float32_matmul_precision('medium')  # TODO try high
@@ -65,7 +66,8 @@ def main(evaluate=None, reproduce=None):
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     repo_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2")
     dataset_path  = repo_path / "1data" / "3final" / "train_input"
-    project = "floodai_v2"
+    save_path = repo_path / "4results"
+    project = "TSX"
     # DATA PARAMS
     
     subset_fraction = 1 # 1 = full dataset
@@ -83,9 +85,7 @@ def main(evaluate=None, reproduce=None):
     in_channels = 1
     DEVRUN = 0
     metric_threshold = 0.9
-    # just names - bullshit
-    loss = "BCEWithLogitsLoss"
-    mode = "train"
+    loss = "WEIGHTED_BCE" # "FOCALLOSS" "DICE" SURFACE" "BOUNDARY"
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     input_folders = [i for i in dataset_path.iterdir()]
@@ -93,12 +93,32 @@ def main(evaluate=None, reproduce=None):
     dataset_name = input_folders[0].name
     dataset_path = dataset_path / dataset_name
     print(f'>>>dataset path = {dataset_path}')
-    run_name = f'{mode}_{dataset_name}__BS{bs}__EP{max_epoch}_{loss}'
+    if test:
+        run_name = f'{dataset_name}__BS{bs}__EP{max_epoch}_{loss}_TEST'
+    else:
+        run_name = f'{dataset_name}__BS{bs}__EP{max_epoch}_{loss}'
     print(f'>>>run name = {run_name}')
     dataset_version = run_name
 
+    if loss == "WEIGHTED_BCE":
+        loss_fn = nn.BCEWithLogitsLoss(reduction="none")
+    elif loss == "FOCAL":
+        loss_fn = FocalLoss(alpha=0.25, gamma=2)
+    elif loss == "DICE":
+        loss_fn = DiceLoss()
+    elif loss == "SURFACE":
+        loss_fn = SurfaceLoss()
+    elif loss == "BOUNDARY":
+        loss_fn = BoundaryLoss()
+    else:
+        raise ValueError(f"Unknown loss: {loss}")
+
+
     if evaluate:
         mode = "test"
+        print('>>>evaluate>>>>>>>>>>>>>>')
+    else:
+        mode = "train"
     persistent_workers = False
     if num_workers > 0:
         persistent_workers = True
@@ -107,7 +127,7 @@ def main(evaluate=None, reproduce=None):
         print('>>>base path not exists')
 
     if not reproduce:
-        print('>>>-start train ? eval')
+        print('>>>-start train or eval')
         # itereate through dataset_paths here 
         train_list = dataset_path / "train.txt" # converts to absolute path with resolve
         test_list = dataset_path / "test.txt"
@@ -125,7 +145,7 @@ def main(evaluate=None, reproduce=None):
                 data_artifact = wandb.Artifact(
                     dataset_name, 
                     type="dataset",
-                    description=f"{dataset_name} all tiles from unosat original dataset",
+                    description=f"{dataset_name} 12 events",
                     metadata={"train_list": str(train_list),
                             "test_list": str(test_list),
                             "val_list": str(val_list)})
@@ -136,19 +156,27 @@ def main(evaluate=None, reproduce=None):
                 data_artifact.add_reference(train_list_uri, name="train_list")
                 run.log_artifact(data_artifact, aliases=[dataset_version, dataset_name])
     else:
-        print('---reproduce')
+        print('>>>reproduce')
         artifact_dataset_name = f'unosat_emergencymapping-United Nations Satellite Centre/{project}/{dataset_name}/ {dataset_name}'
         
-        print("---initialising Wandb")
+        print(">>>initialising Wandb")
         with wandb.init(project=project, job_type="reproduce", name='reproduce', mode="disabled") as run:
             data_artifact = run.use_artifact(artifact_dataset_name)
             metadata_data = data_artifact.metadata
-            print("Current Artifact Metadata:", metadata_data)
+            print(">>>Current Artifact Metadata:", metadata_data)
             train_list = Path(metadata_data['train_list'])
             test_list = Path(metadata_data['test_list'])
             val_list = Path(metadata_data['val_list'])    
     # TODO check the path chains here
     train_dl = create_subset(train_list, dataset_path, 'train' , subset_fraction, inputs, bs, num_workers, persistent_workers)
+
+    # After loading the dataset
+    for image, mask in train_dl:
+        num_flood_pixels = (mask == 1).sum()
+        num_non_flood_pixels = (mask == 0).sum()
+        print(f"[Dataset] Flood Pixels: {num_flood_pixels}, Non-Flood Pixels: {num_non_flood_pixels}")
+        break  # Print for just one sample to avoid flooding the output
+
 
     # for batch in train_dl:
     #     print('>>>batch+ ',batch)  # Ensure batches are correctly created
@@ -163,23 +191,23 @@ def main(evaluate=None, reproduce=None):
     # MAKE MODEL
     # model = SimpleCNN(in_channels=in_channels, classes=2)
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED)
-    # print('---model =', model)
+    # print('>>>model =', model)
     # Check the first convolution layer
     print(model.model.encoder.conv1)
 
     # Verify the weight shape of the first convolution
-    # print("---Conv1 weight shape:", model.model.encoder.conv1.weight.shape)
+    # print(">>>Conv1 weight shape:", model.model.encoder.conv1.weight.shape)
     # print(model.model.decoder.final_conv)
     # dummy_input = torch.randn(16, 1, 256, 256).to('cuda')  # Batch size 16, 1 input channel
     # with torch.no_grad():
     #     outputd = model(dummy_input)
-    # print(f"---/// dummy model output shape: {outputd.shape}")# Expected: torch.Size([16, 1, 256, 256])
+    # print(f">>>/// dummy model output shape: {outputd.shape}")# Expected: torch.Size([16, 1, 256, 256])
 
     model = model.to('cuda')  # Ensure the model is on GPU
     device = next(model.parameters()).device
 
 
-    print(f'---RUN NAME= {run_name}')
+    print(f'>>>RUN NAME= {run_name}')
 
     wandb_logger = WandbLogger(
         project="floodai_v2",
@@ -197,7 +225,7 @@ def main(evaluate=None, reproduce=None):
 
     ckpt_dir = repo_path / "4results" / "checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    print('---ckpt exists = ', ckpt_dir.exists())
+    print('>>>ckpt exists = ', ckpt_dir.exists())
           # DEFINE THE TRAINER
     checkpoint_callback = ModelCheckpoint(
         dirpath=ckpt_dir,  # Save checkpoints locally in this directory
@@ -208,7 +236,7 @@ def main(evaluate=None, reproduce=None):
         save_top_k=1                   # Only keep the best model
     )
     # print(f'>>>///model location: {device}')
-    print('---trainer')
+    print('>>>trainer')
     trainer= pl.Trainer(
         logger=wandb_logger,
         log_every_n_steps=LOGSTEPS,
@@ -224,7 +252,7 @@ def main(evaluate=None, reproduce=None):
 
     if not evaluate:
         print('>>>>>>>>>>>>>>>>>>>>   training / val  (NOT test)')
-        training_loop = Segmentation_training_loop(model)
+        training_loop = Segmentation_training_loop(model, loss_fn, save_path)
 
         trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl,)
 
@@ -236,28 +264,53 @@ def main(evaluate=None, reproduce=None):
         # trainer.test(model=training_loop, dataloaders=test_dl, ckpt_path='best')
         
     else:
-        print('>>> evaluate /  test')
+        print('>>>>>>>>>>>>>> evaluate >>>>>>>>>>>>>>>>>>>>>>>>>>> ')
         
-        ckpt = ckpt_dir / f'{run_name}.ckpt'
+        # ckpt = ckpt_dir / f'{run_name}.ckpt'
+        ckpt = ckpt_dir / 'TSX_logclipmm_g_mt0.3__BS16__EP10_WEIGHTED_BCE.ckpt'
         print(f'>>>evaluation ckpt = {ckpt.name}')
+        if not ckpt.exists():
+            raise FileNotFoundError(f"Checkpoint not found: {ckpt}")
 
-        training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, accelerator='gpu')
+        model.to('cuda')
+
+        training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, loss_fn=loss_fn, save_path=save_path, accelerator='gpu')
         print(f'>>>checkpoint loaded ok {ckpt.name}')
         # print(f'>>>ckpt test = {torch.load(ckpt)}')
-        training_loop = training_loop.cuda()
+        training_loop = training_loop.to('cuda')
+        training_loop.model = training_loop.model.to('cuda')  # Ensure submodules are on GPU
         training_loop.eval()
-        # trainer.test(model=training_loop, dataloaders=test_dl)
-        print('>>>test done')
+        # Debug weight placement
+        for name, param in training_loop.model.named_parameters():
+            print(f"Layer {name} device: {param.device}")
+        
+        
+        # Debugging
+        print(f"Training loop device: {next(training_loop.parameters()).device}")
+        trainer.test(model=training_loop, dataloaders=test_dl)
 
+        print('>>>loading batch')
 
         for batch in tqdm(test_dl, total=len(test_dl)):
             images, masks = batch
-            # im = Func.normalize(image.repeat(1,3,1,1)/255, mean=imagenet_stats[0], std=imagenet_stats[1])
+                # Debug device alignment
+            images, masks = images.to('cuda'), masks.to('cuda')  # Ensure input tensors are on GPU
+            print(f">>>images device: {images.device}")
+            print(f">>>masks device: {masks.device}")
             with torch.no_grad():
-                logits = training_loop(images.cuda())
+                
+                try:
+                    logits = training_loop(images)
+                    print(f">>>Logits device: {logits.device}")
+                except Exception as e:
+                    print(f"Error during forward pass: {e}")
+                    raise
+
                 logits = torch.sigmoid(logits) # Softmax + select "flood" class
-            logits = logits.cuda()
-            masks = masks.cuda()
+            logits = logits.to('cuda')
+            masks = masks.to('cuda')
+            print(f">>>Logits device: {logits.device}")
+            print(f">>>Images device: {images.device}")
             try:
                 metrics = calculate_metrics(logits, masks, metric_threshold)
             except Exception as e:

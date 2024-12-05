@@ -15,10 +15,18 @@ from pytorch_lightning.callbacks import ModelCheckpoint,EarlyStopping
 from iglovikov_helper_functions.dl.pytorch.lightning import find_average
 from surface_distance.metrics import compute_surface_distances, compute_surface_dice_at_tolerance
 from torch.utils.data import DataLoader
+from torchvision.utils import save_image
+from PIL import Image
 import torch
 import torch.nn as nn
 from pathlib import Path
 import tifffile as tiff
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+import numpy as np
+import wandb
+import io
+
 
 class FloodDataset(Dataset):
     def __init__(self, tile_list, tile_root, stage='train', inputs=None):
@@ -89,57 +97,47 @@ class FloodDataset(Dataset):
 
 class Segmentation_training_loop(pl.LightningModule):
 
-    def __init__(self, model):
+    def __init__(self, model, loss_fn, save_path):
         super().__init__()
         self.model = model
-
-        self.save_hyperparameters(ignore = ['model'])   
-        # self.boundary_loss = BoundaryLoss()
-        # self.cross_entropy = nn.CrossEntropyLoss()
-
-
-        self.loss_fn = nn.BCEWithLogitsLoss(reduction='none')
-        # self.loss_fn = FocalLoss(alpha=0.25, gamma=2)
+        self.loss_fn = loss_fn
+        self.save_path = save_path
+        self.save_hyperparameters(ignore = ['model', 'loss_fn', 'save_path'])   
         # Container to store validation results
         self.validation_outputs = []
 
-    def forward(self, batch):
-        return self.model(batch)
+        print(f'---loss_fn: {loss_fn}')
+
+    def forward(self, x):
+        print(f"---Input device in forward: {x.device}")
+        x = self.model(x)  # Pass through the model
+        print(f"---Output device in forward: {x.device}")
+        return x
 
     def training_step(self, batch, batch_idx):
         # print(f'+++++++++++++++++++   training step') 
         image, mask = batch
         image, mask = image.to(self.device), mask.to(self.device)
-        # print(f"---///Model device: {next(self.model.parameters()).device}")
-        # print(f"---///Image device: {image.device}, Mask device: {mask.device}")
-        # print(f"---Model running on device: {self.device}")
-        # print(f"---^^^^^^^^Model device: {next(self.model.parameters()).device}")
-
 
         logits = self(image)
-        total_loss = 0
 
-        # Calculate weights dynamically based on the mask
-        # Assuming 1 for flood class and 0.2 for non-flood class
-        weights = torch.ones_like(mask).to(self.device)
-        weights[mask == 0] = 0.2  # Less weight for non-flood
-        weights[mask == 1] = 1.0  # Full weight for flood class
-
-        # Compute Weighted BCE loss
+        # COMPUTE PER-PIXEL LOSS
         loss_per_pixel = self.loss_fn(logits, mask)  # Compute BCE per pixel
+
+        weights=self.compute_dynamic_weights(mask)
+
+        assert logits.device == mask.device ==weights.device
+
+        # APPLY WEIGHTS
         weighted_loss = (loss_per_pixel * weights).mean()  # Apply weights and reduce
+
+        # print(f"---train Flood Pixels: {flood_pixels.item()}, Non-Flood Pixels: {non_flood_pixels.item()}")
 
         self.log('train_loss', weighted_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         
         lr = self._get_current_lr()
         self.log('lr', lr, on_step=True, on_epoch=True, prog_bar=False, logger=True)
         return weighted_loss
-
-        # total_loss = self.loss_fn(logits, mask)
-        # self.log('train_loss', total_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-        # lr = self._get_current_lr()
-        # self.log('lr', lr, on_step=True, on_epoch=True, prog_bar=False, logger=True)
-        # return total_loss
 
     def _get_current_lr(self):
         # print(f'+++++++++++++    get current lr')
@@ -156,40 +154,91 @@ class Segmentation_training_loop(pl.LightningModule):
         # print(f'+++++++++++++    validation step')
         image, mask = batch
         image, mask = image.to(self.device), mask.to(self.device)
-        logits = self.forward(image)
-        probs = torch.sigmoid(logits)
-        preds = (probs > 0.5).int()
-        logits = self.forward(image)
-        logits = logits.softmax(1)
+        
+        logits = self(image)
 
-        # print(f"---Preds dtype: {preds.dtype}, unique values: {torch.unique(preds)}")
-        # print(f"---Mask dtype: {mask.dtype}, unique values: {torch.unique(mask)}")
+        weights = self.compute_dynamic_weights(mask)
 
-            # Compute Weighted BCE Loss
-        weights = torch.ones_like(mask).to(self.device)
-        weights[mask == 0] = 0.2
-        weights[mask == 1] = 1.0
+        assert logits.device == mask.device ==weights.device
 
+        # COMPUTE PER-PIXEL LOSS
         loss_per_pixel = self.loss_fn(logits, mask)
         weighted_loss = (loss_per_pixel * weights).mean()  # Apply weights and reduce to scalar
+
+        # CALCULATE PREDICTIONS for METRICS (not loss)
+        preds = (torch.sigmoid(logits) > 0.5).int() #only for standard BCE loss NOT focal loss / dice loss / combo loss / weighted BCE loss
+
+        # # Save a subset of images for visualization
+        # Check if this is the last batch
+        total_batches = len(self.trainer.val_dataloaders)
+        if batch_idx == total_batches - 1:
+            self.log_combined_visualization_plt( preds[0], mask[0])
 
         tp, fp, fn, tn = smp.metrics.get_stats(preds, mask.long(), mode='binary')
         iou = smp.metrics.iou_score(tp, fp, fn, tn)
 
         self.log('val_loss', weighted_loss, on_epoch=True, on_step= True, prog_bar=True, logger=True)
         self.log('iou', iou.mean(), prog_bar=True)
-        return {"loss": weighted_loss, "iou": iou.mean()}
-        
+        return {"loss": weighted_loss, "iou": iou.mean()}   
 
     def test_step(self, batch, batch_idx):
-        image, mask, dist = batch
-        logits = self.forward(image)
-        pd = logits.cpu().numpy()
-        gt = mask.cpu().numpy()
-        # test logic here
-        return {"results": None}
+        # print(f'+++++++++++++    test step')
+        images, masks = batch
+        images, masks = images.to('cuda'), masks.to('cuda')
 
+
+        logits = self(images)
+        loss_per_pixel = self.loss_fn(logits, masks)
+
+        weights = self.compute_dynamic_weights(masks)
+        weights = weights.to('cuda')
+        weighted_loss = (loss_per_pixel * weights).mean()  # Apply weights and reduce to scalar
+        self.log('test_loss', weighted_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+
+        # CALCULATE PREDICTIONS
+        preds = (torch.sigmoid(logits) > 0.5).int() #only for standard BCE loss NOT focal loss / dice loss / combo loss / weighted BCE loss
+
+        # Calculate metrics
+        tp, fp, fn, tn = smp.metrics.get_stats(preds, masks.long(), mode='binary')
+        iou = smp.metrics.iou_score(tp, fp, fn, tn)
+        precision = smp.metrics.precision(tp, fp, fn, tn)
+        recall = smp.metrics.recall(tp, fp, fn, tn)
+        # # Optionally save predictions
+
+        # Log metrics (if needed)
+        self.log('test_iou', iou.mean(), prog_bar=True)
+        self.log('test_precision', precision.mean(), prog_bar=True)
+        self.log('test_recall', recall.mean(), prog_bar=True)
+
+        # Determine if this is the last batch
+        total_batches = len(self.trainer.test_dataloaders)  # First DataLoader
+        if batch_idx == total_batches - 1:
+            self.log_combined_visualization_plt(preds[0], masks[0])  # Log the last batch visualization
+
+
+        return {"iou": iou.mean(), "precision": precision.mean(), "recall": recall.mean()}
     
+    def compute_dynamic_weights(self, mask):
+        # print(f'+++++++++++++    compute dynamic weights')
+        flood_pixels = (mask == 1).sum().float()
+        non_flood_pixels = (mask == 0).sum().float()
+        total_pixels = flood_pixels + non_flood_pixels
+
+        if total_pixels > 0:
+            flood_weight = non_flood_pixels / total_pixels
+            non_flood_weight = flood_pixels / total_pixels
+        else:
+            flood_weight = 1.0
+            non_flood_weight = 1.0
+
+        weights = torch.ones_like(mask).float()
+        weights[mask == 0] = non_flood_weight
+        weights[mask == 1] = flood_weight
+
+        weights = weights.to('cuda')
+
+        return weights
+
     def configure_optimizers(self):
         print(f'+++++++++++++    configure optimizers')
         params = [x for x in self.model.parameters() if x.requires_grad]
@@ -206,6 +255,84 @@ class Segmentation_training_loop(pl.LightningModule):
             }
         }
     
+    def save_test_outputs(self, images, preds, masks, batch_idx):
+        # Custom function to save images, predictions, and ground truths for analysis
+        for i, (image, pred, mask) in enumerate(zip(images, preds, masks)):
+            # Ensure tensors are in the correct format (e.g., [0, 1] range)
+            save_image(image, self.save_path / f"test_results/batch_{batch_idx}_image_{i}.png")
+            save_image(pred.float(), self.save_path / f"test_results/batch_{batch_idx}_pred_{i}.png")
+            save_image(mask.float(), self.save_path / f"test_results/batch_{batch_idx}_mask_{i}.png")
+    
+    def log_combined_visualization(self, images, preds, masks):
+        """
+        Visualizes input images, predictions, and ground truth masks side by side for a batch.
+        """
+        for i in range(images.shape[0]):  # Loop through each sample in the batch
+            # Convert tensors to numpy
+            image = images[i].squeeze().cpu().numpy()
+            pred = preds[i].squeeze().cpu().numpy()
+            mask = masks[i].squeeze().cpu().numpy()
+
+            # Normalize images and masks if needed (e.g., scale to [0, 255])
+            image = (image - image.min()) / (image.max() - image.min()) * 255  # Normalize input image to [0, 255]
+            pred = (pred > 0.5) * 255  # Threshold predictions and scale to [0, 255]
+            mask = mask * 255  # Scale ground truth mask to [0, 255]
+
+            # Stack the images horizontally (side by side)
+            combined = np.concatenate([image, pred, mask], axis=1)
+
+            # Log to WandB
+            self.logger.experiment.log({
+                f"Sample {i} Visualization": wandb.Image(
+                    combined.astype(np.uint8),  # Convert to uint8 for display
+                    caption=f"Sample {i} | Input | Prediction | Ground Truth"
+                )
+            })
+    
+    def log_combined_visualization_plt(self, preds, mask):
+        # print(f'+++++++++++++    log combined visualization plt')
+        print(f"Global Step: {self.global_step}")
+        # Convert tensors to numpy
+        preds = preds.squeeze().cpu().numpy()
+        mask = mask.squeeze().cpu().numpy()
+    
+        # Create the plot
+        fig, ax = plt.subplots(figsize=(12, 6))
+        # Show input image - stacked in reverse order!
+        ax.imshow(mask, cmap="Blues", alpha=1)  # Overlay ground truth
+        ax.imshow(preds, cmap="Reds", alpha=0.5)  # Overlay predictions
+        ax.axis("off")
+
+        legend_elements = [
+            Line2D([0], [0], color="red", lw=4, label="Predictions"),
+            Line2D([0], [0], color="blue", lw=4, label="Ground Truth")
+        ]
+
+        ax.legend(handles=legend_elements, loc="upper right", fontsize=10, frameon=True)
+
+        # Save the plot to a buffer
+        buf = io.BytesIO()
+        plt.savefig(buf, format="png")
+        buf.seek(0)
+        plt.close(fig)
+    
+        # Convert buffer to PIL image for WandB
+        pil_image = Image.open(buf)
+
+        pil_image.save(self.save_path / f"debug_visualization_{self.global_step}.png")  # Save the image locally
+        # print("Visualization saved locally as debug_visualization.png")
+
+        # Log to WandB
+        # Log to WandB with a unique key
+        self.logger.experiment.log({
+            f"Combined Visualization Step {self.global_step}": wandb.Image(
+                pil_image,
+                caption=f"Step {self.global_step} | Input with Prediction and Ground Truth Overlay"
+            )
+        })
+    
+        # Close buffer
+        buf.close()
 
 
 
@@ -280,7 +407,7 @@ class ResNetBinaryClassifier(nn.Module):
     def forward(self, x):
         return self.backbone(x)
 
-# LOSS FUNCTION
+# ------------------- LOSS FUNCTION -------------------
 
 class BoundaryLoss(nn.Module):
     """Boundary Loss proposed in:
@@ -397,14 +524,39 @@ class DiceLoss(nn.Module):
         dice = (2. * intersection + self.smooth) / (inputs.sum() + targets.sum() + self.smooth)
         return 1 - dice
 
-class ComboLoss(nn.Module):
+# COMBOS
+class FocalDiceLoss(nn.Module):
     def __init__(self, alpha=0.5):
-        super(ComboLoss, self).__init__()
-        self.alpha = alpha
+        super().__init__()
+        self.focal_loss = FocalLoss(alpha=0.25, gamma=2)
         self.dice_loss = DiceLoss()
-        self.bce_loss = nn.BCEWithLogitsLoss()
+        self.alpha = alpha
 
-    def forward(self, inputs, targets):
-        dice = self.dice_loss(inputs, targets)
-        bce = self.bce_loss(inputs, targets)
-        return self.alpha * bce + (1 - self.alpha) * dice
+    def forward(self, logits, targets):
+        focal = self.focal_loss(logits, targets)
+        dice = self.dice_loss(logits, targets)
+        return self.alpha * focal + (1 - self.alpha) * dice
+    
+class BoundaryDiceLoss(nn.Module):
+    def __init__(self, alpha=0.5):
+        super().__init__()
+        self.dice_loss = DiceLoss()
+        self.boundary_loss = BoundaryLoss()
+        self.alpha = alpha
+
+    def forward(self, logits, targets):
+        dice = self.dice_loss(logits, targets)
+        boundary = self.boundary_loss(logits, targets)
+        return self.alpha * dice + (1 - self.alpha) * boundary
+    
+class SurfaceDiceLoss(nn.Module):
+    def __init__(self, alpha=0.5):
+        super().__init__()
+        self.dice_loss = DiceLoss()
+        self.surface_loss = SurfaceLoss()
+        self.alpha = alpha
+
+    def forward(self, logits, targets):
+        dice = self.dice_loss(logits, targets)
+        surface = self.surface_loss(logits, targets)
+        return self.alpha * dice + (1 - self.alpha) * surface
