@@ -46,12 +46,12 @@ load_dotenv()
 os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
 
 @click.command()
-@click.option('--evaluate', is_flag=True, show_default=False)
-@click.option('--reproduce', is_flag=True, show_default=False)
 @click.option('--test', is_flag=True, show_default=False)
+@click.option('--reproduce', is_flag=True, show_default=False)
+@click.option('--debug', is_flag=True, show_default=False)
 #########################################################################
 
-def main(evaluate=None, reproduce=None, test=None):
+def main(test=None, reproduce=None, debug=None):
     '''
     CONDA ENVIRONMENT = 'floodenv2"
     expects that the data is in tile_root, with 3 tile_lists for train, test and val
@@ -76,8 +76,8 @@ def main(evaluate=None, reproduce=None, test=None):
     # DATALOADER PARAMS
     num_workers = 0
     # WANDB PARAMS
-    WBOFFLINE = True
-    WBMODE = "online"
+    WBOFFLINE = False
+    wandb_mode = "online"
     LOGSTEPS = 50 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
     # MODEL PARAMS
     PRETRAINED = True
@@ -93,11 +93,17 @@ def main(evaluate=None, reproduce=None, test=None):
     dataset_name = input_folders[0].name
     dataset_path = dataset_path / dataset_name
     print(f'>>>dataset path = {dataset_path}')
-    if test:
-        run_name = f'{dataset_name}__BS{bs}__EP{max_epoch}_{loss}_TEST'
+    if debug:
+        wandb_mode = "disabled"
+        logger = None
     else:
         run_name = f'{dataset_name}__BS{bs}__EP{max_epoch}_{loss}'
-    print(f'>>>run name = {run_name}')
+        wandb_logger = WandbLogger(
+        project=project,
+        name=run_name,
+        mode='online',
+    )
+    logger = wandb_logger
     dataset_version = run_name
 
     if loss == "WEIGHTED_BCE":
@@ -113,12 +119,6 @@ def main(evaluate=None, reproduce=None, test=None):
     else:
         raise ValueError(f"Unknown loss: {loss}")
 
-
-    if evaluate:
-        mode = "test"
-        print('>>>evaluate>>>>>>>>>>>>>>')
-    else:
-        mode = "train"
     persistent_workers = False
     if num_workers > 0:
         persistent_workers = True
@@ -137,7 +137,7 @@ def main(evaluate=None, reproduce=None, test=None):
         with wandb.init(project=project, 
                         job_type="data-process", 
                         name='load-data', 
-                        mode=WBMODE,
+                        mode=wandb_mode,
                         dir=repo_path / "4results", 
                         settings=wandb.Settings(program=__file__)
                         ) as run:
@@ -168,36 +168,32 @@ def main(evaluate=None, reproduce=None, test=None):
             test_list = Path(metadata_data['test_list'])
             val_list = Path(metadata_data['val_list'])    
     # TODO check the path chains here
-    train_dl = create_subset(train_list, dataset_path, 'train' , subset_fraction, inputs, bs, num_workers, persistent_workers)
+    if not test:
+        print(f'>>>not test')
+        train_dl = create_subset(train_list, dataset_path, 'train' , subset_fraction, inputs, bs, num_workers, persistent_workers)
 
-    # After loading the dataset
-    for image, mask in train_dl:
-        num_flood_pixels = (mask == 1).sum()
-        num_non_flood_pixels = (mask == 0).sum()
-        print(f"[Dataset] Flood Pixels: {num_flood_pixels}, Non-Flood Pixels: {num_non_flood_pixels}")
-        break  # Print for just one sample to avoid flooding the output
-
-
-    # for batch in train_dl:
-    #     print('>>>batch+ ',batch)  # Ensure batches are correctly created
-    #     break
-    # for model_input, mask in train_dl:
-    #     print(f">>>///Model input shape: {model_input.shape}, Mask shape: {mask.shape}")
-    #     break
-
-    test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs, num_workers, persistent_workers)   
-    val_dl = create_subset(val_list, dataset_path, 'val',  subset_fraction, inputs, bs, num_workers, persistent_workers)  
+        # DEBUG
+        # for image, mask in train_dl:
+        #     num_flood_pixels = (mask == 1).sum()
+        #     num_non_flood_pixels = (mask == 0).sum()
+        #     print(f">>>[Dataset] Flood Pixels: {num_flood_pixels}, Non-Flood Pixels: {num_non_flood_pixels}")
+        #     break  # Print for just one sample to avoid flooding the output
+        # for batch in train_dl:
+        #     print('>>>batch+ ',batch)  # Ensure batches are correctly created
+        #     break
+        # for model_input, mask in train_dl:
+        #     print(f">>>///Model input shape: {model_input.shape}, Mask shape: {mask.shape}")
+        #     break  
+        val_dl = create_subset(val_list, dataset_path, 'val',  subset_fraction, inputs, bs, num_workers, persistent_workers)  
+    elif test:
+        test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs, num_workers, persistent_workers) 
 
     # MAKE MODEL
-    # model = SimpleCNN(in_channels=in_channels, classes=2)
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED)
     # print('>>>model =', model)
     # Check the first convolution layer
     print(model.model.encoder.conv1)
 
-    # Verify the weight shape of the first convolution
-    # print(">>>Conv1 weight shape:", model.model.encoder.conv1.weight.shape)
-    # print(model.model.decoder.final_conv)
     # dummy_input = torch.randn(16, 1, 256, 256).to('cuda')  # Batch size 16, 1 input channel
     # with torch.no_grad():
     #     outputd = model(dummy_input)
@@ -220,7 +216,7 @@ def main(evaluate=None, reproduce=None, test=None):
         "max_epoch": max_epoch,
         "subset_fraction": subset_fraction,
         "devrun": DEVRUN,
-        "offline_mode": WBOFFLINE
+        "offline_mode": WBOFFLINE,  
     })
 
     ckpt_dir = repo_path / "4results" / "checkpoints"
@@ -238,7 +234,7 @@ def main(evaluate=None, reproduce=None, test=None):
     # print(f'>>>///model location: {device}')
     print('>>>trainer')
     trainer= pl.Trainer(
-        logger=wandb_logger,
+        logger=logger,
         log_every_n_steps=LOGSTEPS,
         max_epochs=max_epoch,
         accelerator='gpu', 
@@ -250,7 +246,7 @@ def main(evaluate=None, reproduce=None, test=None):
     )
     # print('>>>trainer done')
 
-    if not evaluate:
+    if not test:
         print('>>>>>>>>>>>>>>>>>>>>   training / val  (NOT test)')
         training_loop = Segmentation_training_loop(model, loss_fn, save_path)
 
@@ -264,7 +260,7 @@ def main(evaluate=None, reproduce=None, test=None):
         # trainer.test(model=training_loop, dataloaders=test_dl, ckpt_path='best')
         
     else:
-        print('>>>>>>>>>>>>>> evaluate >>>>>>>>>>>>>>>>>>>>>>>>>>> ')
+        print('>>>>>>>>>>>>>> test >>>>>>>>>>>>>>>>>>>>>>>>>>> ')
         
         # ckpt = ckpt_dir / f'{run_name}.ckpt'
         ckpt = ckpt_dir / 'TSX_logclipmm_g_mt0.3__BS16__EP10_WEIGHTED_BCE.ckpt'
@@ -277,16 +273,17 @@ def main(evaluate=None, reproduce=None, test=None):
         training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, loss_fn=loss_fn, save_path=save_path, accelerator='gpu')
         print(f'>>>checkpoint loaded ok {ckpt.name}')
         # print(f'>>>ckpt test = {torch.load(ckpt)}')
-        training_loop = training_loop.to('cuda')
-        training_loop.model = training_loop.model.to('cuda')  # Ensure submodules are on GPU
+        # training_loop = training_loop.to('cuda')
+        # training_loop.model = training_loop.model.to('cuda')  # Ensure submodules are on GPU
         training_loop.eval()
+        # training_loop = training_loop.to('cuda')
         # Debug weight placement
-        for name, param in training_loop.model.named_parameters():
-            print(f"Layer {name} device: {param.device}")
+        # for name, param in training_loop.model.named_parameters():
+        #     print(f">>>Layer {name}. device {device}: {param.device==device}")
         
         
         # Debugging
-        print(f"Training loop device: {next(training_loop.parameters()).device}")
+        print(f">>>Training loop device: {next(training_loop.parameters()).device}")
         trainer.test(model=training_loop, dataloaders=test_dl)
 
         print('>>>loading batch')
@@ -295,13 +292,13 @@ def main(evaluate=None, reproduce=None, test=None):
             images, masks = batch
                 # Debug device alignment
             images, masks = images.to('cuda'), masks.to('cuda')  # Ensure input tensors are on GPU
-            print(f">>>images device: {images.device}")
-            print(f">>>masks device: {masks.device}")
+            # print(f">>>images device: {images.device}")
+            # print(f">>>masks device: {masks.device}")
+            model = model.to('cuda')    
             with torch.no_grad():
-                
                 try:
                     logits = training_loop(images)
-                    print(f">>>Logits device: {logits.device}")
+                    # print(f">>>Logits device: {logits.device}")
                 except Exception as e:
                     print(f"Error during forward pass: {e}")
                     raise
@@ -309,8 +306,8 @@ def main(evaluate=None, reproduce=None, test=None):
                 logits = torch.sigmoid(logits) # Softmax + select "flood" class
             logits = logits.to('cuda')
             masks = masks.to('cuda')
-            print(f">>>Logits device: {logits.device}")
-            print(f">>>Images device: {images.device}")
+            # print(f">>>Logits device: {logits.device}")
+            # print(f">>>Images device: {images.device}")
             try:
                 metrics = calculate_metrics(logits, masks, metric_threshold)
             except Exception as e:

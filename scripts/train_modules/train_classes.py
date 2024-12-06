@@ -109,9 +109,16 @@ class Segmentation_training_loop(pl.LightningModule):
         print(f'---loss_fn: {loss_fn}')
 
     def forward(self, x):
-        print(f"---Input device in forward: {x.device}")
-        x = self.model(x)  # Pass through the model
-        print(f"---Output device in forward: {x.device}")
+        # print(f"---Input device in forward: {x.device}")
+        try:
+            # for name, param in self.model.named_parameters():
+            #     print(f"Parameter {name} is on device: {param.device}")  # Debug each parameter
+
+            x = self.model(x)  # Pass through the model
+            # print(f"---Output device in forward: {x.device}")
+        except Exception as e:
+            print(f"Error during forward pass: {e}")
+            raise
         return x
 
     def training_step(self, batch, batch_idx):
@@ -126,7 +133,7 @@ class Segmentation_training_loop(pl.LightningModule):
 
         weights=self.compute_dynamic_weights(mask)
 
-        assert logits.device == mask.device ==weights.device
+        print(logits.device , mask.device, weights.device)
 
         # APPLY WEIGHTS
         weighted_loss = (loss_per_pixel * weights).mean()  # Apply weights and reduce
@@ -192,12 +199,13 @@ class Segmentation_training_loop(pl.LightningModule):
 
         weights = self.compute_dynamic_weights(masks)
         weights = weights.to('cuda')
+        # print(f"---weights device: {weights.device}")
         weighted_loss = (loss_per_pixel * weights).mean()  # Apply weights and reduce to scalar
         self.log('test_loss', weighted_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
-
+        # print(f"---weighted_loss device: {weighted_loss.device}")
         # CALCULATE PREDICTIONS
         preds = (torch.sigmoid(logits) > 0.5).int() #only for standard BCE loss NOT focal loss / dice loss / combo loss / weighted BCE loss
-
+        # print(f"---preds device: {preds.device}")   
         # Calculate metrics
         tp, fp, fn, tn = smp.metrics.get_stats(preds, masks.long(), mode='binary')
         iou = smp.metrics.iou_score(tp, fp, fn, tn)
@@ -211,9 +219,13 @@ class Segmentation_training_loop(pl.LightningModule):
         self.log('test_recall', recall.mean(), prog_bar=True)
 
         # Determine if this is the last batch
-        total_batches = len(self.trainer.test_dataloaders)  # First DataLoader
+        test_dataloader = self.trainer.test_dataloaders # First DataLoader
+        total_batches = len(test_dataloader)
+        # print(f"---Total batches: {total_batches}")
         if batch_idx == total_batches - 1:
-            self.log_combined_visualization_plt(preds[0], masks[0])  # Log the last batch visualization
+            print('---batch_idx:', batch_idx)
+            print(f"---Saving test outputs for batch {batch_idx}")
+            # self.log_combined_visualization(images[0], preds[0], masks[0])  # Log the last batch visualization
 
 
         return {"iou": iou.mean(), "precision": precision.mean(), "recall": recall.mean()}
@@ -255,18 +267,12 @@ class Segmentation_training_loop(pl.LightningModule):
             }
         }
     
-    def save_test_outputs(self, images, preds, masks, batch_idx):
-        # Custom function to save images, predictions, and ground truths for analysis
-        for i, (image, pred, mask) in enumerate(zip(images, preds, masks)):
-            # Ensure tensors are in the correct format (e.g., [0, 1] range)
-            save_image(image, self.save_path / f"test_results/batch_{batch_idx}_image_{i}.png")
-            save_image(pred.float(), self.save_path / f"test_results/batch_{batch_idx}_pred_{i}.png")
-            save_image(mask.float(), self.save_path / f"test_results/batch_{batch_idx}_mask_{i}.png")
     
     def log_combined_visualization(self, images, preds, masks):
         """
         Visualizes input images, predictions, and ground truth masks side by side for a batch.
         """
+        print(f'+++++++++++++    log combined visualization')
         for i in range(images.shape[0]):  # Loop through each sample in the batch
             # Convert tensors to numpy
             image = images[i].squeeze().cpu().numpy()
@@ -290,7 +296,7 @@ class Segmentation_training_loop(pl.LightningModule):
             })
     
     def log_combined_visualization_plt(self, preds, mask):
-        # print(f'+++++++++++++    log combined visualization plt')
+        print(f'+++++++++++++    log combined visualization plt')
         print(f"Global Step: {self.global_step}")
         # Convert tensors to numpy
         preds = preds.squeeze().cpu().numpy()
