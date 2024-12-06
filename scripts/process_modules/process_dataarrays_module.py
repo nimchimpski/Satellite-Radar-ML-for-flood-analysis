@@ -587,7 +587,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
     var = list(ds.data_vars)[0]
     da = ds[var]
 
-    print('---DA BEFORE TILING= ', list(ds.data_vars))
+    print('---DA BEFORE TILING = ', list(ds.data_vars))
 
     # print_dataarray_info(da)
     if da.chunks:
