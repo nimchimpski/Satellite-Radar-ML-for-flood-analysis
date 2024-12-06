@@ -38,8 +38,7 @@ from wandb import Artifact
 
 from scripts.train_modules.train_helpers import *
 from scripts.train_modules.train_classes import  UnetModel,   Segmentation_training_loop , BoundaryLoss, SurfaceLoss, DiceLoss, FocalLoss
-from scripts.train_modules.train_functions import handle_interrupt
-from scripts.train_modules.train_functions import calculate_metrics, log_metrics_to_wandb
+from scripts.train_modules.train_functions import calculate_metrics, log_metrics_to_wandb, handle_interrupt
 #########################################################################
 
 load_dotenv()
@@ -86,7 +85,7 @@ def main(test=None, reproduce=None, debug=None):
     DEVRUN = 0
     metric_threshold = 0.9
     loss = "WEIGHTED_BCE" # "FOCALLOSS" "DICE" SURFACE" "BOUNDARY"
-
+    job_type = "test"
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     input_folders = [i for i in dataset_path.iterdir()]
     assert len(input_folders) == 1
@@ -316,7 +315,7 @@ def main(test=None, reproduce=None, debug=None):
 
 
             # Log metrics and visualizations to wandb
-            log_metrics_to_wandb(metrics, wandb_logger, logits, masks)
+            log_metrics_to_wandb(job_type, metrics, wandb_logger)
     # Ensure the model is on GPU
     model = model.to('cuda')
     end = time.time()

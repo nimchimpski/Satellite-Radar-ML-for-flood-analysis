@@ -140,7 +140,7 @@ class Segmentation_training_loop(pl.LightningModule):
 
         # print(f"---train Flood Pixels: {flood_pixels.item()}, Non-Flood Pixels: {non_flood_pixels.item()}")
 
-        self.log('train_loss', weighted_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
+        _, _, _, _= self.metrics_maker(logits, mask, 'train', weighted_loss)
         
         lr = self._get_current_lr()
         self.log('lr', lr, on_step=True, on_epoch=True, prog_bar=False, logger=True)
@@ -159,17 +159,17 @@ class Segmentation_training_loop(pl.LightningModule):
 
     def validation_step(self, batch, batch_idx):
         # print(f'+++++++++++++    validation step')
-        image, mask = batch
-        image, mask = image.to(self.device), mask.to(self.device)
+        images, masks = batch
+        images, masks = images.to(self.device), masks.to(self.device)
         
-        logits = self(image)
+        logits = self(images)
 
-        weights = self.compute_dynamic_weights(mask)
+        weights = self.compute_dynamic_weights(masks)
 
-        assert logits.device == mask.device ==weights.device
+        assert logits.device == masks.device ==weights.device
 
         # COMPUTE PER-PIXEL LOSS
-        loss_per_pixel = self.loss_fn(logits, mask)
+        loss_per_pixel = self.loss_fn(logits, masks)
         weighted_loss = (loss_per_pixel * weights).mean()  # Apply weights and reduce to scalar
 
         # CALCULATE PREDICTIONS for METRICS (not loss)
@@ -179,17 +179,16 @@ class Segmentation_training_loop(pl.LightningModule):
         # Check if this is the last batch
         total_batches = len(self.trainer.val_dataloaders)
         if batch_idx == total_batches - 1:
-            self.log_combined_visualization_plt( preds[0], mask[0])
+            self.log_combined_visualization_plt( preds[0], masks[0])
 
-        tp, fp, fn, tn = smp.metrics.get_stats(preds, mask.long(), mode='binary')
-        iou = smp.metrics.iou_score(tp, fp, fn, tn)
+        ioumean, _, _, _ = self.metrics_maker(preds, masks, 'val', weighted_loss)
 
-        self.log('val_loss', weighted_loss, on_epoch=True, on_step= True, prog_bar=True, logger=True)
-        self.log('iou', iou.mean(), prog_bar=True)
-        return {"loss": weighted_loss, "iou": iou.mean()}   
+
+        return {"loss": weighted_loss, "iou": ioumean}   
 
     def test_step(self, batch, batch_idx):
         # print(f'+++++++++++++    test step')
+        job_type = 'test'
         images, masks = batch
         images, masks = images.to('cuda'), masks.to('cuda')
 
@@ -201,23 +200,13 @@ class Segmentation_training_loop(pl.LightningModule):
         weights = weights.to('cuda')
         # print(f"---weights device: {weights.device}")
         weighted_loss = (loss_per_pixel * weights).mean()  # Apply weights and reduce to scalar
-        self.log('test_loss', weighted_loss, on_step=True, on_epoch=True, prog_bar=True, logger=True)
         # print(f"---weighted_loss device: {weighted_loss.device}")
         # CALCULATE PREDICTIONS
         preds = (torch.sigmoid(logits) > 0.5).int() #only for standard BCE loss NOT focal loss / dice loss / combo loss / weighted BCE loss
+
         # print(f"---preds device: {preds.device}")   
         # Calculate metrics
-        tp, fp, fn, tn = smp.metrics.get_stats(preds, masks.long(), mode='binary')
-        iou = smp.metrics.iou_score(tp, fp, fn, tn)
-        precision = smp.metrics.precision(tp, fp, fn, tn)
-        recall = smp.metrics.recall(tp, fp, fn, tn)
-        # # Optionally save predictions
-
-        # Log metrics (if needed)
-        self.log('test_iou', iou.mean(), prog_bar=True)
-        self.log('test_precision', precision.mean(), prog_bar=True)
-        self.log('test_recall', recall.mean(), prog_bar=True)
-
+        ioumean, precisionmean, recallmean, f1mean = self.metrics_maker(preds, masks, 'test', weighted_loss)
         # Determine if this is the last batch
         test_dataloader = self.trainer.test_dataloaders # First DataLoader
         total_batches = len(test_dataloader)
@@ -228,7 +217,7 @@ class Segmentation_training_loop(pl.LightningModule):
             # self.log_combined_visualization(images[0], preds[0], masks[0])  # Log the last batch visualization
 
 
-        return {"iou": iou.mean(), "precision": precision.mean(), "recall": recall.mean()}
+        return {"iou": ioumean, "precision": precisionmean, "recall": recallmean, "f1": f1mean, "loss": weighted_loss}
     
     def compute_dynamic_weights(self, mask):
         # print(f'+++++++++++++    compute dynamic weights')
@@ -339,6 +328,29 @@ class Segmentation_training_loop(pl.LightningModule):
     
         # Close buffer
         buf.close()
+
+    def metrics_maker(self, preds, masks, job_type, loss):
+            
+        tp, fp, fn, tn = smp.metrics.get_stats(preds, masks.long(), mode='binary')
+        iou = smp.metrics.iou_score(tp, fp, fn, tn)
+        precision = smp.metrics.precision(tp, fp, fn, tn)
+        recall = smp.metrics.recall(tp, fp, fn, tn)
+        f1 = smp.metrics.f1_score(tp, fp, fn, tn)
+        # # Optionally save predictions
+        # Log metrics (if needed)
+        ioumean = iou.mean()
+        precisionmean = precision.mean()
+        recallmean = recall.mean()
+        f1mean = f1.mean()
+        if job_type != 'test':
+            assert loss != None, f"Loss is None for {job_type} job"
+            self.log(f'{job_type}_loss',loss , prog_bar=True, on_step=True, on_epoch=True)
+        self.log(f'{job_type}_iou', ioumean, prog_bar=True, on_step=True, on_epoch=True)
+        self.log(f'{job_type}_precision', precisionmean, prog_bar=True, on_step=True, on_epoch=True)
+        self.log(f'{job_type}_recall', recallmean, prog_bar=True, on_step=True, on_epoch=True)
+        self.log(f'{job_type}_f1', f1mean, prog_bar=True, on_step=True, on_epoch=True)
+
+        return ioumean, precisionmean, recallmean, f1mean
 
 
 
