@@ -45,12 +45,13 @@ load_dotenv()
 os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
 
 @click.command()
+@click.option('--train', is_flag=True, show_default=False)
 @click.option('--test', is_flag=True, show_default=False)
 @click.option('--reproduce', is_flag=True, show_default=False)
 @click.option('--debug', is_flag=True, show_default=False)
 #########################################################################
 
-def main(test=None, reproduce=None, debug=None):
+def main(train=None, test=None, reproduce=None, debug=None):
     '''
     CONDA ENVIRONMENT = 'floodenv2"
     expects that the data is in tile_root, with 3 tile_lists for train, test and val
@@ -71,7 +72,7 @@ def main(test=None, reproduce=None, debug=None):
     
     subset_fraction = 1 # 1 = full dataset
     bs = 16
-    max_epoch = 10
+    max_epoch = 1
     # DATALOADER PARAMS
     num_workers = 0
     # WANDB PARAMS
@@ -82,7 +83,7 @@ def main(test=None, reproduce=None, debug=None):
     inputs = ['hh' , 'mask'] 
     in_channels = 1
     DEVRUN = 0
-    metric_threshold = 0.9
+    # metric_threshold = 0.9
     loss = "weighted_bce" # "FOCALLOSS" "DICE" SURFACE" "BOUNDARY"
     ckpt_name ='TSX_logclipmm_g_mt0.3__BS16__EP10_WEIGHTED_BCE.ckpt'
 
@@ -111,17 +112,26 @@ def main(test=None, reproduce=None, debug=None):
     )
     logger = wandb_logger
     print(f'>>>logger = {logger}')
+    train_list = dataset_path / "train.txt" 
+    val_list  = dataset_path / "val.txt" 
+    test_list = dataset_path / "test.txt"
+
+    if train:
+        job_type = "train"
+        print('>>>-start train or eval')
+        train_dl = create_subset(train_list, dataset_path, 'train' , subset_fraction, inputs, bs, num_workers, persistent_workers)
+        val_dl = create_subset(val_list, dataset_path, 'val',  subset_fraction, inputs, bs, num_workers, persistent_workers) 
     if debug:
+        print('>>>-start debug')
         logger = None
         job_type = "debug"
     if test:
+        print('>>>-start test')
         job_type = "test"
-        test_list = dataset_path / "test.txt"
         test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs, num_workers, persistent_workers) 
-    else:
-        print(f'>>>not test')
-        train_dl = create_subset(train_list, dataset_path, 'train' , subset_fraction, inputs, bs, num_workers, persistent_workers)
-        val_dl = create_subset(val_list, dataset_path, 'val',  subset_fraction, inputs, bs, num_workers, persistent_workers) 
+
+
+
         # DEBUG
         # for image, mask in train_dl:
         #     num_flood_pixels = (mask == 1).sum()
@@ -137,13 +147,7 @@ def main(test=None, reproduce=None, debug=None):
  
     loss_fn = loss_chooser(loss)
 
-
-    if not reproduce:
-        print('>>>-start train or eval')
-        train_list = dataset_path / "train.txt" # converts to absolute path with resolve
-        val_list  = dataset_path / "val.txt" 
-
-    wandb_initialization(job_type, repo_path, project,  dataset_name, dataset_version, train_list, test_list, val_list)
+    wandb_initialization(job_type, repo_path, project,  dataset_name, dataset_version, train_list,  val_list, test_list,)
 
     # MAKE MODEL
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED)

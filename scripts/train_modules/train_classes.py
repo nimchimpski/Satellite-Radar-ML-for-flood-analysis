@@ -123,101 +123,87 @@ class Segmentation_training_loop(pl.LightningModule):
 
     def training_step(self, batch, batch_idx):
         # print(f'+++++++++++++++++++   training step') 
-        image, mask = batch
-        image, mask = image.to(self.device), mask.to(self.device)
+        job_type = 'train'
 
-        logits = self(image)
+        images, masks = batch
+        images, masks = images.to(self.device), masks.to(self.device)
+        logits = self(images)
+        loss_per_pixel = self.loss_fn(logits, masks)  
+        weights=self.compute_dynamic_weights(masks)
+        weights = weights.to('cuda')
+        assert logits.device == masks.device ==weights.device
+        weighted_loss = (loss_per_pixel * weights).mean() 
 
-        # COMPUTE PER-PIXEL LOSS
-        loss_per_pixel = self.loss_fn(logits, mask)  # Compute BCE per pixel
-
-        weights=self.compute_dynamic_weights(mask)
-
-        print(logits.device , mask.device, weights.device)
-
-        # APPLY WEIGHTS
-        weighted_loss = (loss_per_pixel * weights).mean()  # Apply weights and reduce
-
-        # print(f"---train Flood Pixels: {flood_pixels.item()}, Non-Flood Pixels: {non_flood_pixels.item()}")
-
-        _, _, _, _= self.metrics_maker(logits, mask, 'train', weighted_loss)
-        
         lr = self._get_current_lr()
-        self.log('lr', lr, on_step=True, on_epoch=True, prog_bar=False, logger=True)
-        return weighted_loss
 
-    def _get_current_lr(self):
-        # print(f'+++++++++++++    get current lr')
-        lr = [x["lr"] for x in self.optimizers().param_groups]
-        return torch.Tensor([lr]).cuda()
-    
-    # def _get_current_lr(self):
-    #     # Access the optimizer through self.optimizers() in PyTorch Lightning
-    #     optimizer = self.optimizers()
-    #     lr = [param_group["lr"] for param_group in optimizer.param_groups]
-    #     return lr
+        _, _, _, _= self.metrics_maker(logits, masks, job_type, weighted_loss, lr)
+        return weighted_loss
 
     def validation_step(self, batch, batch_idx):
         # print(f'+++++++++++++    validation step')
+        job_type = 'val'
+
         images, masks = batch
         images, masks = images.to(self.device), masks.to(self.device)
-        
         logits = self(images)
-
-        weights = self.compute_dynamic_weights(masks)
-
-        assert logits.device == masks.device ==weights.device
-
-        # COMPUTE PER-PIXEL LOSS
         loss_per_pixel = self.loss_fn(logits, masks)
-        weighted_loss = (loss_per_pixel * weights).mean()  # Apply weights and reduce to scalar
+        weights = self.compute_dynamic_weights(masks)
+        assert logits.device == masks.device ==weights.device
+        # COMPUTE PER-PIXEL LOSS
+        weighted_loss = (loss_per_pixel * weights).mean()
 
         # CALCULATE PREDICTIONS for METRICS (not loss)
         preds = (torch.sigmoid(logits) > 0.5).int() #only for standard BCE loss NOT focal loss / dice loss / combo loss / weighted BCE loss
 
-        # # Save a subset of images for visualization
-        # Check if this is the last batch
-        total_batches = len(self.trainer.val_dataloaders)
+        # Check if this is the last batch and save visualization
+        val_dataloader = self.trainer.val_dataloaders
+        total_batches = len(val_dataloader) 
+        # print(f"---Total batches: {total_batches}")
+        # print info about images, preds, masks
         if batch_idx == total_batches - 1:
-            self.log_combined_visualization_plt( preds[0], masks[0])
+            self.log_combined_visualization( images, preds, masks)
 
-        ioumean, _, _, _ = self.metrics_maker(preds, masks, 'val', weighted_loss)
-
+        ioumean, _, _, _ = self.metrics_maker(logits, masks, job_type,  weighted_loss)
 
         return {"loss": weighted_loss, "iou": ioumean}   
 
     def test_step(self, batch, batch_idx):
         # print(f'+++++++++++++    test step')
         job_type = 'test'
+
         images, masks = batch
         images, masks = images.to('cuda'), masks.to('cuda')
-
-
         logits = self(images)
         loss_per_pixel = self.loss_fn(logits, masks)
-
         weights = self.compute_dynamic_weights(masks)
         weights = weights.to('cuda')
-        # print(f"---weights device: {weights.device}")
-        weighted_loss = (loss_per_pixel * weights).mean()  # Apply weights and reduce to scalar
+        assert logits.device == masks.device ==weights.device
+        weighted_loss = (loss_per_pixel * weights).mean()
+
         # print(f"---weighted_loss device: {weighted_loss.device}")
         # CALCULATE PREDICTIONS
         preds = (torch.sigmoid(logits) > 0.5).int() #only for standard BCE loss NOT focal loss / dice loss / combo loss / weighted BCE loss
 
-        # print(f"---preds device: {preds.device}")   
-        # Calculate metrics
-        ioumean, precisionmean, recallmean, f1mean = self.metrics_maker(preds, masks, 'test', weighted_loss)
+        # CALCULATE METRICS
+        ioumean, precisionmean, recallmean, f1mean = self.metrics_maker(logits, masks, job_type, weighted_loss)
         # Determine if this is the last batch
         test_dataloader = self.trainer.test_dataloaders # First DataLoader
         total_batches = len(test_dataloader)
         # print(f"---Total batches: {total_batches}")
-        if batch_idx == total_batches - 1:
+        if batch_idx == total_batches - 2:
             print('---batch_idx:', batch_idx)
             print(f"---Saving test outputs for batch {batch_idx}")
-            # self.log_combined_visualization(images[0], preds[0], masks[0])  # Log the last batch visualization
+            self.log_combined_visualization(images, preds, masks)  # Log the last batch visualization
 
 
         return {"iou": ioumean, "precision": precisionmean, "recall": recallmean, "f1": f1mean, "loss": weighted_loss}
+    
+    
+    def _get_current_lr(self):
+        # print(f'+++++++++++++    get current lr')
+        lr = [x["lr"] for x in self.optimizers().param_groups]
+        return torch.Tensor([lr]).cuda()
+
     
     def compute_dynamic_weights(self, mask):
         # print(f'+++++++++++++    compute dynamic weights')
@@ -261,20 +247,36 @@ class Segmentation_training_loop(pl.LightningModule):
         """
         Visualizes input images, predictions, and ground truth masks side by side for a batch.
         """
+        
         print(f'+++++++++++++    log combined visualization')
-        for i in range(images.shape[0]):  # Loop through each sample in the batch
+        print(f'---images shape: {images.shape[0]}')   
+        for i in range(10, images.shape[0]):  # Loop through each sample in the batch
+
+            print(f"---Sample {i}")
             # Convert tensors to numpy
             image = images[i].squeeze().cpu().numpy()
             pred = preds[i].squeeze().cpu().numpy()
             mask = masks[i].squeeze().cpu().numpy()
 
+            combined = np.concatenate([image, pred, mask], axis=1)
+            plt.imshow(np.concatenate([image, pred, mask], axis=1), cmap="gray")
+            plt.title(f"Sample {i} | Input | Prediction | Ground Truth")
+            plt.show()
+
+            print(f"Image min: {image.min()}, max: {image.max()}")
+            print(f"Pred min: {pred.min()}, max: {pred.max()}")
+            print(f"Mask min: {mask.min()}, max: {mask.max()}")
+
             # Normalize images and masks if needed (e.g., scale to [0, 255])
             image = (image - image.min()) / (image.max() - image.min()) * 255  # Normalize input image to [0, 255]
-            pred = (pred > 0.5) * 255  # Threshold predictions and scale to [0, 255]
-            mask = mask * 255  # Scale ground truth mask to [0, 255]
+            pred *= 255  # Threshold predictions and scale to [0, 255]
+            mask *= 255  # Scale ground truth mask to [0, 255]
 
             # Stack the images horizontally (side by side)
             combined = np.concatenate([image, pred, mask], axis=1)
+            plt.imshow(np.concatenate([image, pred, mask], axis=1), cmap="gray")
+            plt.title(f"Sample {i} | Input | Prediction | Ground Truth")
+            plt.show()
 
             # Log to WandB
             self.logger.experiment.log({
@@ -283,6 +285,8 @@ class Segmentation_training_loop(pl.LightningModule):
                     caption=f"Sample {i} | Input | Prediction | Ground Truth"
                 )
             })
+
+            
     
     def log_combined_visualization_plt(self, preds, mask):
         print(f'+++++++++++++    log combined visualization plt')
@@ -329,8 +333,8 @@ class Segmentation_training_loop(pl.LightningModule):
         # Close buffer
         buf.close()
 
-    def metrics_maker(self, preds, masks, job_type, loss):
-            
+    def metrics_maker(self, logits, masks, job_type, loss, lr=None):
+        preds = (torch.sigmoid(logits) > 0.5).int()
         tp, fp, fn, tn = smp.metrics.get_stats(preds, masks.long(), mode='binary')
         iou = smp.metrics.iou_score(tp, fp, fn, tn)
         precision = smp.metrics.precision(tp, fp, fn, tn)
@@ -342,9 +346,12 @@ class Segmentation_training_loop(pl.LightningModule):
         precisionmean = precision.mean()
         recallmean = recall.mean()
         f1mean = f1.mean()
+
         if job_type != 'test':
             assert loss != None, f"Loss is None for {job_type} job"
             self.log(f'{job_type}_loss',loss , prog_bar=True, on_step=True, on_epoch=True)
+        elif job_type == 'train':
+            self.log('lr', lr, on_step=True, on_epoch=True, prog_bar=False, logger=True)
         self.log(f'{job_type}_iou', ioumean, prog_bar=True, on_step=True, on_epoch=True)
         self.log(f'{job_type}_precision', precisionmean, prog_bar=True, on_step=True, on_epoch=True)
         self.log(f'{job_type}_recall', recallmean, prog_bar=True, on_step=True, on_epoch=True)
