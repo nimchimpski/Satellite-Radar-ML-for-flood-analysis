@@ -7,14 +7,7 @@ from pathlib import Path
 import tifffile as tiff
 from model_definition import UnetModel  # Adjust the import to your model definition
 from scripts.process_modules.process_dataarrays_module import log_clip_minmaxnorm  # Adjust the import to your preprocessing function
-
-
-input_file_name = ''
-input_path = Path(f'C:\Users\floodai\UNOSAT_FloodAI_v2\prediction' / input_file_name)
-checkpoint = xxxxx
-checkpoint_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\checkpoints" / checkpoint)
-output_path =  input_path / 'predictions'
-
+from pathlib import Path
 
 def load_model(checkpoint_path, device='cuda'):
     model = UnetModel(encoder_name='resnet34', in_channels=2, classes=1)  # Update based on your architecture
@@ -74,9 +67,16 @@ def run_inference_on_image(model, image, tile_size, overlap, device='cuda'):
     full_mask = stitch_tiles(predictions, positions, image.shape, tile_size, overlap)
     return postprocess_predictions(full_mask)
 
+input_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\predictions\predict_input")
+prediction_input = input_path / 'prediction_input.tif'
+
+checkpoint_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\checkpoints" )
+checkpoint = checkpoint_path / 'TSX_logclipmm_g_mt0.3__BS16__EP10_WEIGHTED_BCE'
+output_path =  input_path / 'predictions'
+
+def main(input_path, checkpoint_path, output_path, tile_size=256, overlap=0, device='cuda'):
 
 
-def main(input_path, checkpoint_path, output_path, tile_size=256, overlap=32, device='cuda'):
     # Load the trained model
     model = load_model(checkpoint_path, device)
 
