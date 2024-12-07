@@ -10,6 +10,8 @@ import xarray as xr
 import json
 import rasterio
 import sys
+import json
+
 from pyproj import Transformer
 from geopy.geocoders import Nominatim
 from pathlib import Path
@@ -562,7 +564,7 @@ def location_to_crs(location, crs):
 
 
 # TILING
-def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_func, stats):
+def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_func, stats, inference=False):
     """
     Tile a DATASET (extracted from a dataarray is selected) and save to 'tiles' dir in same location.
     'ARGs:
@@ -583,6 +585,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
     num_failed_norm = 0
     num_not_256 = 0
 
+
     ds = xr.open_dataset(datacube_path)
     var = list(ds.data_vars)[0]
     da = ds[var]
@@ -593,7 +596,8 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
     if da.chunks:
         for dim, chunk in zip(da.dims, da.chunks):
             print(f"---Dimension '{dim}' has chunk sizes: {chunk}")
-
+    tile_metadata = []
+    inference_tiles = []
 
     print('----START TILING----------------')
     for y_start in tqdm(range(0, da.y.size, stride), desc="### Processing tiles by row"):
@@ -615,11 +619,11 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
 
             # print('---TILE INFO AT START')
             # print_dataarray_info(tile)
-
-            if has_no_mask_pixels(tile):
-                num_nomask_pixels +=1
-                # print('---tile has no mask pixels')
-                continue
+            if not inference:
+                if has_no_mask_pixels(tile):
+                    num_nomask_pixels +=1
+                    # print('---tile has no mask pixels')
+                    continue
 
             if int(tile.sizes["x"]) != tile_size or int(tile.sizes["y"]) != tile_size:
                 print("---odd shaped encountered; padding.")
@@ -671,31 +675,51 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
                 os.makedirs(dest_path.parent, exist_ok=True)
                 print('---created dir= ', dest_path.parent)
 
+            if not inference:
+                ######### SAVE TILE ############
+                # Save layer names as metadata
+                layer_names = list(normalized_tile.coords["layer"].values)
+                layer_names = [str(name) for name in layer_names]
+                # get crs and transform
+                crs = normalized_tile.rio.crs
+                transform = normalized_tile.rio.transform()
+                tile_data = normalized_tile.values
+                num_layers, height, width = tile_data.shape
+                # print('---layer_names= ', layer_names)
+                with rasterio.open(dest_path, 'w',
+                                    driver='GTiff',
+                                    height=height,
+                                    width=width,
+                                    count=num_layers,
+                                    dtype=tile_data.dtype,
+                                    crs=crs,
+                                    transform=transform,
+                                    compress=None) as dst:
+                    for i in range(1, num_layers + 1):
+                        dst.write(tile_data[i - 1], i)
+                        dst.set_band_description(i, layer_names[i-1])  # Add band descriptions
 
-            ######### SAVE TILE ############
-            # Save layer names as metadata
-            layer_names = list(normalized_tile.coords["layer"].values)
-            layer_names = [str(name) for name in layer_names]
-            # get crs and transform
-            crs = normalized_tile.rio.crs
-            transform = normalized_tile.rio.transform()
-            tile_data = normalized_tile.values
-            num_layers, height, width = tile_data.shape
-            # print('---layer_names= ', layer_names)
-            with rasterio.open(dest_path, 'w',
-                                driver='GTiff',
-                                height=height,
-                                width=width,
-                                count=num_layers,
-                                dtype=tile_data.dtype,
-                                crs=crs,
-                                transform=transform,
-                                compress=None) as dst:
-                for i in range(1, num_layers + 1):
-                    dst.write(tile_data[i - 1], i)
-                    dst.set_band_description(i, layer_names[i-1])  # Add band descriptions
+                num_saved += 1
+                continue
+            else:
+                inference_tiles.append(normalized_tile)
+                # Store metadata for stitching
+                tile_metadata.append({
+                    "tile_name": tile_name,
+                    "x_start": x_start,
+                    "y_start": y_start,
+                    "x_end": x_end,
+                    "y_end": y_end
+                })
 
-            num_saved += 1
+                # Save metadata for stitching
+                metadata_path = save_tiles_path / "tile_metadata.json")
+                with open(metadata_path, "w") as f:
+                    json.dump(tile_metadata, f, indent=4)
+                print(f"---Saved metadata to {metadata_path}")
+
+    if inference:
+        return inference_tiles, tile_metadata            
 
         #     if num_saved  == 100:
         #         break
