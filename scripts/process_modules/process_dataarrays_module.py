@@ -220,7 +220,7 @@ def calculate_global_min_max_nc(datacube, layer_name, percentile_min=2, percenti
     
     # Check if the required layer exists
     if layer_name not in da.coords["layer"].values:
-        raise ValueError(f"Layer '{layer_name}' not found in dataset. Available layers: {list(da.coords["layer"].values)}")
+        raise ValueError(f"Layer '{layer_name}' not found in dataset. Available layers: {list(da.coords['layer'].values)}")
     
     # Extract layer data
     layer_data = da.sel(layer=layer_name)  # Extract the variable as a NumPy array
@@ -255,7 +255,7 @@ def get_global_min_max(data_path, layer_name, min_max_file=None, percentile_min=
     print('---data_path= ', data_path)
     print('---layer_name= ', layer_name)
     # Check if the file exists
-    if os.path.exists(min_max_file):
+    if min_max_file.exists():
         # Load existing min-max values
         with open(min_max_file, "r") as f:
             global_min, global_max = map(float, f.readline().split(","))
@@ -590,7 +590,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
     var = list(ds.data_vars)[0]
     da = ds[var]
 
-    print('---DA BEFORE TILING = ', list(ds.data_vars))
+    print('---DS VARS BEFORE TILING = ', list(ds.data_vars))
 
     # print_dataarray_info(da)
     if da.chunks:
@@ -626,12 +626,12 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
                     continue
 
             if int(tile.sizes["x"]) != tile_size or int(tile.sizes["y"]) != tile_size:
-                print("---odd shaped encountered; padding.")
+                # print("---odd shaped encountered; padding.")
                 # padtile = pad_tile(tile, 250)
-                print(f"---Tile dimensions b4 padding: {tile.sizes['x']}x{tile.sizes['y']}")
+                # print(f"---Tile dimensions b4 padding: {tile.sizes['x']}x{tile.sizes['y']}")
                 tile = pad_tile(tile, tile_size)
                 # print("---Tile coords:", tile.coords)
-                print(f"---Tile dimensions after padding: {tile.sizes['x']}x{tile.sizes['y']}")
+                # print(f"---Tile dimensions after padding: {tile.sizes['x']}x{tile.sizes['y']}")
                 num_not_256 += 1
 
             # #   FILTER OUT TILES WITH NO DATA
@@ -668,55 +668,51 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
                 continue
 
             tile_name = f"tile_{datacube_path.parent.name}_{x_start}_{y_start}.tif"
-            # print('---tile_name= ', tile_name)
 
             dest_path = save_tiles_path  / tile_name
+            print
             if not dest_path.parent.exists():
                 os.makedirs(dest_path.parent, exist_ok=True)
                 print('---created dir= ', dest_path.parent)
 
-            if not inference:
-                ######### SAVE TILE ############
-                # Save layer names as metadata
-                layer_names = list(normalized_tile.coords["layer"].values)
-                layer_names = [str(name) for name in layer_names]
-                # get crs and transform
-                crs = normalized_tile.rio.crs
-                transform = normalized_tile.rio.transform()
-                tile_data = normalized_tile.values
-                num_layers, height, width = tile_data.shape
-                # print('---layer_names= ', layer_names)
-                with rasterio.open(dest_path, 'w',
-                                    driver='GTiff',
-                                    height=height,
-                                    width=width,
-                                    count=num_layers,
-                                    dtype=tile_data.dtype,
-                                    crs=crs,
-                                    transform=transform,
-                                    compress=None) as dst:
-                    for i in range(1, num_layers + 1):
-                        dst.write(tile_data[i - 1], i)
-                        dst.set_band_description(i, layer_names[i-1])  # Add band descriptions
-
-                num_saved += 1
-                continue
-            else:
-                inference_tiles.append(normalized_tile)
-                # Store metadata for stitching
-                tile_metadata.append({
-                    "tile_name": tile_name,
-                    "x_start": x_start,
-                    "y_start": y_start,
-                    "x_end": x_end,
-                    "y_end": y_end
-                })
-
-                # Save metadata for stitching
-                metadata_path = save_tiles_path / "tile_metadata.json")
-                with open(metadata_path, "w") as f:
-                    json.dump(tile_metadata, f, indent=4)
-                print(f"---Saved metadata to {metadata_path}")
+            ######### SAVE TILE ############
+            # Save layer names as metadata
+            layer_names = list(normalized_tile.coords["layer"].values)
+            layer_names = [str(name) for name in layer_names]
+            # get crs and transform
+            crs = normalized_tile.rio.crs
+            transform = normalized_tile.rio.transform()
+            tile_data = normalized_tile.values
+            num_layers, height, width = tile_data.shape
+            # print('---layer_names= ', layer_names)
+            with rasterio.open(dest_path, 'w',
+                                driver='GTiff',
+                                height=height,
+                                width=width,
+                                count=num_layers,
+                                dtype=tile_data.dtype,
+                                crs=crs,
+                                transform=transform,
+                                compress=None) as dst:
+                for i in range(1, num_layers + 1):
+                    print('---num_layers= ', num_layers)
+                    dst.write(tile_data[i - 1], i)
+                    dst.set_band_description(i, layer_names[i-1])  # Add band descriptions
+            num_saved += 1
+            inference_tiles.append(normalized_tile)
+            # Store metadata for stitching
+            tile_metadata.append({
+                "tile_name": tile_name,
+                "x_start": x_start,
+                "y_start": y_start,
+                "x_end": x_end,
+                "y_end": y_end
+            })
+            # Save metadata for stitching
+            metadata_path = save_tiles_path / "tile_metadata.json"
+            with open(metadata_path, "w") as f:
+                json.dump(tile_metadata, f, indent=4)
+            # print(f"---Saved metadata to {metadata_path}")
 
     if inference:
         return inference_tiles, tile_metadata            

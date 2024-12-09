@@ -123,7 +123,7 @@ def loss_chooser(loss_name):
         raise ValueError(f"Unknown loss: {loss_name}")
 
 
-def wandb_initialization(job_type, repo_path, project,  dataset_name, dataset_version, train_list, test_list, val_list):
+def wandb_initialization(job_type, repo_path, project,  dataset_name, dataset_version, train_list, val_list, test_list=None):
         name='train'
         mode='online'
         if job_type == "reproduce":

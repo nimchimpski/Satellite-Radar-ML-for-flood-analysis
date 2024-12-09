@@ -334,6 +334,7 @@ def make_float32(input_tif, output_file):
         print(f"---Original shape: {data.shape}, dtype: {data.dtype}")
         if data.dtype == 'float32':
             print(f'---{input_tif.name} already float32')
+
         else:
             print(f'---{input_tif.name} converting to float32')
             # Update the metadata
@@ -344,7 +345,39 @@ def make_float32(input_tif, output_file):
             # Write the new file
             with rasterio.open(output_file, 'w', **meta) as dst:
                 dst.write(data.astype('float32'))
+                return output_file
+    input_tif.rename(f'{input_tif.stem}_32.tif')
+    return input_tif
     
+
+
+def make_float32_inf(input_tif, output_file):
+    '''
+    converts the tif to float32
+    '''
+    print('+++in make_float32 fn')
+    with rasterio.open(input_tif) as src:
+        data = src.read()
+        print(f"---Original shape: {data.shape}, dtype: {data.dtype}")
+        if data.dtype == 'float32':
+            print(f'---{input_tif.name} already float32')
+            meta = src.meta.copy()
+            meta['count'] = 1
+        else:
+            print(f'---{input_tif.name} converting to float32')
+            # Update the metadata
+            meta = src.meta.copy()
+            meta.update(dtype='float32')
+            # set num bands to 1
+            meta['count'] = 1
+            # Write the new file
+        with rasterio.open(output_file, 'w', **meta) as dst:
+            dst.write(data.astype('float32'))
+            return output_file
+
+    
+
+
 
 def make_float32_inmem(input_tif):
 
@@ -450,7 +483,9 @@ def reproject_to_4326_gdal(input_path, output_path):
         resampleAlg="near",  # Resampling method (nearest neighbor for categorical data)
     )  
     gdal.Warp(output_path, src_ds, options=warp_options)
-    print(f"---Reprojected raster saved to: {output_path.name}")              
+    print(f"---Reprojected raster saved to: {output_path.name}")           
+
+    return output_path   
 
 
 def make_layerdict_TSX(extracted):
@@ -476,9 +511,6 @@ def make_layerdict_TSX(extracted):
     #print('---datas ',datas)
     return datas
 
-
-
-    
     print("\n+++ Datacube Health Check Completed +++")
 
 def create_event_datacube_TSX(event, mask_code, VERSION="v1"):
@@ -488,6 +520,7 @@ def create_event_datacube_TSX(event, mask_code, VERSION="v1"):
     print(f'+++++++++++ IN CREAT EVENT DATACUBE {event.name}+++++++++++++++++')
     # FIND THE EXTRACTED FOLDER
     extracted_folder = list(event.rglob(f'*{mask_code}_extracted'))[0]
+
     layerdict = make_layerdict_TSX(extracted_folder)
 
     print(f'---making das from layerdict= {layerdict}')
@@ -516,6 +549,45 @@ def create_event_datacube_TSX(event, mask_code, VERSION="v1"):
     da.to_netcdf(output_path, mode='w', format='NETCDF4', engine='netcdf4')
     
     print(f'>>>>>>>>>>>  ds saved for= {event.name} bye bye >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n')
+
+
+def create_event_datacube_TSX_inf(event, mask_code, VERSION="v1"):
+    '''
+    An xarray dataset is created for the event folder and saved as a .nc file.
+    '''
+    print(f'+++++++++++ IN CREAT EVENT DATACUBE {event.name}+++++++++++++++++')
+    # FIND THE EXTRACTED FOLDER
+    extracted_folder = list(event.rglob(f'*{mask_code}_extracted'))[0]
+
+    layerdict = make_layerdict_TSX(extracted_folder)
+
+    print(f'---making das from layerdict= {layerdict}')
+    dataarrays, layer_names = make_das_from_layerdict( layerdict, extracted_folder)
+
+    # print(f'---CHECKING DATAARRAY LIST')
+    check_dataarray_list(dataarrays, layer_names)
+    # print('---dataarrays list = ',dataarrays) 
+    print(f'---CREATING CONCATERNATED DATASET')
+    da = xr.concat(dataarrays, dim='layer').astype('float32')   
+    da = da.assign_coords(layer=layer_names)
+
+    # If the 'band' dimension is unnecessary (e.g., single-band layers), squeeze it out
+    if 'band' in da.dims and da.sizes['band'] == 1:
+        print('---Squeezing out the "band" dimension')
+        da = da.squeeze('band') 
+
+    # print_dataarray_info(da)
+
+    #######   CHUNKING ############
+    # da = da.chunk({'x': 256, 'y': 256, 'layer': 1})
+    # print('---Rechunked datacube')  
+
+    #######   SAVING ############
+    output_path = extracted_folder / f"{mask_code}.nc"
+    da.to_netcdf(output_path, mode='w', format='NETCDF4', engine='netcdf4')
+    
+    print(f'>>>>>>>>>>>  ds saved for= {event.name} bye bye >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n')
+
 
 
 def calculate_and_normalize_slope(input_dem, mask_code):
