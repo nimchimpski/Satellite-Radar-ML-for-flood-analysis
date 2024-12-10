@@ -355,16 +355,16 @@ def make_float32_inf(input_tif, output_file):
     '''
     converts the tif to float32
     '''
-    print('+++in make_float32 fn')
+    # print('+++in make_float32 inf')
     with rasterio.open(input_tif) as src:
         data = src.read()
-        print(f"---Original shape: {data.shape}, dtype: {data.dtype}")
+        # print(f"---Original shape: {data.shape}, dtype: {data.dtype}")
         if data.dtype == 'float32':
             print(f'---{input_tif.name} already float32')
             meta = src.meta.copy()
             meta['count'] = 1
         else:
-            print(f'---{input_tif.name} converting to float32')
+            # print(f'---{input_tif.name} converting to float32')
             # Update the metadata
             meta = src.meta.copy()
             meta.update(dtype='float32')
@@ -469,6 +469,10 @@ def reproject_layers_to_4326_TSX( src_path, dst_path):
             # print(f'---reprojected {src_path.name} to {dst_path.name} with {dst.crs}')
 
 def reproject_to_4326_gdal(input_path, output_path):
+    if isinstance(input_path, Path):
+        input_path = str(input_path)
+    if isinstance(output_path, Path):
+        output_path = str(output_path)
     # Open the input raster
     src_ds = gdal.Open(input_path)
     if not src_ds:
@@ -483,7 +487,7 @@ def reproject_to_4326_gdal(input_path, output_path):
         resampleAlg="near",  # Resampling method (nearest neighbor for categorical data)
     )  
     gdal.Warp(output_path, src_ds, options=warp_options)
-    print(f"---Reprojected raster saved to: {output_path.name}")           
+    # print(f"---Reprojected raster saved to: {output_path}")           
 
     return output_path   
 
@@ -561,19 +565,19 @@ def create_event_datacube_TSX_inf(event, mask_code, VERSION="v1"):
 
     layerdict = make_layerdict_TSX(extracted_folder)
 
-    print(f'---making das from layerdict= {layerdict}')
+    # print(f'---making das from layerdict= {layerdict}')
     dataarrays, layer_names = make_das_from_layerdict( layerdict, extracted_folder)
 
     # print(f'---CHECKING DATAARRAY LIST')
-    check_dataarray_list(dataarrays, layer_names)
+    # check_dataarray_list(dataarrays, layer_names)
     # print('---dataarrays list = ',dataarrays) 
-    print(f'---CREATING CONCATERNATED DATASET')
+    # print(f'---CREATING CONCATERNATED DATASET')
     da = xr.concat(dataarrays, dim='layer').astype('float32')   
     da = da.assign_coords(layer=layer_names)
 
     # If the 'band' dimension is unnecessary (e.g., single-band layers), squeeze it out
     if 'band' in da.dims and da.sizes['band'] == 1:
-        print('---Squeezing out the "band" dimension')
+        # print('---Squeezing out the "band" dimension')
         da = da.squeeze('band') 
 
     # print_dataarray_info(da)
@@ -586,7 +590,7 @@ def create_event_datacube_TSX_inf(event, mask_code, VERSION="v1"):
     output_path = extracted_folder / f"{mask_code}.nc"
     da.to_netcdf(output_path, mode='w', format='NETCDF4', engine='netcdf4')
     
-    print(f'>>>>>>>>>>>  ds saved for= {event.name} bye bye >>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>>\n')
+    # print(f'##################  ds saved for= {event.name} bye bye #################\n')
 
 
 
@@ -782,19 +786,19 @@ def make_das_from_layerdict( layerdict, folder):
     dataarrays = []
     layer_names = []
     for tif_file, band_name in layerdict.items():
-        print(f'---tif_file= {tif_file}')
-        print(f'---band_name= {band_name}')
+        # print(f'---tif_file= {tif_file}')
+        # print(f'---band_name= {band_name}')
         filepath = folder / tif_file
         # print(f'---**************filepath = {filepath.name}')
         tiffda = rxr.open_rasterio(filepath)
         nan_check(tiffda)
         # print(f'---{band_name}= {tiffda}')   
         # check num uniqq values
-        print(f"---Unique data: {np.unique(tiffda.data)}")
-        print("----unique values:", np.unique(tiffda.values))
+        # print(f"---Unique data: {np.unique(tiffda.data)}")
+        # print("----unique values:", np.unique(tiffda.values))
         dataarrays.append(tiffda)
         layer_names.append(band_name)
-
+# 
     return dataarrays, layer_names
 # def set_tif_dtype_to_float32(tif_file):
 

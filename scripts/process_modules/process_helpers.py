@@ -58,6 +58,8 @@ def print_tiff_info_TSX( image=None, mask=None):
         with rasterio.open(image) as src:
             print(f'\n---CHECKING = {image.name}') 
             data = src.read()
+            # print layer names
+            print(f"---Layer names: {src.descriptions}")        
             print(f"--- shape: {data.shape}, dtype: {data.dtype}, crs ={src.crs}")
             nan_check(data)
     if isinstance(mask, Path):

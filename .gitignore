@@ -48,3 +48,6 @@ oldcode.py
 
 
 ignoretest/
+predictions/
+predictions1/
+predictions_bkp/

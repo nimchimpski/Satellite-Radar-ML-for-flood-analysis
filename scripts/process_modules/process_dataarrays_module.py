@@ -251,22 +251,22 @@ def get_global_min_max(data_path, layer_name, min_max_file=None, percentile_min=
     Returns:
         tuple: (global_min, global_max)
     """
-    print('+++in get_global_min_max')
-    print('---data_path= ', data_path)
-    print('---layer_name= ', layer_name)
+    # print('+++in get_global_min_max')
+    # print('---data_path= ', data_path)
+    # print('---layer_name= ', layer_name)
     # Check if the file exists
     if min_max_file.exists():
         # Load existing min-max values
         with open(min_max_file, "r") as f:
             global_min, global_max = map(float, f.readline().split(","))
-        print(f"Loaded global min-max from {min_max_file}: Min={global_min}, Max={global_max}")
+        # print(f"Loaded global min-max from {min_max_file}: Min={global_min}, Max={global_max}")
     else:
         # Calculate min-max values
         global_min, global_max = calculate_global_min_max_nc(data_path, layer_name, percentile_min, percentile_max)
         # Save to file
         with open(min_max_file, "w") as f:
             f.write(f"{global_min},{global_max}")
-        print(f"Calculated and saved global min-max: Min={global_min}, Max={global_max}")
+        # print(f"Calculated and saved global min-max: Min={global_min}, Max={global_max}")
     
     stats = (global_min, global_max)
     return stats
@@ -590,7 +590,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
     var = list(ds.data_vars)[0]
     da = ds[var]
 
-    print('---DS VARS BEFORE TILING = ', list(ds.data_vars))
+    # print('---DS VARS BEFORE TILING = ', list(ds.data_vars))
 
     # print_dataarray_info(da)
     if da.chunks:
@@ -599,7 +599,8 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
     tile_metadata = []
     inference_tiles = []
 
-    print('----START TILING----------------')
+
+    # print('----START TILING----------------')
     for y_start in tqdm(range(0, da.y.size, stride), desc="### Processing tiles by row"):
         for x_start in range(0, da.x.size, stride):
 
@@ -629,6 +630,8 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
                 # print("---odd shaped encountered; padding.")
                 # padtile = pad_tile(tile, 250)
                 # print(f"---Tile dimensions b4 padding: {tile.sizes['x']}x{tile.sizes['y']}")
+                if inference:
+                    continue
                 tile = pad_tile(tile, tile_size)
                 # print("---Tile coords:", tile.coords)
                 # print(f"---Tile dimensions after padding: {tile.sizes['x']}x{tile.sizes['y']}")
@@ -666,8 +669,19 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
                 print('---Failed to normalize tile')
                 num_failed_norm += 1
                 continue
-
             tile_name = f"tile_{datacube_path.parent.name}_{x_start}_{y_start}.tif"
+
+
+            # Store metadata for stitching
+            tile_metadata.append({
+                "tile_name": tile_name,
+                "x_start": x_start,
+                "y_start": y_start,
+                "x_end": x_end,
+                "y_end": y_end,
+                "original_width": x_end - x_start,
+                "original_height": y_end - y_start, 
+            })
 
             dest_path = save_tiles_path  / tile_name
             print
@@ -680,7 +694,8 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
             layer_names = list(normalized_tile.coords["layer"].values)
             layer_names = [str(name) for name in layer_names]
             # get crs and transform
-            crs = normalized_tile.rio.crs
+            # crs = normalized_tile.rio.crs
+            crs = "EPSG:4326"
             transform = normalized_tile.rio.transform()
             tile_data = normalized_tile.values
             num_layers, height, width = tile_data.shape
@@ -695,19 +710,11 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
                                 transform=transform,
                                 compress=None) as dst:
                 for i in range(1, num_layers + 1):
-                    print('---num_layers= ', num_layers)
                     dst.write(tile_data[i - 1], i)
                     dst.set_band_description(i, layer_names[i-1])  # Add band descriptions
             num_saved += 1
             inference_tiles.append(normalized_tile)
-            # Store metadata for stitching
-            tile_metadata.append({
-                "tile_name": tile_name,
-                "x_start": x_start,
-                "y_start": y_start,
-                "x_end": x_end,
-                "y_end": y_end
-            })
+
             # Save metadata for stitching
             metadata_path = save_tiles_path / "tile_metadata.json"
             with open(metadata_path, "w") as f:
