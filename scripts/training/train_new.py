@@ -74,7 +74,7 @@ def main(train=None, test=None, reproduce=None, debug=None):
     bs = 16
     max_epoch = 10
     # DATALOADER PARAMS
-    num_workers = 0
+    num_workers = 8
     # WANDB PARAMS
     WBOFFLINE = False
     LOGSTEPS = 50 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
@@ -84,14 +84,16 @@ def main(train=None, test=None, reproduce=None, debug=None):
     in_channels = 1
     DEVRUN = 0
     # metric_threshold = 0.9
-    loss = "weighted_bce" # "FOCALLOSS" "DICE" SURFACE" "BOUNDARY"
-    ckpt_name ='TSX_logclipmm_g_mt0.3__BS16__EP10_WEIGHTED_BCE.ckpt'
+    loss = 'bce_dice' # "weighted_bce" # "FOCALLOSS" "DICE" SURFACE" "BOUNDARY"
+
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     input_folders = [i for i in dataset_path.iterdir()]
     assert len(input_folders) == 1
     dataset_name = input_folders[0].name
     dataset_path = dataset_path / dataset_name
+    run_name = f'{dataset_name}__BS{bs}__EP{max_epoch}_{loss}'
+    ckpt_to_test = f'{run_name}.ckpt'
     if not dataset_path.exists():
         print('>>>base path not exists')
     else:
@@ -101,7 +103,6 @@ def main(train=None, test=None, reproduce=None, debug=None):
     if num_workers > 0:
         persistent_workers = True
 
-    run_name = f'{dataset_name}__BS{bs}__EP{max_epoch}_{loss}'
     dataset_version = run_name
 
 
@@ -128,7 +129,8 @@ def main(train=None, test=None, reproduce=None, debug=None):
         logger = None
         job_type = "debug"
     if test:
-        print('>>>-start test')
+        print(f'>>>-start test with {ckpt_to_test}')
+
         job_type = "test"
         test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs, num_workers, persistent_workers) 
 
@@ -218,7 +220,7 @@ def main(train=None, test=None, reproduce=None, debug=None):
         print('>>>>>>>>>>>>>> test >>>>>>>>>>>>>>>>>>>>>>>>>>> ')
         
         # ckpt = ckpt_dir / f'{run_name}.ckpt'
-        ckpt = ckpt_dir / ckpt_name
+        ckpt = ckpt_dir / ckpt_to_test
         print(f'>>>evaluation ckpt = {ckpt.name}')
         if not ckpt.exists():
             raise FileNotFoundError(f"Checkpoint not found: {ckpt}")

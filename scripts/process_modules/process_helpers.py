@@ -55,8 +55,10 @@ def nan_check(nparray):
 def print_tiff_info_TSX( image=None, mask=None):
     print('---PRINT TIFF INFO---')
     if image:
+        print(f'---in image = {image.name}') 
+
         with rasterio.open(image) as src:
-            print(f'\n---CHECKING = {image.name}') 
+            print(f'\n---CHECKING image = {image.name}') 
             data = src.read()
             # print layer names
             print(f"---Layer names: {src.descriptions}")        

@@ -6,7 +6,7 @@ import torch.nn.functional as F
 import segmentation_models_pytorch as smp
 from torch import nn
 from .z.boundaryloss import BoundaryLoss
-
+'''
 class Segmentation_training_loop(pl.LightningModule):
 
     def __init__(self, model):

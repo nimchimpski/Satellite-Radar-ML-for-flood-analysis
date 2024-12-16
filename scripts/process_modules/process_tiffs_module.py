@@ -324,16 +324,57 @@ def create_event_datacubes(data_root, save_path, VERSION="v1"):
 
 # TERRASARX FUNCTIONS
 
-def make_float32(input_tif, output_file):
+def create_extent_from_mask(mask_path, output_raster, no_data_value=None):
+    # Load the mask file
+    with rasterio.open(mask_path) as src:
+        mask = src.read(1)  # Read the first band
+        transform = src.transform
+        crs = src.crs
+
+        # Identify no-data value
+        if no_data_value is None:
+            no_data_value = src.nodata
+        if no_data_value is None:
+            raise ValueError("No no-data value found in metadata or provided.")
+            # create a binary mask with the entire image as 1
+            
+
+        # Create a binary mask (1 for valid data, 0 for no-data)
+        binary_mask = (mask != no_data_value).astype(np.uint8)
+
+    # Save the binary mask as a GeoTIFF
+    with rasterio.open(
+        output_raster,
+        "w",
+        driver="GTiff",
+        height=binary_mask.shape[0],
+        width=binary_mask.shape[1],
+        count=1,
+        dtype="uint8",
+        crs=crs,
+        transform=transform,
+    ) as dst:
+        dst.write(binary_mask, 1)
+
+    print(f"extent saved to {output_raster}")
+
+
+def make_float32(input_tif, file_name):
     '''
     converts the tif to float32
     '''
+    input_tif = Path(input_tif)
+    file_name = Path(file_name)
     print('+++in make_float32 fn')
     with rasterio.open(input_tif) as src:
         data = src.read()
         print(f"---Original shape: {data.shape}, dtype: {data.dtype}")
         if data.dtype == 'float32':
             print(f'---{input_tif.name} already float32')
+            src.close()
+            input_tif.rename(file_name)
+            print(f'---renamed {input_tif.name} to {file_name}')
+            return file_name
 
         else:
             print(f'---{input_tif.name} converting to float32')
@@ -343,11 +384,11 @@ def make_float32(input_tif, output_file):
             # set num bands to 1
             meta['count'] = 1
             # Write the new file
-            with rasterio.open(output_file, 'w', **meta) as dst:
-                dst.write(data.astype('float32'))
-                return output_file
-    input_tif.rename(f'{input_tif.stem}_32.tif')
-    return input_tif
+            with rasterio.open(file_name, 'w', **meta) as dst:
+                dst.write(data.astype('float32'))        
+        return file_name
+
+
     
 
 
@@ -376,8 +417,6 @@ def make_float32_inf(input_tif, output_file):
             return output_file
 
     
-
-
 
 def make_float32_inmem(input_tif):
 
@@ -511,6 +550,9 @@ def make_layerdict_TSX(extracted):
         elif 'final_mask.tif' in file.name:
             datas[file.name] = 'mask'
             # print(f'---+mask file found {file}')
+        elif 'final_extent.tif' in file.name:
+            datas[file.name] = 'extent'
+            # print(f'---+valid file found {file}')
 
     #print('---datas ',datas)
     return datas
@@ -521,7 +563,7 @@ def create_event_datacube_TSX(event, mask_code, VERSION="v1"):
     '''
     An xarray dataset is created for the event folder and saved as a .nc file.
     '''
-    print(f'+++++++++++ IN CREAT EVENT DATACUBE {event.name}+++++++++++++++++')
+    print(f'+++++++++++ IN CREAT EVENT DATACUBE TSX {event.name}+++++++++++++++++')
     # FIND THE EXTRACTED FOLDER
     extracted_folder = list(event.rglob(f'*{mask_code}_extracted'))[0]
 
@@ -878,3 +920,4 @@ def process_terraSARx_data(data_root):
                         #     continue
                         shutil.copy(file_path, target)
             
+

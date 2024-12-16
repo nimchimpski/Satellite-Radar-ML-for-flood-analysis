@@ -31,5 +31,5 @@ from scripts.process_modules.process_helpers import print_tiff_info_TSX
 
 # print(f"Final Summary: problems: {problems}, padded: {padded}")
 
-tile=Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\predictions_bkp\695972341_3_final_image_cropped.tif")
+tile=Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_all_processing\TSX_new_normalized_tiles\729_1.nc_normalized_tiles_logclipmm_g\tile_729_1_extracted_4608_3328.tif")
 print_tiff_info_TSX(tile)

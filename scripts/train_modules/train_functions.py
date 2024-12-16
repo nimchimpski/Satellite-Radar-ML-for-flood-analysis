@@ -108,11 +108,11 @@ def loss_chooser(loss_name):
         return torch.nn.BCEWithLogitsLoss(reduction='none')
         # DICE + BOUNDARY
     elif loss_name == "bce_dice":
-        return smp.utils.losses.BCEDiceLoss() # ******* best ???
+        return smp.utils.losses.BCEDiceLoss() # ******* best ??? needs a blanced set
     elif loss_name == "tversky": # priorotises recall, USE IF ITS LOW
         return smp.utils.losses.TverskyLoss()
     # DICE + BOUNDARY
-    # FOCAL + DICE
+    # FOCAL + DICE = good for imbalance
     elif loss_name == "dice": # max overlap, good 4 imbalce, bad for sparse, 
         return smp.utils.losses.DiceLoss()
     elif loss_name == "jakard":

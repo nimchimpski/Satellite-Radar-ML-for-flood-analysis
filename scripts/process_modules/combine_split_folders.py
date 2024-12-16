@@ -1,5 +1,6 @@
 from pathlib import Path
 import shutil
+from tqdm import tqdm
 
 def combine_txt_files(txt_file1, txt_file2, output_file):
     """
@@ -41,7 +42,7 @@ def combine_datasets(dataset1_path, dataset2_path, output_path):
         output_split_dir.mkdir(parents=True, exist_ok=True)
         
         # Copy files from both datasets
-        for file in split_dir1.glob("*"):
+        for file in tqdm(split_dir1.glob("*"), desc=f"Copying {split} files"):
             dest_file = output_split_dir / file.name
             if not dest_file.exists():
                 shutil.copy(file, dest_file)  # Copy file to the destination
@@ -50,7 +51,7 @@ def combine_datasets(dataset1_path, dataset2_path, output_path):
                 new_name = f"{file.stem}_copy{file.suffix}"
                 shutil.copy(file, output_split_dir / new_name)
         
-        for file in split_dir2.glob("*"):
+        for file in tqdm(split_dir2.glob("*"), desc=f"Copying {split} files"):
             dest_file = output_split_dir / file.name
             if not dest_file.exists():
                 shutil.copy(file, dest_file)  # Copy file to the destination
@@ -67,7 +68,7 @@ combine_folder = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\to_combi
 # get folders in the combine folder
 combine_folders = [f for f in combine_folder.iterdir() if f.is_dir()]
 print(f"Combine folders: {combine_folders}")
-output_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_input\combined")
+output_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_input")
 output_path.mkdir(parents=True, exist_ok=True)
 
 combine_datasets(

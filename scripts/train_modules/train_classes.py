@@ -19,6 +19,7 @@ from torchvision.utils import save_image
 from PIL import Image
 import torch
 import torch.nn as nn
+import rasterio
 from pathlib import Path
 import tifffile as tiff
 import matplotlib.pyplot as plt
@@ -51,23 +52,41 @@ class FloodDataset(Dataset):
         # print(f'+++++++++++++++++++ get item')
 
         filename = self.sample_list[idx]
-        tile = tiff.imread(Path(self.tile_root, filename))
+        file_path = Path(self.tile_root, filename)
+        # Use rasterio to inspect layer descriptions and dynamically select layers
+        with rasterio.open(file_path) as src:
+            layer_descriptions = src.descriptions  # Get layer descriptions
+            # print(f"Layer Descriptions: {layer_descriptions}")  # Debugging
+
+            # Ensure descriptions are present
+            if not layer_descriptions:
+                raise ValueError(f"No layer descriptions found in {file_path}")
+
+            # Dynamically select layers based on their descriptions
+            hh_index = layer_descriptions.index('hh')  # Index of 'hh' layer
+            mask_index = layer_descriptions.index('mask')  # Index of 'mask' layer
+
+            # Read only the required layers
+            hh = src.read(hh_index + 1)  # Rasterio uses 1-based indexing
+            mask = src.read(mask_index + 1)
+
+        # tile = tiff.imread(Path(self.tile_root, filename))
 
         # print tile info and shape
         # print(f"---Tile shape b4 permute: {tile.shape}")
 
         # Transpose to (C, H, W)
-        tile = torch.tensor(tile, dtype=torch.float32).permute(2, 0, 1)  # Shape: (2, 256, 256)
+        # tile = torch.tensor(tile, dtype=torch.float32).permute(2, 0, 1)  # Shape: (2, 256, 256)
 
         # print(f"---Tile shape after permute: {tile.shape}")
 
         # Ensure the tile has 2 channels
-        assert tile.shape[0] == 2, f"Unexpected number of channels: {tile.shape[0]}"    
+        # assert tile.shape[0] == 2, f"Unexpected number of channels: {tile.shape[0]}"    
         # Select channels based on `inputs` list position
         # input_idx = list(range(len(self.inputs)))
         # model_input = tile[input_idx, :, : ]  # auto select the channels
-        model_input = tile[:1, :, : ].clone()  # auto select the channels
-        model_input = torch.tensor(model_input, dtype=torch.float32)  
+        # model_input = tile[:1, :, : ].clone()  # auto select the channels
+        model_input = torch.tensor(hh, dtype=torch.float32).unsqueeze(0)  # Add a channel dimension
 
         # print(f"---model_input shape: {model_input.shape}")  # Should print torch.Size([batch_size, 2, 256, 256])  
 
@@ -76,10 +95,10 @@ class FloodDataset(Dataset):
         # EXTRACT MASK TO BINARY
         # print('---mask index:', self.inputs.index('mask'))
         # mask = tile[ self.inputs.index('mask'),:,: ]
-        mask = tile[ 1,:,: ].clone()
-        mask = mask.unsqueeze(0)  # Add a channel dimension
+        # mask = tile[ 1,:,: ].clone()
+        # mask = mask.unsqueeze(0)  # Add a channel dimension
         # CONVERT TO TENSOR
-        mask = torch.tensor(mask,dtype=torch.float32)
+        mask = torch.tensor(mask,dtype=torch.float32).unsqueeze(0)  # Add a channel dimension
         mask = (mask > 0.5).float()
 
         # print(f"---mask shape: {mask.shape}")  # Should print torch.Size([batch_size, 1, 256, 256])
@@ -250,7 +269,7 @@ class Segmentation_training_loop(pl.LightningModule):
         
         print(f'+++++++++++++    log combined visualization')
         print(f'---images shape: {images.shape[0]}')   
-        for i in range(10, images.shape[0]):  # Loop through each sample in the batch
+        for i in range(0, images.shape[0]):  # Loop through each sample in the batch
 
             print(f"---Sample {i}")
             # Convert tensors to numpy
@@ -258,14 +277,14 @@ class Segmentation_training_loop(pl.LightningModule):
             pred = preds[i].squeeze().cpu().numpy()
             mask = masks[i].squeeze().cpu().numpy()
 
-            combined = np.concatenate([image, pred, mask], axis=1)
-            plt.imshow(np.concatenate([image, pred, mask], axis=1), cmap="gray")
-            plt.title(f"Sample {i} | Input | Prediction | Ground Truth")
-            plt.show()
+            # combined = np.concatenate([image, pred, mask], axis=1)
+            # plt.imshow(np.concatenate([image, pred, mask], axis=1), cmap="gray")
+            # plt.title(f"Sample {i} | Input | Prediction | Ground Truth")
+            # plt.show()
 
-            print(f"Image min: {image.min()}, max: {image.max()}")
-            print(f"Pred min: {pred.min()}, max: {pred.max()}")
-            print(f"Mask min: {mask.min()}, max: {mask.max()}")
+            # print(f"Image min: {image.min()}, max: {image.max()}")
+            # print(f"Pred min: {pred.min()}, max: {pred.max()}")
+            # print(f"Mask min: {mask.min()}, max: {mask.max()}")
 
             # Normalize images and masks if needed (e.g., scale to [0, 255])
             image = (image - image.min()) / (image.max() - image.min()) * 255  # Normalize input image to [0, 255]
@@ -276,7 +295,7 @@ class Segmentation_training_loop(pl.LightningModule):
             combined = np.concatenate([image, pred, mask], axis=1)
             plt.imshow(np.concatenate([image, pred, mask], axis=1), cmap="gray")
             plt.title(f"Sample {i} | Input | Prediction | Ground Truth")
-            plt.show()
+            # plt.show()
 
             # Log to WandB
             self.logger.experiment.log({

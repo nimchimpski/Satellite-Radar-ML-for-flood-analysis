@@ -11,7 +11,7 @@ import json
 import rasterio
 import sys
 import json
-
+import pandas as pd
 from pyproj import Transformer
 from geopy.geocoders import Nominatim
 from pathlib import Path
@@ -142,7 +142,7 @@ def log_clip_minmaxnorm_layer(tile):
     2. Clip Extreme Values
     3. Normalize to [0, 1]
     """
-    skip_layers = ['mask', 'valid']
+    skip_layers = ['mask', 'valid', 'extent']
     preprocessed_tile = tile.copy()
 
     for layer in tile.coords['layer'].values:
@@ -208,15 +208,15 @@ def calculate_global_min_max_nc(datacube, layer_name, percentile_min=2, percenti
         tuple: (global_min, global_max)
     """
     print('+++in calculate_global_min_max_nc')
-    print('---layer_name= ', layer_name)
+    # print('---layer_name= ', layer_name)
     
     # Open dataset
     ds = xr.open_dataset(datacube)
-    print('---ds= ', ds)
+    # print('---ds= ', ds)
     var = list(ds.data_vars)[0]
     da = ds[var]
 
-    print('---da layers= ', da.coords["layer"].values)
+    # print('---da layers= ', da.coords["layer"].values)
     
     # Check if the required layer exists
     if layer_name not in da.coords["layer"].values:
@@ -224,11 +224,11 @@ def calculate_global_min_max_nc(datacube, layer_name, percentile_min=2, percenti
     
     # Extract layer data
     layer_data = da.sel(layer=layer_name)  # Extract the variable as a NumPy array
-    print(f"Extracted data for layer '{layer_name}', shape: {layer_data.shape}")
+    # print(f"---Extracted data for layer '{layer_name}', shape: {layer_data.shape}")
     
     # Flatten pixel values
     all_pixel_values = layer_data.values.flatten()  # Access NumPy array and flatten
-    print(f"Flattened pixel values, total: {len(all_pixel_values)}")
+    # print(f"---Flattened pixel values, total: {len(all_pixel_values)}")
     
     # Compute percentiles
     global_min = np.percentile(all_pixel_values, percentile_min)
@@ -256,6 +256,7 @@ def get_global_min_max(data_path, layer_name, min_max_file=None, percentile_min=
     # print('---layer_name= ', layer_name)
     # Check if the file exists
     if min_max_file.exists():
+        print(f"---Loading global min-max from {min_max_file}")
         # Load existing min-max values
         with open(min_max_file, "r") as f:
             global_min, global_max = map(float, f.readline().split(","))
@@ -268,13 +269,47 @@ def get_global_min_max(data_path, layer_name, min_max_file=None, percentile_min=
             f.write(f"{global_min},{global_max}")
         # print(f"Calculated and saved global min-max: Min={global_min}, Max={global_max}")
     
+
     stats = (global_min, global_max)
     return stats
 
+# def update_min_max_csv(existing_file, new_values, output_file=None):
+#     """
+#     Update an existing min-max CSV file with new min-max values.
+    
+#     Parameters:
+#         existing_file (str): Path to the existing min-max CSV file.
+#         new_values (dict): New min-max values as a dictionary {variable: (min, max)}.
+#         output_file (str): Path to save the updated CSV file (optional).
+#     """
+#     # Load the existing min-max CSV
+#     df = pd.read_csv(existing_file)
+    
+#     # Update the min and max values
+#     for variable, (new_min, new_max) in new_values.items():
+#         mask = df["variable"] == variable
+#         if mask.any():
+#             df.loc[mask, "min"] = df.loc[mask, "min"].combine(pd.Series([new_min]), min)
+#             df.loc[mask, "max"] = df.loc[mask, "max"].combine(pd.Series([new_max]), max)
+#         else:
+#             # Add new variable if it doesn't exist
+#             df = pd.concat([df, pd.DataFrame({"variable": [variable], "min": [new_min], "max": [new_max]})], ignore_index=True)
+
+#     # Save the updated file
+#     if output_file is None:
+#         output_file = existing_file
+#     df.to_csv(output_file, index=False)
+#     print(f"Updated min-max saved to {output_file}")
+
+
+# # Example Usage
+# existing_file = "min_max.csv"
+# new_values = {"SAR_HH": (0.005, 1.0), "SAR_HV": (0.03, 0.9), "New_Band": (0.1, 0.8)}
+# update_min_max_csv(existing_file, new_values)
 
 
 # SELECT AND SPLIT
-def has_enough_valid_pixels(file_path, analysis_threshold, mask_threshold):
+def has_enough_valid_pixels(file_path, mask_threshold):
     """
     has mask layer?
     exceeds analysis_threshold?
@@ -295,48 +330,54 @@ def has_enough_valid_pixels(file_path, analysis_threshold, mask_threshold):
                 # Assuming the mask layer is identified by its name or index
                 mask_layer = None
                 analysis_extent_layer = None
-                missing_extent = 0
-                missing_mask = 0
-                rejected = 1
+                missing_extent = False
+                missing_mask = False
+                rejected = False
                 # print('---rejected= ', rejected)    
 
                 for idx, desc in enumerate(dataset.descriptions):
                     if desc == "mask":  # Find the 'mask' layer by its description
                         mask_layer = idx + 1  # Bands in rasterio are 1-based
-                    elif desc == "analysis_extent":
+                    elif desc == "extent":
                         analysis_extent_layer = idx + 1
 
                 total_pixels = dataset.width * dataset.height
+
                 # ANALYSIS EXTENT
-                if analysis_extent_layer:
-                    analysis_extent_data = dataset.read(analysis_extent_layer)
-                    # print('---analysis_extent_data= ', (analysis_extent_data == 1).sum())
-                    if ((analysis_extent_data == 1).sum()) / total_pixels >= analysis_threshold:
-                        # print(f"---EXTENT pixels deficit: {file_path}")
-                        rejected = 0  
-                    else:
-                        rejected = 1
-                else:
-                    missing_extent = 1
+                # if analysis_extent_layer:
+                #     analysis_extent_data = dataset.read(analysis_extent_layer)
+                #     # print('---analysis_extent_data= ', (analysis_extent_data == 1).sum())
+                #     if ((analysis_extent_data == 1).sum()) / total_pixels >= analysis_threshold:
+                #         # print(f"---EXTENT pixels deficit: {file_path}")
+                #            = 0  
+                #     else:
+                #         rejected = 1
+                # else:
+                #     missing_extent = 1
                 # print('---rejected= ', rejected)
 
                 # MASK
                 if  mask_layer:
                     mask_data = dataset.read(mask_layer)
-                    if ((mask_data == 1).sum()) / total_pixels >= mask_threshold:
+                    mask_px = ((mask_data == 1).sum()) / total_pixels
+                    # print('---mask_px= ', mask_px)
+                    if mask_px >= mask_threshold:
                         # print(f"---MASK pixels deficit: {file_path}")
-                        rejected = 0
+                        # print(f'---mask_px > {mask_threshold}  ', mask_px)
+                        rejected = False
+
                     else:
-                        rejected = 1
+                        rejected = True
+                    
                 else:
-                    missing_mask = 1
+                    missing_mask = True
                 # print('---final rejected= ', rejected)
-                return rejected, missing_extent, missing_mask
+                return rejected, missing_extent,
         except Exception as e:
             print(f"---Unexpected error: {e}")
-            return 0,0,0  # Handle any other exceptions
+            return 0,0,0,0  # Handle any other exceptions
 
-def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ratio, analysis_threshold, mask_threshold, MAKEFOLDER):
+def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ratio, analysis_threshold, mask_threshold, percent_under_thresh,  MAKEFOLDER):
     '''
     TODO return  where selected files is below some threshold or zero
     '''
@@ -349,29 +390,51 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
     val_dir = dest_dir / "val"
     test_dir = dest_dir / "test"
 
-    rejects = 0
+    total_files = len(list(source_dir.iterdir()))
+    print(f'---size of folder = {total_files}')
+
+    max_under_thresh = int(total_files * (percent_under_thresh / 100))
+    print(f'---max_under_thresh= {max_under_thresh}')
+
+    rejected = 0
+    missing_mask = 0
     tot_missing_extent = 0
     tot_missing_mask = 0
+    tot_under_thresh = 0  
 
     with open(dest_dir / "train.txt", "a") as traintxt,  open(dest_dir / "val.txt", "a") as valtxt,  open(dest_dir / "test.txt", "a") as testtxt:
+        print(f'---tot under thresh 1= {tot_under_thresh}')
+
         # Get a list of all files in the source directory
         files = list(source_dir.glob('*'))  # Modify '*' if you want a specific file extension
-        total_files = len(files)
-        # print(f"---Total files: {total_files}")
 
         # FILTER FILES BY VALID PIXELS
         selected_tiles = []
         for file in tqdm(files, desc=f"Filtering files for {source_dir.name}", unit="file"):
             # print(f"---Checking {file.name}")
-            rejected, missing_extent, missing_mask = has_enough_valid_pixels(file, analysis_threshold, mask_threshold)
-            tot_missing_extent  += missing_extent
-            tot_missing_mask += missing_mask
-            if rejected:
-                rejects += 1
-            else:
+            if file.suffix.lower()  in ['.tif', '.tiff'] and 'aux' not in file.name:
+                too_few_px, missing_extent,  = has_enough_valid_pixels(file, mask_threshold)
+
+                if too_few_px:
+                    if  tot_under_thresh > max_under_thresh:
+                        rejected +=1
+                        # print(f'---reached max under thresh= {max_under_thresh}')
+                        continue
+                    else:
+                        tot_under_thresh += 1
+                        # print(f'---allowed: num under thresh= {num_under_thresh}')
                 selected_tiles.append(file)
 
+                # print(f'---tot under thresh = {tot_under_thresh}')
+
+                tot_missing_extent  += missing_extent
+                tot_missing_mask += missing_mask
+            else:
+                print(f"---Skipping {file.name}: not a TIFF file")
+
         # print(f"---Filtered files: {selected_tiles}")
+        num_selected_tiles = len(selected_tiles)
+        print(f'---num_selected_tiles= {num_selected_tiles}')
 
         if MAKEFOLDER:
             # SHUFFLE FILES
@@ -415,15 +478,16 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
             valtxt.flush()
             testtxt.flush()
             # print(f'---folder total files: {total_files}')
-            if len(selected_tiles) < 10:
-                print(f"#######\n---{source_dir.parent.name} selected tiles: {len(selected_tiles)}\n#######")
+            if num_selected_tiles < 100:
+                print(f"#######\n---{source_dir.parent.name} selected tiles: {num_selected_tiles}\n#######")
             # print(f"---folder train files: {len(train_files)}")
             # print(f'---folder test files: {len(test_files)}')
             # print(f"---folder validation files: {len(val_files)}")
-            assert int(len(train_files)) + int(len(val_files)) + int(len(test_files)) == int(len(selected_tiles)), "Files not split correctly"
+            assert int(len(train_files)) + int(len(val_files)) + int(len(test_files)) == num_selected_tiles, "Files not split correctly"
 
-            print('---END OF SPLI FUNCTION--------------------------------')
-    return total_files, selected_tiles, rejects, tot_missing_extent, tot_missing_mask
+            print('---END OF SPLIT FUNCTION--------------------------------')
+    print(f'@@@@tot under thresh = {tot_under_thresh}')
+    return total_files, num_selected_tiles, rejected, tot_missing_extent, tot_missing_mask, tot_under_thresh
 
 
 def copy_data_and_generate_txt(data_folders, destination):
@@ -564,7 +628,7 @@ def location_to_crs(location, crs):
 
 
 # TILING
-def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_func, stats, inference=False):
+def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_func, stats, percent_non_flood, inference=False):
     """
     Tile a DATASET (extracted from a dataarray is selected) and save to 'tiles' dir in same location.
     'ARGs:
@@ -580,10 +644,11 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
     num_has_nans = 0
     num_novalid_layer = 0
     num_novalid_pixels = 0
-    num_nomask = 0
-    num_nomask_pixels = 0
+    num_nomask_px = 0
+    num_skip_nomask_px = 0
     num_failed_norm = 0
     num_not_256 = 0
+    num_px_outside_extent = 0
 
 
     ds = xr.open_dataset(datacube_path)
@@ -592,13 +657,16 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
 
     # print('---DS VARS BEFORE TILING = ', list(ds.data_vars))
 
-    # print_dataarray_info(da)
+    print_dataarray_info(da)
     if da.chunks:
         for dim, chunk in zip(da.dims, da.chunks):
             print(f"---Dimension '{dim}' has chunk sizes: {chunk}")
     tile_metadata = []
     inference_tiles = []
 
+    # estimate number of tiles that will be made
+    total_tiles = (da.x.size // stride) * (da.y.size // stride)
+    max_non_flooded = total_tiles * percent_non_flood
 
     # print('----START TILING----------------')
     for y_start in tqdm(range(0, da.y.size, stride), desc="### Processing tiles by row"):
@@ -608,7 +676,6 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
             x_end = min(x_start + tile_size, da.x.size)
             y_end = min(y_start + tile_size, da.y.size)
 
-
             # Select the subset of data for the current tile
             try:
                 tile = da.isel(y=slice(y_start, y_end), x=slice(x_start, x_end))
@@ -616,29 +683,39 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
                 print("---Error: tiling.")
                 return
             
-            num_tiles += 1    
+            num_tiles += 1   
 
-            # print('---TILE INFO AT START')
-            # print_dataarray_info(tile)
             if not inference:
-                if has_no_mask_pixels(tile):
-                    num_nomask_pixels +=1
-                    # print('---tile has no mask pixels')
+                if has_pixels_outside_extent(tile):
+                    num_px_outside_extent += 1
+                    # print('---tile has pixels outside extent')
                     continue
 
+                if has_no_mask_pixels(tile):
+                    # print(f'---max_non_flooded= {max_non_flooded}')
+                    if num_nomask_px > max_non_flooded:
+                        print(f'---reached max nomaskpx, skipping tile')
+                        num_skip_nomask_px += 1  
+                        continue
+                    num_nomask_px +=1
+                    # print('---tile has no mask pixels')
+                    # print(f'---num_skip_nomask_pixels= {num_skip_nomask_px} of {max_non_flooded}') 
+
+
+
+                
+
             if int(tile.sizes["x"]) != tile_size or int(tile.sizes["y"]) != tile_size:
+                num_not_256 += 1
+                continue
+
                 # print("---odd shaped encountered; padding.")
                 # padtile = pad_tile(tile, 250)
                 # print(f"---Tile dimensions b4 padding: {tile.sizes['x']}x{tile.sizes['y']}")
-                if inference:
-                    continue
-                tile = pad_tile(tile, tile_size)
+                # tile = pad_tile(tile, tile_size)
                 # print("---Tile coords:", tile.coords)
                 # print(f"---Tile dimensions after padding: {tile.sizes['x']}x{tile.sizes['y']}")
-                num_not_256 += 1
 
-            # #   FILTER OUT TILES WITH NO DATA
-            # # print('---filtering out bad tiles')
             if contains_nans(tile):
                 num_has_nans += 1
                 print('---tile has nans')
@@ -651,10 +728,6 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
             # if has_no_valid_pixels(tile):
             #     num_novalid_pixels += 1
             #     # print('---tile has no valid pixels')
-            #     continue
-            # if has_no_mask(tile):
-            #     num_nomask +=1
-            #     # print('---tile has no mask')
             #     continue
 
             # print("---PRINTING DA INFO B4 NORM-----")
@@ -670,7 +743,6 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
                 num_failed_norm += 1
                 continue
             tile_name = f"tile_{datacube_path.parent.name}_{x_start}_{y_start}.tif"
-
 
             # Store metadata for stitching
             tile_metadata.append({
@@ -733,10 +805,11 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
     print('---num_has_nans= ', num_has_nans)
     print('---num_novalid_layer= ', num_novalid_layer)
     print('---num_novalid_pixels= ', num_novalid_pixels)
-    print('---num_nomask= ', num_nomask)
-    print('---num_nomask_pixels= ', num_nomask_pixels)
+    print('---num_nomask px= ', num_nomask_px)
+    print('---num_skip_nomask_pixels= ', num_skip_nomask_px)
     print('---num_failed_norm= ', num_failed_norm)
-    return num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask, num_nomask_pixels, num_failed_norm, num_not_256
+    print('---num_px_outside_extent= ', num_px_outside_extent)
+    return num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask_px, num_skip_nomask_px, num_failed_norm, num_not_256, num_px_outside_extent
 
 def tile_datacube_rasterio(datacube_path, save_tiles_path, tile_size=256, stride=256):
     """
@@ -931,11 +1004,16 @@ def has_no_valid_layer(tile):
     # Ensure 'valid' layer exists
     # print("---Warning: 'valid' layer not found in tile.")
     return 'valid' not in tile.coords['layer'].values  # If valid data is found, return False
-    
+        
 def has_no_valid_pixels(tile, ):
-
     #print("Values in 'valid' layer for tile:", tile.sel(layer='valid').values)
     return 1 not in tile.sel(layer='valid').values  # If valid data is found, return False
+
+def has_pixels_outside_extent(tile, ):
+    #print("Values in 'valid' layer for tile:", tile.sel(layer='valid').values)
+    if 'extent' in tile.coords['layer'].values:
+        return 0 in tile.sel(layer='extent').values
+    return 0 in tile.sel(layer='extent').values  # If valid data is found, return False
 
 def has_no_mask(tile):
     '''
