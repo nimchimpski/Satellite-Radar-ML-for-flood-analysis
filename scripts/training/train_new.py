@@ -84,7 +84,7 @@ def main(train=None, test=None, reproduce=None, debug=None):
     in_channels = 1
     DEVRUN = 0
     # metric_threshold = 0.9
-    loss = 'bce_dice' # "weighted_bce" # "FOCALLOSS" "DICE" SURFACE" "BOUNDARY"
+    loss =  "weighted_bce" # "FOCALLOSS" "DICE" SURFACE" "BOUNDARY" # 'bce_dice' #
 
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -92,8 +92,10 @@ def main(train=None, test=None, reproduce=None, debug=None):
     assert len(input_folders) == 1
     dataset_name = input_folders[0].name
     dataset_path = dataset_path / dataset_name
+    print(f'>>>RUN NAME WILL INCLUDE (AS DS): = {dataset_name}')
     run_name = f'{dataset_name}__BS{bs}__EP{max_epoch}_{loss}'
-    ckpt_to_test = f'{run_name}.ckpt'
+    # ckpt_to_test = f'{run_name}.ckpt'
+    ckpt_to_test = Path( 'good' , 'mtnweighted_NO341_3__BS16__EP10_weighted_bce.ckpt')
     if not dataset_path.exists():
         print('>>>base path not exists')
     else:

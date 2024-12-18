@@ -26,13 +26,12 @@ def main(test=None):
     else:
         print('>>>FULL DATASET MODE<<<')
         dataset =  data_root / 'TSX_TO_PROCESS_###' 
-    min_max_file = data_root / 'TSX_process1_stats.csv'
-    make_tifs = 0
+    make_tifs = 1
     make_datacubes = 1
     make_norm_tiles = 1 # PADDING HAPPENS HERE
     norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
     min_max_file = dataset / f'global_min_max.csv'
-    percent_non_flood = 1
+    percent_non_flood = 100
     ############################################################################
 
 
@@ -163,9 +162,9 @@ def main(test=None):
         print(f'>>>num cubes= ',len(cubes))
         for cube in tqdm(cubes, desc="### Datacubes tiled"):
             event_code = "_".join(cube.name.split('_')[:2])
-            print("cube=", cube.name)
-            print("event_code=", event_code)
-            save_tiles_path = data_root / 'TSX_TILES' / 'TSX_new_normalized_tiles' / f"{event_code}_normalized_tiles_{norm_func}"
+            print("\n>>>>>>>>>>>> cube >>>>>>>>>>>>>>>=", cube.name)
+            print(">>>event_code=", event_code)
+            save_tiles_path = data_root / 'TSX_TILES' / 'NORM_TILES_FOR_SELECT_AND_SPLIT_###' / f"{event_code}_normalized_tiles_{norm_func}_pcnf{percent_non_flood}"
             if save_tiles_path.exists():
                 print(f"### Deleting existing tiles folder: {save_tiles_path}")
                 # delete the folder and create a new one
@@ -184,8 +183,7 @@ def main(test=None):
             print('<<< num_has_nans= ', num_has_nans)
             print('<<< num_novalid_layer= ', num_novalid_layer)
             print('<<< num_novalid_pixels= ', num_novalid_pixels)
-            print('<<< num_nomask= ', num_nomask_px)
-            print('<<< num_nomask_pixels= ', num_skip_nomask_pixels)
+            print('<<< num_nomask px= ', num_nomask_px)
             print('<<< num_failed_norm= ', num_failed_norm)
             print('<<< num_not_256= ', num_not_256)
             print('<<< num_px_outside_extent= ', num_px_outside_extent)
@@ -208,7 +206,6 @@ def main(test=None):
         print(f'>>>total no valid layer : {total_novalid_layer}')
         print(f'>>>total no valid  pixels : {total_novalid_pixels}')
         print(f'>>>total no mask px : {total_nomask_px}')
-        print(f'>>>total no mask pixels : {total_skip_nomask_pixels}')
         print(f'>>>num failed normalization : {total_failed_norm}')
         print(f'>>>num not 256: {total_num_not_256}')
         print(f'>>>num px outside extent: {total_num_px_outside_extent}')

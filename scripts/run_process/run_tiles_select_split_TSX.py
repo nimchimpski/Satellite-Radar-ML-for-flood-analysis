@@ -27,8 +27,8 @@ def main(test=None):
     ############################################
     MAKEFOLDER = True
     analysis_threshold=1
-    mask_threshold=0.3
-    percent_under_thresh=50 # this * total_files = HOW MANY FILES PASS UNDER THE THRESHOLD
+    mask_threshold=0
+    percent_under_thresh=5 # this * total_files = HOW MANY FILES PASS UNDER THE THRESHOLD
 
     dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_input")
   

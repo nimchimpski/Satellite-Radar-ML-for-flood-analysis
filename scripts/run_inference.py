@@ -9,6 +9,7 @@ import os
 import xarray as xr
 import json
 import matplotlib.pyplot as plt
+import click
 from rasterio.plot import show
 from rasterio.windows import Window
 from rasterio.warp import calculate_default_transform, reproject, Resampling
@@ -21,7 +22,7 @@ from collections import OrderedDict
 
 start=time.time()
 
-def make_prediction_tiles(tile_folder, metadata, model, device, threshold=0.5):
+def make_prediction_tiles(tile_folder, metadata, model, device, threshold):
     predictions_folder = Path(tile_folder).parent / f'{tile_folder.stem}_predictions'
     if predictions_folder.exists():
         print(f"--- Deleting existing predictions folder: {predictions_folder}")
@@ -61,18 +62,17 @@ def stitch_tiles(metadata, prediction_tiles, save_path, image):
     '''
     # GET CRS AND TRANSFORM
     with rasterio.open(image) as src:
-        crs = src.crs
         transform = src.transform
+        crs = src.crs
         height, width = src.shape
         print('>>>src shape:',src.shape)
     
-    # INITIALIZE THE STITCHED IMAGE AND COUNT
-    stitched_image = np.zeros(src.shape)
-    # print(">>>stitched_image dtype:", stitched_image.dtype)
-    print(">>>stitched_image shape:", stitched_image.shape)
-
-    count = np.zeros(src.shape)
-    pred_tiles_paths_list = sorted(prediction_tiles.glob("*.tif"))
+        # INITIALIZE THE STITCHED IMAGE AND COUNT
+        # give stitched_image the same crs, transform and shape as the source image
+        stitched_image = np.zeros((height, width))
+        count = np.zeros((height, width), dtype=np.int32)
+        # print(">>>stitched_image dtype:", stitched_image.dtype)
+        print(">>>stitched_image shape:", stitched_image.shape)
 
     for tile_info in metadata:
         tile_name = tile_info["tile_name"]
@@ -85,7 +85,7 @@ def stitch_tiles(metadata, prediction_tiles, save_path, image):
 
         # Load the tile
         with rasterio.open(tile) as src:
-            tile = src.read(1)
+            tile = src.read(1).astype(np.float32)
             # Debugging: Print tile info and shapes
             # print(f">>>Tile shape: {tile.shape}")
         # print(f">>> Tile info: {tile_info}")
@@ -97,6 +97,8 @@ def stitch_tiles(metadata, prediction_tiles, save_path, image):
         
         # Validate dimensions
         if stitched_slice.shape != tile.shape:
+            if (stitched_slice.shape[0] == 0) or (stitched_slice.shape[1] == 0):
+                continue
             print(f"---Mismatch: Stitched slice shape: {stitched_slice.shape}, ---Tile shape: {tile.shape}")
             slice_height, slice_width = stitched_slice.shape
             tile = tile[:slice_height, :slice_width]  # Crop tile to match slice
@@ -108,7 +110,7 @@ def stitch_tiles(metadata, prediction_tiles, save_path, image):
         stitched_image[y_start:y_end, x_start:x_end] += tile
         # PRINT STITCHED IMAGE SIZE
         # print(f">>>Stitched image shape: {stitched_image.shape}")
-
+    print(f'---crs: {crs}')
     # Save the stitched image as tif, as save_path
     with rasterio.open(
         save_path,
@@ -138,21 +140,37 @@ def clean_checkpoint_keys(state_dict):
             new_key = key
         cleaned_state_dict[new_key] = value
     return cleaned_state_dict
-############################################################################
-img_src =  Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\predictions\predict_input")
-min_max_file = img_src / 'TSX_process1_stats.csv'
-norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
-stats = None
-ckpt = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\checkpoints\all_TSX_logclipmm_g_nomask1__BS16__EP10_weighted_bce.ckpt")
-save_path = img_src / 'prediction.tif'
-threshold = 0.5
-############################################################################
 
-def main():
+@click.command()
+@click.option('--test', is_flag=True, help='loading from test folder', show_default=False)
+def main(test=None):
+    if test:
+        print("TEST SOURCE")
+        img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\predictions\predict_input_test")
+    else:
+        img_src =  Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\predictions\predict_input_###")
+
+    ############################################################################
+    min_max_file = img_src.parent / 'global_min_max.csv'
+    norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
+    stats = None
+    # ckpt = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\checkpoints\good\mtnweighted_NO341_3__BS16__EP10_weighted_bce.ckpt")
+    ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\predictions\predict_ckpt_###")
+    save_path = img_src / 'prediction.tif'
+    threshold = 0.5 # PREDICTION CONFIDENCE THRESHOLD
+    ############################################################################
+    # FIND THE CKPT
+    ckpt = next(ckpt_path.rglob("*.ckpt"), None)
+    if ckpt is None:
+        print(f"---No checkpoint found in {ckpt_path}")
+        return
+    print(f'>>>ckpt: {ckpt}')
     # FIND THE SAR IMAGE
-    input_list = list(i for i in img_src.iterdir() if i.is_file())
+    input_list = [i for i in img_src.iterdir() if i.is_file() and i.suffix.lower() == ".tif" and "image" in i.name.lower()]
+
     if len(input_list) == 0:
         print(f"---No image with '*image* found in {img_src}")
+        return
     elif len(input_list) > 1:
         print(f"---Multiple images found in {img_src}. Using the first one.{input_list[0]}")
         return
@@ -200,10 +218,10 @@ def main():
         shutil.rmtree(save_tiles_path)
         save_tiles_path.mkdir(exist_ok=True, parents=True)
         # CALCULATE THE STATISTICS
-    min_max_file = img_src.parent / f'min_max.csv'
     stats = get_global_min_max(cube, 'hh', min_max_file= min_max_file)
-    # DO THE TILING AND GET THE STATISTICS
-    tiles, metadata = tile_datacube_rxr(cube, save_tiles_path, tile_size=256, stride=256, norm_func=norm_func, stats=stats, inference=True) 
+    print(f'>>>stats: {stats}')
+    # DO THE TILING
+    tiles, metadata = tile_datacube_rxr(cube, save_tiles_path, tile_size=256, stride=256, norm_func=norm_func, stats=stats, percent_non_flood=0, inference=True) 
     print(f">>>{len(tiles)} tiles saved to {save_tiles_path}")
     print(f">>>{len(metadata)} metadata saved to {save_tiles_path}")
     # metadata = Path(save_tiles_path) / 'tile_metadata.json'
@@ -233,7 +251,7 @@ def main():
     prediction_tiles = make_prediction_tiles(save_tiles_path, metadata, model, device, threshold)
 
     # STITCH PREDICTION TILES
-    prediction_img = stitch_tiles(metadata, prediction_tiles, save_path, image)
+    prediction_img = stitch_tiles(metadata, prediction_tiles, save_path, final_image)
     # print prediction_img size
     print(f'>>>prediction_img shape:',prediction_img.shape)
     # display the prediction mask

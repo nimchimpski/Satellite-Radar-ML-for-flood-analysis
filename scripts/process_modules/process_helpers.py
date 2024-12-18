@@ -53,7 +53,7 @@ def nan_check(nparray):
 
 
 def print_tiff_info_TSX( image=None, mask=None):
-    print('---PRINT TIFF INFO---')
+    # print('---PRINT TIFF INFO---')
     if image:
         print(f'---in image = {image.name}') 
 
@@ -66,22 +66,23 @@ def print_tiff_info_TSX( image=None, mask=None):
             nan_check(data)
     if isinstance(mask, Path):
         with rasterio.open(mask) as src:
-            print(f'---mask type = {type(mask)}')
-            print(f'---CHECKING= {mask.name}')
-            data = src.read()
-            print(f"--- shape: {data.shape}, dtype: {data.dtype}, crs ={src.crs}")
+            # print(f'---mask type = {type(mask)}')
+            # print(f'---CHECKING= {mask.name}')
+            data = src.read(3)
+            # print(f"--- shape: {data.shape}, dtype: {data.dtype}, crs ={src.crs}")
             unique_values = np.unique(data)
-            print(f"---Unique values in mask: {unique_values}")
-            nan_check(data)
-    elif isinstance(mask, DatasetReader):
-        print
-        print(f'---CHECKING= {mask.name}')
-        data = mask.read()
-        print(f"--- shape: {data.shape}, dtype: {data.dtype}, crs ={mask.rio.crs}")
-        unique_values = np.unique(data)
-        print(f"---Unique values in mask: {unique_values}")
-        nan_check(data)
-    print('-----------------------')
+            if len(unique_values) > 1:
+                print(f"%%%%%%%%%%%%%%%%%%%%%%Unique values in mask: {unique_values}")
+            # nan_check(data)
+    # elif isinstance(mask, DatasetReader):
+    #     print
+    #     print(f'---CHECKING= {mask.name}')
+    #     data = mask.read()
+    #     print(f"--- shape: {data.shape}, dtype: {data.dtype}, crs ={mask.rio.crs}")
+    #     unique_values = np.unique(data)
+    #     print(f"---Unique values in mask: {unique_values}")
+    #     nan_check(data)
+    # print('-----------------------')
     
 
 def pad_tile(tile, expected_size=250, pad_value=0):

@@ -172,6 +172,8 @@ def log_clip_minmaxnorm(tile, global_min, global_max):
     3. Normalize to [0, 1]
     """
     # print('+++in log_clip_minmaxnorm')
+    # print('---global_min= ', global_min)
+    # print('---global_max= ', global_max)
     skip_layers = ['mask', 'valid']
     preprocessed_tile = tile.copy()
 
@@ -666,7 +668,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
 
     # estimate number of tiles that will be made
     total_tiles = (da.x.size // stride) * (da.y.size // stride)
-    max_non_flooded = total_tiles * percent_non_flood
+    max_non_flooded = total_tiles * (percent_non_flood / 100)
 
     # print('----START TILING----------------')
     for y_start in tqdm(range(0, da.y.size, stride), desc="### Processing tiles by row"):
@@ -700,11 +702,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
                     num_nomask_px +=1
                     # print('---tile has no mask pixels')
                     # print(f'---num_skip_nomask_pixels= {num_skip_nomask_px} of {max_non_flooded}') 
-
-
-
                 
-
             if int(tile.sizes["x"]) != tile_size or int(tile.sizes["y"]) != tile_size:
                 num_not_256 += 1
                 continue
