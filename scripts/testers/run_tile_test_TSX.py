@@ -30,6 +30,8 @@ from scripts.process_modules.process_helpers import print_tiff_info_TSX
 #         break
 
 # print(f"Final Summary: problems: {problems}, padded: {padded}")
+dir = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_all_processing\TSX_TILES_COMPLETESETS\695958835_4.nc_normalized_tiles_logclipmm_g")
+# dir = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\COMPLETE_previous_train_inputs\mtnweighted_NO341_3_full\train")
+for tile in dir.iterdir():
+    print_tiff_info_TSX(mask=tile)
 
-tile=Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_all_processing\TSX_new_normalized_tiles\729_1.nc_normalized_tiles_logclipmm_g\tile_729_1_extracted_4608_3328.tif")
-print_tiff_info_TSX(tile)

@@ -95,12 +95,12 @@ def main():
                                 data = src.read()
 
                                 # Apply reflect padding if dimensions are not 256x256
-                                if src.width != 256 or src.height != 256:
-                                    pad_width = max(256 - src.width, 0)
-                                    pad_height = max(256 - src.height, 0)
-                                    print(f"---Padding {tile.name}")
-                                    data = np.pad(data, ((0, 0), (0, pad_height), (0, pad_width)), mode='reflect')
-                                    padded += 1
+                                # if src.width != 256 or src.height != 256:
+                                #     pad_width = max(256 - src.width, 0)
+                                #     pad_height = max(256 - src.height, 0)
+                                #     print(f"---Padding {tile.name}")
+                                #     data = np.pad(data, ((0, 0), (0, pad_height), (0, pad_width)), mode='reflect')
+                                #     padded += 1
 
                                 # Process each band
                                 for band in range(1, src.count + 1):
