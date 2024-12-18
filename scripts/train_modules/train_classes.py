@@ -179,7 +179,7 @@ class Segmentation_training_loop(pl.LightningModule):
         total_batches = len(val_dataloader) 
         # print(f"---Total batches: {total_batches}")
         # print info about images, preds, masks
-        if batch_idx == total_batches - 1:
+        if (self.current_epoch > 9 ) and (batch_idx == total_batches - 1):
             self.log_combined_visualization( images, preds, masks)
 
         ioumean, _, _, _ = self.metrics_maker(logits, masks, job_type,  weighted_loss)
@@ -272,7 +272,7 @@ class Segmentation_training_loop(pl.LightningModule):
         assert images.ndim == 4, f"Expected images with 4 dimensions (B, C, H, W), got {images.shape}"
         assert preds.ndim == 4, f"Expected preds with 4 dimensions (B, C, H, W), got {preds.shape}"
         assert masks.ndim == 4, f"Expected masks with 4 dimensions (B, C, H, W), got {masks.shape}"
-        max_samples = 5  # Maximum number of samples to visualize
+        max_samples = 50  # Maximum number of samples to visualize
         for i in range(min(images.shape[0], max_samples)):  # Loop through each sample in the batch
 
             print(f"---Sample {i}")

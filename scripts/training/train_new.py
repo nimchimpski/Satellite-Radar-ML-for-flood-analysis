@@ -67,12 +67,10 @@ def main(train=None, test=None, reproduce=None, debug=None):
     repo_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2")
     dataset_path  = repo_path / "1data" / "3final" / "train_input"
     save_path = repo_path / "4results"
-    project = "TSX"
-    # DATA PARAMS
-    
+    project = "TSX"    
     subset_fraction = 1 # 1 = full dataset
     bs = 16
-    max_epoch = 10
+    max_epoch = 20
     # DATALOADER PARAMS
     num_workers = 8
     # WANDB PARAMS
@@ -95,7 +93,12 @@ def main(train=None, test=None, reproduce=None, debug=None):
     print(f'>>>RUN NAME WILL INCLUDE (AS DS): = {dataset_name}')
     run_name = f'{dataset_name}__BS{bs}__EP{max_epoch}_{loss}'
     # ckpt_to_test = f'{run_name}.ckpt'
-    ckpt_to_test = Path( 'good' , 'mtnweighted_NO341_3__BS16__EP10_weighted_bce.ckpt')
+    ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\predictions\predict_ckpt_###")
+    ckpt_to_test = next(ckpt_path.rglob("*.ckpt"), None)
+    if ckpt_to_test is None:
+        print(f"---No checkpoint found in {ckpt_path}")
+        return
+    print(f'>>>ckpt: {ckpt_to_test}')
     if not dataset_path.exists():
         print('>>>base path not exists')
     else:
@@ -106,7 +109,7 @@ def main(train=None, test=None, reproduce=None, debug=None):
         persistent_workers = True
 
     dataset_version = run_name
-
+    torch.cuda.empty_cache()
 
     if reproduce:
         job_type = "reproduce"
@@ -222,7 +225,7 @@ def main(train=None, test=None, reproduce=None, debug=None):
         print('>>>>>>>>>>>>>> test >>>>>>>>>>>>>>>>>>>>>>>>>>> ')
         
         # ckpt = ckpt_dir / f'{run_name}.ckpt'
-        ckpt = ckpt_dir / ckpt_to_test
+        ckpt = ckpt_to_test
         print(f'>>>evaluation ckpt = {ckpt.name}')
         if not ckpt.exists():
             raise FileNotFoundError(f"Checkpoint not found: {ckpt}")
