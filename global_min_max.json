@@ -1,0 +1,16 @@
+{
+    "global_minmax": {
+        "SAR_HH": {
+            "min": 0.0,
+            "max": 260.0
+        },
+        "DEM": {
+            "min": -10.0,
+            "max": 3000.0
+        },
+        "Other_Band": {
+            "min": 15.0,
+            "max": 512.0
+        }
+    }
+}

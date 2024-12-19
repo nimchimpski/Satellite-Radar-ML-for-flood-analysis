@@ -14,9 +14,8 @@ from rasterio.plot import show
 from rasterio.windows import Window
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from scripts.train_modules.train_classes import UnetModel
-from scripts.process_modules.process_tiffs_module import match_dem_to_mask, clip_image_to_mask_gdal
-from scripts.process_modules.process_tiffs_module import calculate_and_normalize_slope, create_event_datacube_TSX_inf,         reproject_layers_to_4326_TSX, nan_check, remove_mask_3_vals, reproject_to_4326_gdal, make_float32_inf, make_float32_inmem, create_extent_from_mask
-from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr, calculate_global_min_max_nc, get_global_min_max
+from scripts.process_modules.process_tiffs_module import  create_event_datacube_TSX_inf,         reproject_to_4326_gdal, make_float32_inf
+from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr,  get_global_min_max
 from scripts.process_modules.process_helpers import  print_tiff_info_TSX
 from collections import OrderedDict
 

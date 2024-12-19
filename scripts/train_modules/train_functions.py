@@ -30,7 +30,7 @@ def log_metrics_to_wandb(job_type, metrics, wandb_logger):
 
     # Log metrics
     wandb_logger.log_metrics({
-        f"{job_type}recall": water_accuracy,
+        f"{job_type}flood_not_missed": water_accuracy,
         f"{job_type}iou": iou,
         f"{job_type}precision": precision,
         f"{job_type}recall": recall,
@@ -104,17 +104,28 @@ def loss_chooser(loss_name):
     HIGH RECALL
     BOUNDARY ACCURACY
     """
-    if loss_name == "weighted_bce":
-        return torch.nn.BCEWithLogitsLoss(reduction='none')
-        # DICE + BOUNDARY
-    elif loss_name == "bce_dice":
-        return smp.utils.losses.BCEDiceLoss() # ******* best ??? needs a blanced set
+    torch_bce = torch.nn.BCEWithLogitsLoss(reduction='none')
+    smp_bce =  smp.losses.SoftBCEWithLogitsLoss()
+    dice = smp.losses.DiceLoss(mode='binary')
+    focal = smp.utils.losses.FocalLoss(mode='binary', alpha=0.25, gamma=2.0)
+    # Adjust alpha if one class dominates or struggles.
+    # Adjust gamma to fine-tune focus on hard examples.
+
+    if loss_name == "torch_bce":
+        return torch_bce        
+    if loss_name == "smp_bce":
+        return smp_bce
+    if loss_name == 'bce+dice':
+        loss = smp_bce + dice
+        return loss
+    if loss_name == 'focal+dice':
+        loss = focal + dice
+        return loss
+    # for weighted ex. loss = 0.4 * bce + 0.6 * dice
+
+
     elif loss_name == "tversky": # priorotises recall, USE IF ITS LOW
         return smp.utils.losses.TverskyLoss()
-    # DICE + BOUNDARY
-    # FOCAL + DICE = good for imbalance
-    elif loss_name == "dice": # max overlap, good 4 imbalce, bad for sparse, 
-        return smp.utils.losses.DiceLoss()
     elif loss_name == "jakard":
         return smp.utils.losses.JaccardLoss() # penalize fp and fn. use with bce
     elif loss_name == "focal":

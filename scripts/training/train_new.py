@@ -37,8 +37,8 @@ from wandb import Artifact
 # .............................................................
 
 from scripts.train_modules.train_helpers import *
-from scripts.train_modules.train_classes import  UnetModel,   Segmentation_training_loop , BoundaryLoss, SurfaceLoss, DiceLoss, FocalLoss
-from scripts.train_modules.train_functions import handle_interrupt, loss_chooser, wandb_initialization, calculate_metrics, log_metrics_to_wandb
+from scripts.train_modules.train_classes import  UnetModel,   Segmentation_training_loop 
+from scripts.train_modules.train_functions import handle_interrupt, loss_chooser, wandb_initialization
 #########################################################################
 
 load_dotenv()
@@ -82,7 +82,7 @@ def main(train=None, test=None, reproduce=None, debug=None):
     in_channels = 1
     DEVRUN = 0
     # metric_threshold = 0.9
-    loss =  "weighted_bce" # "FOCALLOSS" "DICE" SURFACE" "BOUNDARY" # 'bce_dice' #
+    loss =  "torch_bce" # 'smp_bce' # bce+dice' # 'focal+dice' # 'tversky' # 'jakard' # 'focal'
 
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++

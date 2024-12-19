@@ -10,6 +10,7 @@ import netCDF4 as nc
 from osgeo import gdal
 import shutil
 import re
+import json
 # MODULES
 # from check_int16_exceedance import check_int16_exceedance
 import subprocess
@@ -17,7 +18,7 @@ import rasterio
 import numpy as np
 from rasterio.io import MemoryFile
 from rasterio.warp import calculate_default_transform, reproject, Resampling
-from scripts.process_modules.process_helpers import  check_dataarray_list, dataset_type, print_dataarray_info
+from scripts.process_modules.process_helpers import  nan_check
 
 
 
@@ -389,7 +390,67 @@ def make_float32(input_tif, file_name):
         return file_name
 
 
+def compute_dataset_min_max(dataset, band_to_read=1):
+    """
+    Computes the global minimum and maximum pixel values for a dataset.
     
+    Parameters:
+        dataset_dir (str or Path): Directory containing all input images.
+    
+    Returns:
+        global_min (float): Global minimum pixel value.
+        global_max (float): Global maximum pixel value.
+    """
+    global_min = float('inf')
+    global_max = float('-inf')
+    
+    # Iterate through all TIFF files
+    for event in dataset.iterdir(): # ITER EVENT
+        if event.is_dir():
+            image = list(event.rglob('*IMAGE_*.tif') )[0]
+            try:
+                with rasterio.open(image) as src:
+                    # Read the data as a NumPy array
+                    data = src.read(band_to_read)  # Read the first band
+                    # Update global min and max
+                    global_min = int(min(global_min, data.min()))
+                    global_max = int(max(global_max, data.max()))
+                    print(f"---{image.name}: Min: {data.min()}, Max: {data.max()}")
+            except Exception as e:
+                print(f"Error processing {image}: {e}")
+                continue
+
+    print(f"Global Min: {global_min}, Global Max: {global_max}")
+    return global_min, global_max
+
+
+
+def write_min_max_to_json(min, max, output_path):
+    """
+    Writes min and max values for each variable to a JSON file.
+
+    Args:
+        min_max_values (dict): Dictionary containing min and max values for each variable.
+                               Example: {"SAR_HH": {"min": 0.0, "max": 260.0}, "DEM": {"min": -10.0, "max": 3000.0}}
+        output_path (str or Path): File path to save the JSON file.
+    """
+    print(f'---minmaxvalsdict= {min, max}')
+    output_path = Path(output_path)
+
+    # Ensure the parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write the dictionary to the JSON file
+    with open(output_path, 'w') as json_file:
+        json.dump({'hh': {'min': min, 'max' : max}}, json_file, indent=4)
+    
+    print(f"Min and max values saved to {output_path}")
+
+
+def read_min_max_from_json(input_path):
+    with open(input_path, 'r') as json_file:
+        data = json.load(json_file)
+    return data.get("hh", {})
 
 
 def make_float32_inf(input_tif, output_file):
@@ -529,6 +590,36 @@ def reproject_to_4326_gdal(input_path, output_path):
     # print(f"---Reprojected raster saved to: {output_path}")           
 
     return output_path   
+
+
+
+def reproject_to_4326_fixpx_gdal(input_path, output_path, resampleAlg, px_size):
+    print('+++in reproject_to_4326_fixpx_gdal fn')
+    # print(f'---resampleAlg= {resampleAlg}')
+    if isinstance(input_path, Path):
+        input_path = str(input_path)
+    if isinstance(output_path, Path):
+        output_path = str(output_path)
+    # Open the input raster
+    src_ds = gdal.Open(input_path)
+    if not src_ds:
+        print(f"Failed to open {input_path}")
+        return
+
+    target_srs = 'EPSG:4326'
+
+    # Use GDAL's warp function to reproject
+    warp_options = gdal.WarpOptions(
+        dstSRS=target_srs,  # Target CRS
+        xRes=px_size,
+        yRes=px_size,
+        resampleAlg=resampleAlg,  # Resampling method (nearest neighbor for categorical data)
+    )  
+    gdal.Warp(output_path, src_ds, options=warp_options)
+    # print(f"---Reprojected raster saved to: {output_path}")           
+
+    return output_path   
+
 
 
 def make_layerdict_TSX(extracted):

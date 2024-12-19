@@ -53,12 +53,11 @@ def nan_check(nparray):
 
 
 def print_tiff_info_TSX( image=None, mask=None):
-    # print('---PRINT TIFF INFO---')
+    print(f'+++ PRINT TIFF INFO---{image.name}')
     if image:
         print(f'---in image = {image.name}') 
 
         with rasterio.open(image) as src:
-            print(f'\n---CHECKING image = {image.name}') 
             data = src.read()
             # print layer names
             print(f"---Layer names: {src.descriptions}")        
@@ -68,7 +67,7 @@ def print_tiff_info_TSX( image=None, mask=None):
         with rasterio.open(mask) as src:
             # print(f'---mask type = {type(mask)}')
             # print(f'---CHECKING= {mask.name}')
-            data = src.read(3)
+            data = src.read(1)
             # print(f"--- shape: {data.shape}, dtype: {data.dtype}, crs ={src.crs}")
             unique_values = np.unique(data)
             if len(unique_values) > 1:

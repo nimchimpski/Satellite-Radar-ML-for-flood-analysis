@@ -22,7 +22,7 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 import rioxarray as rxr
 from rioxarray import open_rasterio
 from rasterio.windows import Window
-from scripts.process_modules.process_helpers import dataset_type, print_dataarray_info, nan_check, pad_tile
+from scripts.process_modules.process_helpers import  print_dataarray_info, nan_check
 
 
 # NORMALIZE
@@ -641,6 +641,8 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
     """
     print('+++++++in tile_datacube rxr fn ++++++++')
     global_min, global_max = stats
+    print('---global_min= ', global_min)
+    print('---global_max= ', global_max)
     num_tiles = 0
     num_saved = 0
     num_has_nans = 0
