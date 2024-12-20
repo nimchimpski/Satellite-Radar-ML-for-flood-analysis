@@ -22,7 +22,7 @@ def main():
                     try:
                         with rasterio.open(tile) as src:
                                 print('---tile:', tile.name)
-                                # Read all datasdsdfsdf
+                                # Read all datasdsdfsdfsdvsdvs
                                 data = src.read()
 
                                 # LOOP THRU BANDS
