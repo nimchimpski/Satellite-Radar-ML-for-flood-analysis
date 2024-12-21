@@ -107,7 +107,7 @@ def loss_chooser(loss_name):
     torch_bce = torch.nn.BCEWithLogitsLoss(reduction='none')
     smp_bce =  smp.losses.SoftBCEWithLogitsLoss()
     dice = smp.losses.DiceLoss(mode='binary')
-    focal = smp.utils.losses.FocalLoss(mode='binary', alpha=0.25, gamma=2.0)
+    focal = smp.losses.FocalLoss(mode='binary', alpha=0.25, gamma=2.0)
     # Adjust alpha if one class dominates or struggles.
     # Adjust gamma to fine-tune focus on hard examples.
 
@@ -115,21 +115,25 @@ def loss_chooser(loss_name):
         return torch_bce        
     if loss_name == "smp_bce":
         return smp_bce
-    if loss_name == 'bce+dice':
-        loss = smp_bce + dice
-        return loss
-    if loss_name == 'focal+dice':
-        loss = focal + dice
-        return loss
+    # if loss_name == 'bce+dice':
+    #     def combined_loss(y_pred, y_true):
+    #         bce_loss = bce(y_pred, y_true)
+    #         dice_loss = dice(y_pred, y_true)
+    #         return bce_loss + dice_loss  # Adjust weights if necessary
+    #     loss = smp_bce + dice
+    #     return loss
+    # if loss_name == 'focal+dice':
+    #     loss = focal + dice
+    #     return loss
     # for weighted ex. loss = 0.4 * bce + 0.6 * dice
 
 
     elif loss_name == "tversky": # priorotises recall, USE IF ITS LOW
-        return smp.utils.losses.TverskyLoss()
+        return smp.losses.TverskyLoss()
     elif loss_name == "jakard":
-        return smp.utils.losses.JaccardLoss() # penalize fp and fn. use with bce
+        return smp.losses.JaccardLoss() # penalize fp and fn. use with bce
     elif loss_name == "focal":
-        return smp.utils.losses.FocalLoss()
+        return smp.losses.FocalLoss(mode='binary', alpha=0.25, gamma=2.0)
     else:
         raise ValueError(f"Unknown loss: {loss_name}")
 

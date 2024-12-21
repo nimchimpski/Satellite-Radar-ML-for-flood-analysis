@@ -275,39 +275,34 @@ def get_global_min_max(data_path, layer_name, min_max_file=None, percentile_min=
     stats = (global_min, global_max)
     return stats
 
-# def update_min_max_csv(existing_file, new_values, output_file=None):
-#     """
-#     Update an existing min-max CSV file with new min-max values.
+def update_min_max_csv(existing_file, new_values, output_file=None):
+    """
+    Update an existing min-max CSV file with new min-max values.
     
-#     Parameters:
-#         existing_file (str): Path to the existing min-max CSV file.
-#         new_values (dict): New min-max values as a dictionary {variable: (min, max)}.
-#         output_file (str): Path to save the updated CSV file (optional).
-#     """
-#     # Load the existing min-max CSV
-#     df = pd.read_csv(existing_file)
+    Parameters:
+        existing_file (str): Path to the existing min-max CSV file.
+        new_values (dict): New min-max values as a dictionary {variable: (min, max)}.
+        output_file (str): Path to save the updated CSV file (optional).
+    """
+    # Load the existing min-max CSV
+    df = pd.read_csv(existing_file)
     
-#     # Update the min and max values
-#     for variable, (new_min, new_max) in new_values.items():
-#         mask = df["variable"] == variable
-#         if mask.any():
-#             df.loc[mask, "min"] = df.loc[mask, "min"].combine(pd.Series([new_min]), min)
-#             df.loc[mask, "max"] = df.loc[mask, "max"].combine(pd.Series([new_max]), max)
-#         else:
-#             # Add new variable if it doesn't exist
-#             df = pd.concat([df, pd.DataFrame({"variable": [variable], "min": [new_min], "max": [new_max]})], ignore_index=True)
+    # Update the min and max values
+    for variable, (new_min, new_max) in new_values.items():
+        mask = df["variable"] == variable
+        if mask.any():
+            df.loc[mask, "min"] = df.loc[mask, "min"].combine(pd.Series([new_min]), min)
+            df.loc[mask, "max"] = df.loc[mask, "max"].combine(pd.Series([new_max]), max)
+        else:
+            # Add new variable if it doesn't exist
+            df = pd.concat([df, pd.DataFrame({"variable": [variable], "min": [new_min], "max": [new_max]})], ignore_index=True)
 
-#     # Save the updated file
-#     if output_file is None:
-#         output_file = existing_file
-#     df.to_csv(output_file, index=False)
-#     print(f"Updated min-max saved to {output_file}")
+    # Save the updated file
+    if output_file is None:
+        output_file = existing_file
+    df.to_csv(output_file, index=False)
+    print(f"Updated min-max saved to {output_file}")
 
-
-# # Example Usage
-# existing_file = "min_max.csv"
-# new_values = {"SAR_HH": (0.005, 1.0), "SAR_HV": (0.03, 0.9), "New_Band": (0.1, 0.8)}
-# update_min_max_csv(existing_file, new_values)
 
 
 # SELECT AND SPLIT
@@ -361,7 +356,7 @@ def has_enough_valid_pixels(file_path, mask_threshold):
                 # MASK
                 if  mask_layer:
                     mask_data = dataset.read(mask_layer)
-                    mask_px = ((mask_data == 1).sum()) / total_pixels
+                    mask_px = ((mask_data > 0.5).sum()) / total_pixels
                     # print('---mask_px= ', mask_px)
                     if mask_px >= mask_threshold:
                         # print(f"---MASK pixels deficit: {file_path}")
@@ -405,14 +400,13 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
     tot_under_thresh = 0  
 
     with open(dest_dir / "train.txt", "a") as traintxt,  open(dest_dir / "val.txt", "a") as valtxt,  open(dest_dir / "test.txt", "a") as testtxt:
-        print(f'---tot under thresh 1= {tot_under_thresh}')
 
         # Get a list of all files in the source directory
         files = list(source_dir.glob('*'))  # Modify '*' if you want a specific file extension
 
         # FILTER FILES BY VALID PIXELS
         selected_tiles = []
-        for file in tqdm(files, desc=f"Filtering files for {source_dir.name}", unit="file"):
+        for file in files:
             # print(f"---Checking {file.name}")
             if file.suffix.lower()  in ['.tif', '.tiff'] and 'aux' not in file.name:
                 too_few_px, missing_extent,  = has_enough_valid_pixels(file, mask_threshold)
@@ -452,7 +446,7 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
             test_files = selected_tiles[val_end:]
 
             # Copy files to their respective folders
-            for file in tqdm(train_files, desc="Copying train files"):
+            for file in train_files:
                 try:
                     shutil.copy(file, train_dir / file.name)
                     # print(f"---{file.name} copied to {train_dir}")
@@ -461,14 +455,14 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
                 except Exception as e:
                     print(f"Error copying {file}: {e}")
 
-            for file in tqdm(val_files, desc="Copying validation files"):
+            for file in val_files:
                 try:
                     shutil.copy(file, val_dir / file.name)
                     valtxt.write(f"{file.name}\n")
                 except Exception as e:
                     print(f"---Error copying {file}: {e}")
 
-            for file in tqdm(test_files, desc="Copying test files"):
+            for file in test_files:
                 try:
                     shutil.copy(file, test_dir / file.name)
                     testtxt.write(f"{file.name}\n")
@@ -488,7 +482,6 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
             assert int(len(train_files)) + int(len(val_files)) + int(len(test_files)) == num_selected_tiles, "Files not split correctly"
 
             print('---END OF SPLIT FUNCTION--------------------------------')
-    print(f'@@@@tot under thresh = {tot_under_thresh}')
     return total_files, num_selected_tiles, rejected, tot_missing_extent, tot_missing_mask, tot_under_thresh
 
 
@@ -772,6 +765,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
             tile_data = normalized_tile.values
             num_layers, height, width = tile_data.shape
             # print('---layer_names= ', layer_names)
+
             with rasterio.open(dest_path, 'w',
                                 driver='GTiff',
                                 height=height,
@@ -782,6 +776,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
                                 transform=transform,
                                 compress=None) as dst:
                 for i in range(1, num_layers + 1):
+
                     dst.write(tile_data[i - 1], i)
                     dst.set_band_description(i, layer_names[i-1])  # Add band descriptions
             num_saved += 1
@@ -979,7 +974,7 @@ def tile_datacube_rasterio(datacube_path, save_tiles_path, tile_size=256, stride
     # print('---num_nomask_pixels= ', num_nomask_pixels)
     return num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask, num_nomask_pixels
 
-# TILE CHECKS
+# DATAARAY TO TILE CHECKS
 
 def contains_nans(tile):
     """
@@ -1041,7 +1036,7 @@ def is_not_256(data):
     else:
         return True
 
-
+# ----------
 
 def check_novalues(path_to_tiff):
     with rasterio.open(path_to_tiff) as src:

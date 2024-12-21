@@ -225,7 +225,10 @@ class Segmentation_training_loop(pl.LightningModule):
 
     
     def compute_dynamic_weights(self, mask):
+        
         # print(f'+++++++++++++    compute dynamic weights')
+        assert torch.unique(mask).tolist() in [[0], [1], [0, 1]], f"Unexpected mask values: {torch.unique(mask)}"
+
         flood_pixels = (mask == 1).sum().float()
         non_flood_pixels = (mask == 0).sum().float()
         total_pixels = flood_pixels + non_flood_pixels

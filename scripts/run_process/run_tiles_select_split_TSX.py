@@ -28,7 +28,7 @@ def main(test=None):
     MAKEFOLDER = True
     analysis_threshold=1
     mask_threshold=0.3
-    percent_under_thresh=5 # this * total_files = HOW MANY FILES PASS UNDER THE THRESHOLD
+    percent_under_thresh=0 # this * total_files = HOW MANY FILES PASS UNDER THE THRESHOLD
 
     dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_input")
   
@@ -84,7 +84,7 @@ def main(test=None):
 
         print(f"\n>>>>>>>>>>>>>>>>>>> AT FOLDER {folder.name}>>>>>>>>>>>>>>>")
         foldertotal, selected_tiles, folderrejected, missing_extent, missing_mask, under_thresh = select_tiles_and_split(folder, dest_dir, train_ratio, val_ratio, test_ratio, analysis_threshold, mask_threshold, percent_under_thresh, MAKEFOLDER)
-        print(f'>>>folder under threshold= {under_thresh}')
+        print(f'>>>subtotal under threshold= {under_thresh}')
         if selected_tiles < 10:
             low_selection.append(folder.name)
 
@@ -94,7 +94,7 @@ def main(test=None):
         tot_missing_extent += missing_extent 
         tot_under_thresh += under_thresh    
  
-        print(f">>>folder tiles: {total}")
+        print(f">>>subtotal tiles: {total}")
         print(f">>>subtotal Rejected tiles: {rejected}")
         # print(f">>>subtotal missing extent: {tot_missing_extent}")
         # print(f">>>subtotal missing mask: {tot_missing_mask}")

@@ -41,8 +41,6 @@ def check_dataarray_list(dataarrays, layer_names):
         print(f"---Data Type: {da.dtype}")
 
 
-
-
 def nan_check(nparray):
     if np.isnan(nparray).any():
         print("----Warning: NaN values found in the data.")
@@ -51,38 +49,6 @@ def nan_check(nparray):
         print("----NO NANS FOUND")
         return True
 
-
-def print_tiff_info_TSX( image=None, mask=None):
-    print(f'+++ PRINT TIFF INFO---{image.name}')
-    if image:
-        print(f'---in image = {image.name}') 
-
-        with rasterio.open(image) as src:
-            data = src.read()
-            # print layer names
-            print(f"---Layer names: {src.descriptions}")        
-            print(f"--- shape: {data.shape}, dtype: {data.dtype}, crs ={src.crs}")
-            nan_check(data)
-    if isinstance(mask, Path):
-        with rasterio.open(mask) as src:
-            # print(f'---mask type = {type(mask)}')
-            # print(f'---CHECKING= {mask.name}')
-            data = src.read(1)
-            # print(f"--- shape: {data.shape}, dtype: {data.dtype}, crs ={src.crs}")
-            unique_values = np.unique(data)
-            if len(unique_values) > 1:
-                print(f"%%%%%%%%%%%%%%%%%%%%%%Unique values in mask: {unique_values}")
-            # nan_check(data)
-    # elif isinstance(mask, DatasetReader):
-    #     print
-    #     print(f'---CHECKING= {mask.name}')
-    #     data = mask.read()
-    #     print(f"--- shape: {data.shape}, dtype: {data.dtype}, crs ={mask.rio.crs}")
-    #     unique_values = np.unique(data)
-    #     print(f"---Unique values in mask: {unique_values}")
-    #     nan_check(data)
-    # print('-----------------------')
-    
 
 def pad_tile(tile, expected_size=250, pad_value=0):
     current_x = tile.sizes["x"]
@@ -95,3 +61,40 @@ def pad_tile(tile, expected_size=250, pad_value=0):
     if pad_x == 0 and pad_y == 0:
         # No padding needed
         return tile
+
+# CHECKS FOR TILES (MULTIBAND TIFS)
+
+def print_tiff_info_TSX( image):
+    print(f'+++ PRINT TIFF INFO---{image.name}')
+    if image:
+        print(f'---in image = {image.name}') 
+
+        with rasterio.open(image) as src:
+            data = src.read()
+            nan_check(data)
+            for i in range(1, src.count + 1):
+                band_data = src.read(i)
+                min, max = min_max_vals(band_data)
+                name = get_band_name(i, src)
+                print(f"---Band {name}: Min={min}, Max={max}")
+
+                print(f"---CRS: {src.crs}")
+            # print layer names
+
+
+
+
+# SUBFUNCS FOR MULTI BAND TILES/TIFS
+
+def get_band_name(band, src):
+    return src.descriptions[band - 1].lower() if src.descriptions[band - 1] else None
+
+
+def num_band_vals(band_data):
+    return len(np.unique(band_data))
+
+def min_max_vals(band_data): # IF UNIQUE VALS NOT 0 OR 1 - FLAG IT
+    return np.min(band_data), np.max(band_data)
+
+def datatype_check(band_data):
+    return band_data.dtype  

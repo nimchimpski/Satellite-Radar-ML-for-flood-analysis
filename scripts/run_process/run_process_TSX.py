@@ -28,7 +28,7 @@ def main(test=None):
     else:
         print('>>>FULL DATASET MODE<<<')
         dataset =  data_root / 'TSX_TO_PROCESS_###' 
-    get_minmax = 1
+    get_minmax = 0
     make_tifs = 1
     make_datacubes = 1
     make_norm_tiles = 1

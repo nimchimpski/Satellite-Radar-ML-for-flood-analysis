@@ -82,17 +82,18 @@ def main(train=None, test=None, reproduce=None, debug=None):
     in_channels = 1
     DEVRUN = 0
     # metric_threshold = 0.9
-    loss =  "torch_bce" # 'smp_bce' # bce+dice' # 'focal+dice' # 'tversky' # 'jakard' # 'focal'
+    loss =  "focal" # 'smp_bce' # bce+dice' # 'focal+dice' # 'tversky' # 'jakard' # 'focal'
 
 
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    # CHECK ONLY 1 INPUT FOLDER - CHECK NAME IS CORRECT
     input_folders = [i for i in dataset_path.iterdir()]
     assert len(input_folders) == 1
     dataset_name = input_folders[0].name
     dataset_path = dataset_path / dataset_name
     print(f'>>>RUN NAME WILL INCLUDE (AS DS): = {dataset_name}')
     run_name = f'{dataset_name}__BS{bs}__EP{max_epoch}_{loss}'
-    # ckpt_to_test = f'{run_name}.ckpt'
+    # ENSURE CORRECT CKPT IN FLODER !!!
     ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\predictions\predict_ckpt_###")
     ckpt_to_test = next(ckpt_path.rglob("*.ckpt"), None)
     if ckpt_to_test is None:
@@ -153,6 +154,7 @@ def main(train=None, test=None, reproduce=None, debug=None):
         #     break  
  
     loss_fn = loss_chooser(loss)
+    print(f'>>>loss_fn = {loss_fn}')
 
     wandb_initialization(job_type, repo_path, project,  dataset_name, dataset_version, train_list,  val_list, test_list,)
 
