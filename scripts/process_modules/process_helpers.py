@@ -8,6 +8,7 @@ import rasterio
 from rasterio.features import rasterize
 from shapely.geometry import shape
 import fiona
+import json
 
 
 def dataset_type(da):
@@ -32,7 +33,198 @@ def check_single_input_filetype(folder,  title, fsuffix):
         return None
     return input_list[0]
 
+# NORMALISING
+def rescale_image_minmax(image, min, max, output_path):
+    """
+    Rescales the pixel values of an image to a new range.
+    
+    Parameters:
+        image (str or Path): Path to the input image.
+        min (float): Minimum pixel value.
+        max (float): Maximum pixel value.
+        output_path (str or Path): File path to save the normalized image.
+    """
+    output_path = Path(output_path)
 
+    # Ensure the parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Read the image
+    with rasterio.open(image) as src:
+        data = src.read()
+
+        # Normalize the pixel values
+        data = (data - min) / (max - min)
+
+        # Write the normalized image
+        with rasterio.open(
+            output_path,
+            'w',
+            driver='GTiff',
+            width=src.width,
+            height=src.height,
+            count=src.count,
+            crs=src.crs,
+            transform=src.transform,
+            dtype=data.dtype
+        ) as dst:
+            dst.write(data)
+
+    print(f"Normalized image saved to {output_path}")
+
+def compute_dataset_minmax(dataset, band_to_read=1):
+    """
+    Computes the global minimum and maximum pixel values for a dataset.
+    
+    Parameters:
+        dataset_dir (str or Path): Directory containing all input images.
+    
+    Returns:
+        global_min (float): Global minimum pixel value.
+        global_max (float): Global maximum pixel value.
+    """
+    global_min = float('inf')
+    global_max = float('-inf')
+    
+    # Iterate through all TIFF files
+    for event in dataset.iterdir(): # ITER EVENT
+        if event.is_dir():
+            image = list(event.rglob('*IMAGE_*.tif') )[0]
+            try:
+                min, max = compute_image_min_max(image, band_to_read)
+                global_min = int(min(global_min, min))
+                global_max = int(max(global_max, max))
+            except Exception as e:
+                print(f"Error processing {image}: {e}")
+                continue
+
+    print(f"Global Min: {global_min}, Global Max: {global_max}")
+    return global_min, global_max
+
+def check_loc_max_and_rescale(image, glob_max, output_path, band_to_read=1):
+    with rasterio.open(image)as src:
+        data = src.read(band_to_read)  # Read the first band
+        locmin, locmax = int(data.min()), int(data.max())
+        if locmax < 0.8*glob_max:
+            data = rescale_image_minmax(data, glob_max, locmax)  
+            print(f"---Rescaled {image.name} from {locmax} to {glob_max}")      
+            print(f'---min { int(data.min())}, max { int(data.max())}')
+            # Write the normalized image
+            with rasterio.open(
+                output_path,
+                'w',
+                driver='GTiff',
+                width=src.width,
+                height=src.height,
+                count=src.count,
+                crs=src.crs,
+                transform=src.transform,
+                dtype=data.dtype
+            ) as dst:
+                dst.write(data)
+
+
+
+
+
+def compute_image_minmax(image, band_to_read=1):
+    with rasterio.open(image) as src:
+        # Read the data as a NumPy array
+        data = src.read(band_to_read)  # Read the first band
+        # Update global min and max
+        min, max = int(data.min()), int(data.max())
+        print(f"---{image.name}: Min: {data.min()}, Max: {data.max()}")
+    return min, max
+
+def rescale_image_minmax( data, glob_max, loc_max):
+        data = data * glob_max / loc_max
+        return data
+
+# FUNCTIONAL
+def read_raster(image_path, band_to_read=1):
+    """Reads a raster band and returns the data, metadata, and transform."""
+    with rasterio.open(image_path) as src:
+        data = src.read(band_to_read)
+        metadata = src.meta.copy()
+    return data, metadata
+
+def rescale_image_minmax(data, glob_max, loc_max):
+    """Rescales the image data to align `loc_max` with `glob_max`."""
+    scale_factor = glob_max / loc_max
+    return data * scale_factor, scale_factor
+
+def check_and_rescale(data, metadata, glob_max, threshold=0.8):
+    """Checks the local max and rescales the data if below a threshold."""
+    loc_min, loc_max = data.min(), data.max()
+    print(f"---Local min: {loc_min}, Local max: {loc_max}")
+    
+    if loc_max < threshold * glob_max:
+        data, scale_factor = rescale_image_minmax(data, glob_max, loc_max)
+        print(f"---Rescaled from {loc_max} to {glob_max}")
+    else:
+        print("---No rescaling needed.")
+        scale_factor = 1.0
+    
+    return data, metadata, scale_factor
+
+def write_raster(output_path, data, metadata):
+    """Writes a raster dataset to the specified output path."""
+    with rasterio.open(
+        output_path,
+        'w',
+        driver='GTiff',
+        height=data.shape[0],
+        width=data.shape[1],
+        count=1,
+        dtype=data.dtype,
+        crs=metadata['crs'],
+        transform=metadata['transform']
+    ) as dst:
+        dst.write(data, 1)
+
+def process_raster_minmax(image_path, output_path, glob_max, threshold=0.8):
+    """Functional pipeline for checking and rescaling raster data."""
+    data, metadata = read_raster(image_path)
+    data, metadata, scale_factor = check_and_rescale(data, metadata, glob_max, threshold)
+    write_raster(output_path, data, metadata)
+    return scale_factor
+
+
+
+
+
+
+
+
+
+def write_min_max_to_json(min, max, output_path):
+    """
+    Writes min and max values for each variable to a JSON file.
+
+    Args:
+        min_max_values (dict): Dictionary containing min and max values for each variable.
+                               Example: {"SAR_HH": {"min": 0.0, "max": 260.0}, "DEM": {"min": -10.0, "max": 3000.0}}
+        output_path (str or Path): File path to save the JSON file.
+    """
+    print(f'---minmaxvalsdict= {min, max}')
+    output_path = Path(output_path)
+
+    # Ensure the parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write the dictionary to the JSON file
+    with open(output_path, 'w') as json_file:
+        json.dump({'hh': {'min': min, 'max' : max}}, json_file, indent=4)
+    
+    print(f"Min and max values saved to {output_path}")
+
+
+def read_min_max_from_json(input_path):
+    with open(input_path, 'r') as json_file:
+        data = json.load(json_file)
+    return data.get("hh", {})
+
+#######
 
 
 def print_dataarray_info(da):

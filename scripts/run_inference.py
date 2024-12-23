@@ -14,9 +14,9 @@ from rasterio.plot import show
 from rasterio.windows import Window
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from scripts.train_modules.train_classes import UnetModel
-from scripts.process_modules.process_tiffs_module import  create_event_datacube_TSX_inf,         reproject_to_4326_gdal, make_float32_inf, read_min_max_from_json
+from scripts.process_modules.process_tiffs_module import  create_event_datacube_TSX_inf,         reproject_to_4326_gdal, make_float32_inf
 from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr,  get_global_min_max
-from scripts.process_modules.process_helpers import  print_tiff_info_TSX, check_single_input_filetype, rasterize_kml_rasterio
+from scripts.process_modules.process_helpers import  print_tiff_info_TSX, check_single_input_filetype, rasterize_kml_rasterio, compute_image_minmax, read_min_max_from_json, process_raster_minmax
 from collections import OrderedDict
 
 start=time.time()
@@ -74,7 +74,7 @@ def stitch_tiles(metadata, prediction_tiles, save_path, image):
         # print(">>>stitched_image dtype:", stitched_image.dtype)
         print(">>>stitched_image shape:", stitched_image.shape)
         #print unique values in the stitched image
-        print(f'>>>unique values in stitched image: {np.unique(stitched_image)}')
+        # print(f'>>>unique values in empty stitched image: {np.unique(stitched_image)}')
 
     for tile_info in metadata:
         tile_name = tile_info["tile_name"]
@@ -166,7 +166,7 @@ def main(test=None):
 
     # FIND THE CKPT
     ckpt = next(ckpt_path.rglob("*.ckpt"), None)
-    save_path = img_src / f'{ckpt.name}_prediction.tif'
+    save_path = img_src / f'{ckpt.name}_th{threshold}_prediction.tif'
     if save_path.exists():
         try:
             print(f"--- Deleting existing prediction file: {save_path}")
@@ -182,21 +182,15 @@ def main(test=None):
     if image is None:
         return
     print(f'>>>image: {image}')
-    poly = check_single_input_filetype(img_src,  'poly', '.kml')
-    if poly is None:
-        return
+    # poly = check_single_input_filetype(img_src,  'poly', '.kml')
+    # if poly is None:
+        # return
 
-    
-    print_tiff_info_TSX(image)
-    print(f'>>>image.name = ',image.name)
-    with rasterio.open(image) as src:
-        print(f'>>>src shape= ',src.shape)
-
-    # # GET REGION CODE FROM MASK
+    # GET REGION CODE FROM MASK
     image_code = "_".join(image.name.split('_')[:2])
     print(f'>>>image_code= ',image_code)
 
-    # # CREATE THE EXTRACTED FOLDER
+    # CREATE THE EXTRACTED FOLDER
     extracted = img_src / f'{image_code}_extracted'
     if extracted.exists():
         print(f"--- Deleting existing extracted folder: {extracted}")
@@ -204,21 +198,48 @@ def main(test=None):
         shutil.rmtree(extracted)
     extracted.mkdir(exist_ok=True)
 
-    ex_extent = extracted / f'{image_code}_extent.tif'
+    statsdict = read_min_max_from_json(minmax_path)
+    stats = (statsdict["min"], statsdict["max"])
+    print(f'>>>stats: {stats}')
+
+    # PROCESS THE IMAGE FOR MIN MAX - 
+    rescaled_image = extracted / f'{image.stem}_rescaled.tif'
+    scale_factor = process_raster_minmax(image, rescaled_image, stats[1], threshold=0.7)
+    print(f'>>>scale_factor: {scale_factor}')
+    scaler = (1/(scale_factor*0.8))
+    print(f'---threshold: {threshold}') 
+    print(f' scaler: {scaler}')
+    threshold = threshold*scaler
+    print(f'---new threshold= {threshold}')
+
+    image = rescaled_image
+
+
+    
+    print_tiff_info_TSX(image)
+    print(f'>>>image.name = ',image.name)
+    with rasterio.open(image) as src:
+        print(f'>>>src shape= ',src.shape)
+
+
+
+
+
+    # ex_extent = extracted / f'{image_code}_extent.tif'
     # create_extent_from_mask(image, ex_extent)
-    rasterize_kml_rasterio( poly, ex_extent, pixel_size=0.0001, burn_value=1)
+    # rasterize_kml_rasterio( poly, ex_extent, pixel_size=0.0001, burn_value=1)
 
     reproj_image = extracted / f'{image_code}_4326.tif'
     reproject_to_4326_gdal(image, reproj_image)
 
-    reproj_extent = extracted / f'{image_code}_4326_extent.tif'
-    reproject_to_4326_gdal(ex_extent, reproj_extent)
+    # reproj_extent = extracted / f'{image_code}_4326_extent.tif'
+    # reproject_to_4326_gdal(ex_extent, reproj_extent)
 
     final_image = extracted / f'{reproj_image.stem}_32_final_image.tif'
     make_float32_inf(reproj_image, final_image)
 
-    final_extent = extracted / f'{image_code}_32_final_extent.tif'
-    make_float32_inf(reproj_extent, final_extent)
+    # final_extent = extracted / f'{image_code}_32_final_extent.tif'
+    # make_float32_inf(reproj_extent, final_extent)
 
     # print_tiff_info_TSX(image=final_image) 
 # 
@@ -232,9 +253,7 @@ def main(test=None):
         shutil.rmtree(save_tiles_path)
         save_tiles_path.mkdir(exist_ok=True, parents=True)
         # CALCULATE THE STATISTICS
-    statsdict = read_min_max_from_json(minmax_path)
-    stats = (statsdict["min"], statsdict["max"])
-    print(f'>>>stats: {stats}')
+
     # DO THE TILING
     tiles, metadata = tile_datacube_rxr(cube, save_tiles_path, tile_size=256, stride=256, norm_func=norm_func, stats=stats, percent_non_flood=0, inference=True) 
     print(f">>>{len(tiles)} tiles saved to {save_tiles_path}")

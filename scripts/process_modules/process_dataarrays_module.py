@@ -400,6 +400,7 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
     tot_under_thresh = 0  
 
     with open(dest_dir / "train.txt", "a") as traintxt,  open(dest_dir / "val.txt", "a") as valtxt,  open(dest_dir / "test.txt", "a") as testtxt:
+        print(f'---tot under thresh 1= {tot_under_thresh}')
 
         # Get a list of all files in the source directory
         files = list(source_dir.glob('*'))  # Modify '*' if you want a specific file extension
@@ -462,7 +463,7 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
                 except Exception as e:
                     print(f"---Error copying {file}: {e}")
 
-            for file in test_files:
+            for file in tqdm(test_files, desc="Copying test files"):
                 try:
                     shutil.copy(file, test_dir / file.name)
                     testtxt.write(f"{file.name}\n")
@@ -482,6 +483,7 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
             assert int(len(train_files)) + int(len(val_files)) + int(len(test_files)) == num_selected_tiles, "Files not split correctly"
 
             print('---END OF SPLIT FUNCTION--------------------------------')
+    print(f'@@@@tot under thresh = {tot_under_thresh}')
     return total_files, num_selected_tiles, rejected, tot_missing_extent, tot_missing_mask, tot_under_thresh
 
 
