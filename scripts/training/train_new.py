@@ -34,6 +34,7 @@ from tqdm import tqdm
 from operator import itemgetter, mul
 from functools import partial
 from wandb import Artifact
+from datetime import datetime
 # .............................................................
 
 from scripts.train_modules.train_helpers import *
@@ -60,17 +61,24 @@ def main(train=None, test=None, reproduce=None, debug=None):
     '''
     print('>>>in main')
     start = time.time()
+  
+
+    timestamp = datetime.now().strftime("%y%m%d_%H%M")
+    print('>>>start time = ', start)
+    print('>>>timestamp = ', timestamp)
+    
     signal.signal(signal.SIGINT, handle_interrupt)
     torch.set_float32_matmul_precision('medium')  # TODO try high
     pl.seed_everything(42, workers=True, verbose = False)
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     repo_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2")
     dataset_path  = repo_path / "1data" / "3final" / "train_input"
+    test_ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\ckpt_###")
     save_path = repo_path / "4results"
     project = "TSX"    
     subset_fraction = 1 # 1 = full dataset
     bs = 16
-    max_epoch = 20
+    max_epoch = 100
     # DATALOADER PARAMS
     num_workers = 8
     # WANDB PARAMS
@@ -83,8 +91,6 @@ def main(train=None, test=None, reproduce=None, debug=None):
     DEVRUN = 0
     # metric_threshold = 0.9
     loss =  "focal" # 'smp_bce' # bce+dice' # 'focal+dice' # 'tversky' # 'jakard' # 'focal'
-
-
     #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
     # CHECK ONLY 1 INPUT FOLDER - CHECK NAME IS CORRECT
     input_folders = [i for i in dataset_path.iterdir()]
@@ -92,14 +98,14 @@ def main(train=None, test=None, reproduce=None, debug=None):
     dataset_name = input_folders[0].name
     dataset_path = dataset_path / dataset_name
     print(f'>>>RUN NAME WILL INCLUDE (AS DS): = {dataset_name}')
-    run_name = f'{dataset_name}__BS{bs}__EP{max_epoch}_{loss}'
+    run_name = f'{dataset_name}__BS{bs}__EP{max_epoch}_{loss}_{timestamp}'
     # ENSURE CORRECT CKPT IN FLODER !!!
-    ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\predictions\predict_ckpt_###")
-    ckpt_to_test = next(ckpt_path.rglob("*.ckpt"), None)
-    if ckpt_to_test is None:
-        print(f"---No checkpoint found in {ckpt_path}")
-        return
-    print(f'>>>ckpt: {ckpt_to_test}')
+    if test:
+        ckpt_to_test = next(test_ckpt_path.rglob("*.ckpt"), None)
+        if ckpt_to_test is None:
+            print(f"---No checkpoint found in {test_ckpt_path}")
+            return
+        print(f'>>>ckpt: {ckpt_to_test}')
     if not dataset_path.exists():
         print('>>>base path not exists')
     else:

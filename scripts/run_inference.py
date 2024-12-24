@@ -16,7 +16,7 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 from scripts.train_modules.train_classes import UnetModel
 from scripts.process_modules.process_tiffs_module import  create_event_datacube_TSX_inf,         reproject_to_4326_gdal, make_float32_inf
 from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr,  get_global_min_max
-from scripts.process_modules.process_helpers import  print_tiff_info_TSX, check_single_input_filetype, rasterize_kml_rasterio, compute_image_minmax, read_min_max_from_json, process_raster_minmax
+from scripts.process_modules.process_helpers import  print_tiff_info_TSX, check_single_input_filetype, rasterize_kml_rasterio, compute_image_minmax, read_min_max_from_json, process_raster_minmax, path_not_exists
 from collections import OrderedDict
 
 start=time.time()
@@ -150,29 +150,27 @@ def clean_checkpoint_keys(state_dict):
 def main(test=None):
     if test:
         print("TEST SOURCE")
-        img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\predictions\predict_input_test")
+        img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\predict_input_test")
     else:
-        img_src =  Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\predictions\predict_input_###")
+        img_src =  Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\predict_input_###")
+    if path_not_exists(img_src):
+        return
 
     ############################################################################
-    minmax_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_all_processing\global_min_max\global_min_max.json")
+    minmax_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\global_minmax_###\global_minmax.json")
+    if path_not_exists(minmax_path):
+        return
     norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
     stats = None
     # ckpt = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\checkpoints\good\mtnweighted_NO341_3__BS16__EP10_weighted_bce.ckpt")
-    ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\predictions\predict_ckpt_###")
+    ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\ckpt_###")
 
-    threshold = 0.5 # PREDICTION CONFIDENCE THRESHOLD
+    threshold = 0.8 # PREDICTION CONFIDENCE THRESHOLD
     ############################################################################
 
     # FIND THE CKPT
     ckpt = next(ckpt_path.rglob("*.ckpt"), None)
-    save_path = img_src / f'{ckpt.name}_th{threshold}_prediction.tif'
-    if save_path.exists():
-        try:
-            print(f"--- Deleting existing prediction file: {save_path}")
-            save_path.unlink()
-        except Exception as e:
-            print(f"--- Error deleting existing prediction file: {e}")
+
     if ckpt is None:
         print(f"---No checkpoint found in {ckpt_path}")
         return
@@ -181,7 +179,7 @@ def main(test=None):
     image = check_single_input_filetype(img_src, 'image', '.tif')
     if image is None:
         return
-    print(f'>>>image: {image}')
+    # print(f'>>>image: {image}')
     # poly = check_single_input_filetype(img_src,  'poly', '.kml')
     # if poly is None:
         # return
@@ -206,23 +204,26 @@ def main(test=None):
     rescaled_image = extracted / f'{image.stem}_rescaled.tif'
     scale_factor = process_raster_minmax(image, rescaled_image, stats[1], threshold=0.7)
     print(f'>>>scale_factor: {scale_factor}')
-    scaler = (1/(scale_factor*0.8))
+    # scaler = scale_factor*0.8
     print(f'---threshold: {threshold}') 
-    print(f' scaler: {scaler}')
-    threshold = threshold*scaler
-    print(f'---new threshold= {threshold}')
+    # print(f' scaler: {scaler}')
+    # threshold = threshold*scaler
+    # print(f'---new threshold= {threshold}')
 
     image = rescaled_image
 
-
+    save_path = img_src / f'{ckpt.name}_th{threshold}_prediction.tif'
+    if save_path.exists():
+        try:
+            print(f"--- Deleting existing prediction file: {save_path}")
+            save_path.unlink()
+        except Exception as e:
+            print(f"--- Error deleting existing prediction file: {e}")
     
     print_tiff_info_TSX(image)
     print(f'>>>image.name = ',image.name)
-    with rasterio.open(image) as src:
-        print(f'>>>src shape= ',src.shape)
-
-
-
+    # with rasterio.open(image) as src:
+        # print(f'>>>src shape= ',src.shape)
 
 
     # ex_extent = extracted / f'{image_code}_extent.tif'
@@ -248,7 +249,7 @@ def main(test=None):
     cube = next(img_src.rglob("*.nc"), None)  
     save_tiles_path = img_src /  f'{image_code}_tiles'
     if save_tiles_path.exists():
-        print(f">>> Deleting existing tiles folder: {save_tiles_path}")
+        # print(f">>> Deleting existing tiles folder: {save_tiles_path}")
         # delete the folder and create a new one
         shutil.rmtree(save_tiles_path)
         save_tiles_path.mkdir(exist_ok=True, parents=True)
@@ -256,8 +257,8 @@ def main(test=None):
 
     # DO THE TILING
     tiles, metadata = tile_datacube_rxr(cube, save_tiles_path, tile_size=256, stride=256, norm_func=norm_func, stats=stats, percent_non_flood=0, inference=True) 
-    print(f">>>{len(tiles)} tiles saved to {save_tiles_path}")
-    print(f">>>{len(metadata)} metadata saved to {save_tiles_path}")
+    # print(f">>>{len(tiles)} tiles saved to {save_tiles_path}")
+    # print(f">>>{len(metadata)} metadata saved to {save_tiles_path}")
     # metadata = Path(save_tiles_path) / 'tile_metadata.json'
 
 
@@ -287,9 +288,10 @@ def main(test=None):
     # STITCH PREDICTION TILES
     prediction_img = stitch_tiles(metadata, prediction_tiles, save_path, final_image)
     # print prediction_img size
-    print(f'>>>prediction_img shape:',prediction_img.shape)
+    # print(f'>>>prediction_img shape:',prediction_img.shape)
     # display the prediction mask
     plt.imshow(prediction_img, cmap='gray')
+    plt.show()
 
 
 

@@ -33,6 +33,11 @@ def check_single_input_filetype(folder,  title, fsuffix):
         return None
     return input_list[0]
 
+def path_not_exists(input_path):
+    if not  input_path.exists():
+        print(f"---no {input_path.name} found in {input_path}")
+        return True
+
 # NORMALISING
 def rescale_image_minmax(image, min, max, output_path):
     """

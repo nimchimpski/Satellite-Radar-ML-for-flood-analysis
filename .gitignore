@@ -46,6 +46,12 @@ oldcode.py
 !1data/3final/*.dvc
 !1data/**/*.dvc
 
+4results/predict_input_###
+4reults/ignore
+4results/prediction_image_results
+4results/predict_input_test
+
+QGIS/images
 
 ignoretest/
 predictions/
