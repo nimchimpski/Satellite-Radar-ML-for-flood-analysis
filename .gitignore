@@ -32,7 +32,6 @@ wandb/
 *.code-workspace
 
 # DATA
-
 1data/
 
 *.nc
