@@ -150,9 +150,9 @@ def clean_checkpoint_keys(state_dict):
 def main(test=None):
     if test:
         print("TEST SOURCE")
-        img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\predict_input_test")
+        img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\predict_input_test")
     else:
-        img_src =  Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\predict_input_###")
+        img_src =  Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\predict_input_###")
     if path_not_exists(img_src):
         return
 
@@ -163,9 +163,9 @@ def main(test=None):
     norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
     stats = None
     # ckpt = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\checkpoints\good\mtnweighted_NO341_3__BS16__EP10_weighted_bce.ckpt")
-    ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\ckpt_###")
+    ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_###")
 
-    threshold = 0.8 # PREDICTION CONFIDENCE THRESHOLD
+    threshold = 0.5 # PREDICTION CONFIDENCE THRESHOLD
     ############################################################################
 
     # FIND THE CKPT
