@@ -32,13 +32,8 @@ wandb/
 *.code-workspace
 
 # DATA
-data/
-datacopy/
-oldcode.py
-1data/1raw/
-1data/2interim/
-1data/3final/*
-1data/3final/ds*
+
+1data/
 
 *.nc
 
