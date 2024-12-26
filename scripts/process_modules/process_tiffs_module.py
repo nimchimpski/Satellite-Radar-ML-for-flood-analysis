@@ -391,71 +391,71 @@ def make_float32(input_tif, file_name):
 
 # # NORMALISING
 
-# def compute_dataset_min_max(dataset, band_to_read=1):
-#     """
-#     Computes the global minimum and maximum pixel values for a dataset.
+def compute_dataset_min_max(dataset, band_to_read=1):
+    """
+    Computes the global minimum and maximum pixel values for a dataset.
     
-#     Parameters:
-#         dataset_dir (str or Path): Directory containing all input images.
+    Parameters:
+        dataset_dir (str or Path): Directory containing all input images.
     
-#     Returns:
-#         global_min (float): Global minimum pixel value.
-#         global_max (float): Global maximum pixel value.
-#     """
-#     global_min = float('inf')
-#     global_max = float('-inf')
+    Returns:
+        global_min (float): Global minimum pixel value.
+        global_max (float): Global maximum pixel value.
+    """
+    global_min = float('inf')
+    global_max = float('-inf')
     
-#     # Iterate through all TIFF files
-#     for event in dataset.iterdir(): # ITER EVENT
-#         if event.is_dir():
-#             image = list(event.rglob('*IMAGE_*.tif') )[0]
-#             try:
-#                 min, max = compute_image_min_max(image, band_to_read)
-#                 global_min = int(min(global_min, min))
-#                 global_max = int(max(global_max, max))
-#             except Exception as e:
-#                 print(f"Error processing {image}: {e}")
-#                 continue
+    # Iterate through all TIFF files
+    for event in dataset.iterdir(): # ITER EVENT
+        if event.is_dir():
+            image = list(event.rglob('*IMAGE_*.tif') )[0]
+            try:
+                min, max = compute_image_min_max(image, band_to_read)
+                global_min = int(min(global_min, min))
+                global_max = int(max(global_max, max))
+            except Exception as e:
+                print(f"Error processing {image}: {e}")
+                continue
 
-#     print(f"Global Min: {global_min}, Global Max: {global_max}")
-#     return global_min, global_max
+    print(f"Global Min: {global_min}, Global Max: {global_max}")
+    return global_min, global_max
 
-# def compute_image_min_max(image, band_to_read=1):
-#     with rasterio.open(image) as src:
-#         # Read the data as a NumPy array
-#         data = src.read(band_to_read)  # Read the first band
-#         # Update global min and max
-#         min = int(data.min())
-#         max = int(data.max())
-#         print(f"---{image.name}: Min: {data.min()}, Max: {data.max()}")
-#     return min, max
+def compute_image_min_max(image, band_to_read=1):
+    with rasterio.open(image) as src:
+        # Read the data as a NumPy array
+        data = src.read(band_to_read)  # Read the first band
+        # Update global min and max
+        min = int(data.min())
+        max = int(data.max())
+        print(f"---{image.name}: Min: {data.min()}, Max: {data.max()}")
+    return min, max
 
-# def write_min_max_to_json(min, max, output_path):
-#     """
-#     Writes min and max values for each variable to a JSON file.
+def write_min_max_to_json(min, max, output_path):
+    """
+    Writes min and max values for each variable to a JSON file.
 
-#     Args:
-#         min_max_values (dict): Dictionary containing min and max values for each variable.
-#                                Example: {"SAR_HH": {"min": 0.0, "max": 260.0}, "DEM": {"min": -10.0, "max": 3000.0}}
-#         output_path (str or Path): File path to save the JSON file.
-#     """
-#     print(f'---minmaxvalsdict= {min, max}')
-#     output_path = Path(output_path)
+    Args:
+        min_max_values (dict): Dictionary containing min and max values for each variable.
+                               Example: {"SAR_HH": {"min": 0.0, "max": 260.0}, "DEM": {"min": -10.0, "max": 3000.0}}
+        output_path (str or Path): File path to save the JSON file.
+    """
+    print(f'---minmaxvalsdict= {min, max}')
+    output_path = Path(output_path)
 
-#     # Ensure the parent directory exists
-#     output_path.parent.mkdir(parents=True, exist_ok=True)
+    # Ensure the parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
-#     # Write the dictionary to the JSON file
-#     with open(output_path, 'w') as json_file:
-#         json.dump({'hh': {'min': min, 'max' : max}}, json_file, indent=4)
+    # Write the dictionary to the JSON file
+    with open(output_path, 'w') as json_file:
+        json.dump({'hh': {'min': min, 'max' : max}}, json_file, indent=4)
     
-#     print(f"Min and max values saved to {output_path}")
+    print(f"Min and max values saved to {output_path}")
 
 
-# def read_min_max_from_json(input_path):
-#     with open(input_path, 'r') as json_file:
-#         data = json.load(json_file)
-#     return data.get("hh", {})
+def read_min_max_from_json(input_path):
+    with open(input_path, 'r') as json_file:
+        data = json.load(json_file)
+    return data.get("hh", {})
 
 # #######
 
@@ -861,15 +861,17 @@ def clip_image_to_mask_gdal(input_raster, mask_raster, output_raster):
 
     print(f"Clipped raster saved to: {output_raster}")
 
-def remove_mask_3_vals(mask_path, output_path):
+def clean_mask(mask_path, output_path):
         with rasterio.open(mask_path) as src:
             data = src.read(1)
             print(f">>> Original mask stats: min={data.min()}, max={data.max()}, unique={np.unique(data)}")
 
             meta = src.meta.copy()
-            # Replace 3s with 0s
-            data[data == 3] = 0
+            # remove numbers greater than 1
+            data[data > 1] = 0
             print(f"--- Modified mask unique values: {np.unique(data)}")
+
+            assert (data.min() == 0 and data.max() == 1) and len(np.unique(data)) == 2
             meta.update(dtype='uint8')  # Ensure uint8 format
 
             # Write the cleaned mask

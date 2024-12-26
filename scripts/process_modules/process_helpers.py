@@ -14,8 +14,9 @@ import json
 def dataset_type(da):
     if isinstance(da, xr.Dataset):
         print('---da is a dataset')
-    else:
+    elif isinstance(da, xr.DataArray):
         print('---da is a dataarray')
+
 
 # CHECKS FOR INITIAL FOLDERS
 
