@@ -148,15 +148,13 @@ class Segmentation_training_loop(pl.LightningModule):
         images, masks = images.to(self.device), masks.to(self.device)
         logits = self(images)
         loss_per_pixel = self.loss_fn(logits, masks)  
-        weights=self.compute_dynamic_weights(masks)
-        weights = weights.to('cuda')
-        assert logits.device == masks.device ==weights.device
-        weighted_loss = (loss_per_pixel * weights).mean() 
+        loss = self.dynamic_weight_chooser(masks, loss_per_pixel)
+        assert logits.device == masks.device
 
         lr = self._get_current_lr()
 
-        _, _, _, _= self.metrics_maker(logits, masks, job_type, weighted_loss, lr)
-        return weighted_loss
+        _, _, _, _= self.metrics_maker(logits, masks, job_type, loss, lr)
+        return loss
 
     def validation_step(self, batch, batch_idx):
         # print(f'+++++++++++++    validation step')
@@ -166,25 +164,23 @@ class Segmentation_training_loop(pl.LightningModule):
         images, masks = images.to(self.device), masks.to(self.device)
         logits = self(images)
         loss_per_pixel = self.loss_fn(logits, masks)
-        weights = self.compute_dynamic_weights(masks)
-        assert logits.device == masks.device ==weights.device
-        # COMPUTE PER-PIXEL LOSS
-        weighted_loss = (loss_per_pixel * weights).mean()
+        loss = self.dynamic_weight_chooser(masks, loss_per_pixel)
+        assert logits.device == masks.device
 
         # CALCULATE PREDICTIONS for METRICS (not loss)
-        preds = (torch.sigmoid(logits) > 0.5).int() #only for standard BCE loss NOT focal loss / dice loss / combo loss / weighted BCE loss
+        preds = self.pred_threshold_chooser(logits)
 
         # Check if this is the last batch and save visualization
         val_dataloader = self.trainer.val_dataloaders
         total_batches = len(val_dataloader) 
         # print(f"---Total batches: {total_batches}")
         # print info about images, preds, masks
-        if (self.current_epoch > 9 ) and (batch_idx == total_batches - 1):
+        if (self.current_epoch % 50 == 0 ) and (batch_idx < 2):
             self.log_combined_visualization( images, preds, masks)
 
-        ioumean, _, _, _ = self.metrics_maker(logits, masks, job_type,  weighted_loss)
+        ioumean, _, _, _ = self.metrics_maker(logits, masks, job_type,  loss)
 
-        return {"loss": weighted_loss, "iou": ioumean}   
+        return {"loss": loss, "iou": ioumean}   
 
     def test_step(self, batch, batch_idx):
         # print(f'+++++++++++++    test step')
@@ -194,28 +190,26 @@ class Segmentation_training_loop(pl.LightningModule):
         images, masks = images.to('cuda'), masks.to('cuda')
         logits = self(images)
         loss_per_pixel = self.loss_fn(logits, masks)
-        weights = self.compute_dynamic_weights(masks)
-        weights = weights.to('cuda')
-        assert logits.device == masks.device ==weights.device
-        weighted_loss = (loss_per_pixel * weights).mean()
+        loss = self.dynamic_weight_chooser(masks, loss_per_pixel)
+        assert logits.device == masks.device
 
         # print(f"---weighted_loss device: {weighted_loss.device}")
-        # CALCULATE PREDICTIONS
-        preds = (torch.sigmoid(logits) > 0.5).int() #only for standard BCE loss NOT focal loss / dice loss / combo loss / weighted BCE loss
+
+        preds = self.pred_threshold_chooser(logits)
 
         # CALCULATE METRICS
-        ioumean, precisionmean, recallmean, f1mean = self.metrics_maker(logits, masks, job_type, weighted_loss)
+        ioumean, precisionmean, recallmean, f1mean = self.metrics_maker(logits, masks, job_type, loss)
         # Determine if this is the last batch
         test_dataloader = self.trainer.test_dataloaders # First DataLoader
         total_batches = len(test_dataloader)
         # print(f"---Total batches: {total_batches}")
-        if batch_idx == total_batches - 2:
+        if batch_idx < 2:
             print('---batch_idx:', batch_idx)
             print(f"---Saving test outputs for batch {batch_idx}")
             self.log_combined_visualization(images, preds, masks)  # Log the last batch visualization
 
 
-        return {"iou": ioumean, "precision": precisionmean, "recall": recallmean, "f1": f1mean, "loss": weighted_loss}
+        return {"iou": ioumean, "precision": precisionmean, "recall": recallmean, "f1": f1mean, "loss": loss}
     
     
     def _get_current_lr(self):
@@ -247,6 +241,30 @@ class Segmentation_training_loop(pl.LightningModule):
         weights = weights.to('cuda')
 
         return weights
+    
+    def dynamic_weight_chooser(self, masks, loss):
+        # print(f'+++++++++++++    dynamic weight chooser')
+        # print(f'---loss_fn: {self.loss_fn}')
+        if any(x in self.loss_fn.__class__.__name__.lower() for x in ['bce', 'dice']):
+            # print(f'*********computing dynamic weights')
+            weights = self.compute_dynamic_weights(masks)
+            weights = weights.to('cuda')
+            assert masks.device == weights.device
+            return  (loss * weights).mean()
+        else:
+            # print(f'---no dynamic weights')
+            return loss.mean()
+        
+    def pred_threshold_chooser(self, logits):
+            if any(x in self.loss_fn.__class__.__name__.lower() for x in ['bce', 'jaccard', 'IOU']):
+                preds = (torch.sigmoid(logits) > 0.5).int() # BCE, 
+                # print(f'******THRESHOLDING PREDICTIONS FOR {self.loss_fn}******')
+            else:
+                preds = (torch.sigmoid(logits))
+                # print(f'******NOT THRESHOLDING PREDICTIONS for {self.loss_fn}******')
+                # # FOCAL, DICE, COMBO ):
+            return preds
+
 
     def configure_optimizers(self):
         print(f'+++++++++++++    configure optimizers')

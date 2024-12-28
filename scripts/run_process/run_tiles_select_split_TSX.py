@@ -30,7 +30,7 @@ def main(test=None):
     mask_threshold=0.3
     percent_under_thresh=0 # this * total_files = HOW MANY FILES PASS UNDER THE THRESHOLD
 
-    dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_input")
+    dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_input_###")
   
     train_ratio=0.7
     val_ratio=0.15

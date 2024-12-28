@@ -11,13 +11,6 @@ import fiona
 import json
 
 
-def dataset_type(da):
-    if isinstance(da, xr.Dataset):
-        print('---da is a dataset')
-    elif isinstance(da, xr.DataArray):
-        print('---da is a dataarray')
-
-
 # CHECKS FOR INITIAL FOLDERS
 
 def check_single_input_filetype(folder,  title, fsuffix):
@@ -195,43 +188,21 @@ def process_raster_minmax(image_path, output_path, glob_max, threshold=0.8):
     write_raster(output_path, data, metadata)
     return scale_factor
 
+# DATAARRAY TESTS
+
+def dataset_type(da):
+    if isinstance(da, xr.Dataset):
+        print('---da is a dataset')
+    elif isinstance(da, xr.DataArray):
+        print('---da is a dataarray')
+    else:
+        print('---da is not a dataset or dataarray')
 
 
 
-
-
-
-
-
-def write_min_max_to_json(min, max, output_path):
-    """
-    Writes min and max values for each variable to a JSON file.
-
-    Args:
-        min_max_values (dict): Dictionary containing min and max values for each variable.
-                               Example: {"SAR_HH": {"min": 0.0, "max": 260.0}, "DEM": {"min": -10.0, "max": 3000.0}}
-        output_path (str or Path): File path to save the JSON file.
-    """
-    print(f'---minmaxvalsdict= {min, max}')
-    output_path = Path(output_path)
-
-    # Ensure the parent directory exists
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-
-    # Write the dictionary to the JSON file
-    with open(output_path, 'w') as json_file:
-        json.dump({'hh': {'min': min, 'max' : max}}, json_file, indent=4)
-    
-    print(f"Min and max values saved to {output_path}")
-
-
-def read_min_max_from_json(input_path):
-    with open(input_path, 'r') as json_file:
-        data = json.load(json_file)
-    return data.get("hh", {})
-
-#######
-
+def open_dataarray(nc):
+    da =xr.open_dataarray(nc)
+    return da
 
 def print_dataarray_info(da):
     print('-----------PRINT DATARAY INFO--------------') 

@@ -391,35 +391,6 @@ def make_float32(input_tif, file_name):
 
 # # NORMALISING
 
-def compute_dataset_min_max(dataset, band_to_read=1):
-    """
-    Computes the global minimum and maximum pixel values for a dataset.
-    
-    Parameters:
-        dataset_dir (str or Path): Directory containing all input images.
-    
-    Returns:
-        global_min (float): Global minimum pixel value.
-        global_max (float): Global maximum pixel value.
-    """
-    global_min = float('inf')
-    global_max = float('-inf')
-    
-    # Iterate through all TIFF files
-    for event in dataset.iterdir(): # ITER EVENT
-        if event.is_dir():
-            image = list(event.rglob('*IMAGE_*.tif') )[0]
-            try:
-                min, max = compute_image_min_max(image, band_to_read)
-                global_min = int(min(global_min, min))
-                global_max = int(max(global_max, max))
-            except Exception as e:
-                print(f"Error processing {image}: {e}")
-                continue
-
-    print(f"Global Min: {global_min}, Global Max: {global_max}")
-    return global_min, global_max
-
 def compute_image_min_max(image, band_to_read=1):
     with rasterio.open(image) as src:
         # Read the data as a NumPy array
@@ -456,6 +427,7 @@ def read_min_max_from_json(input_path):
     with open(input_path, 'r') as json_file:
         data = json.load(json_file)
     return data.get("hh", {})
+
 
 # #######
 

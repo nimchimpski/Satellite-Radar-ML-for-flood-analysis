@@ -66,9 +66,11 @@ def combine_datasets(dataset1_path, dataset2_path, output_path):
 
 def main():
     ##################################
-    combine_folder = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\to_combine")
-    output_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_input")
-    output_path.mkdir(parents=True, exist_ok=True)
+    combine_folder = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\to_combine_###")
+    output_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_input_###")
+    if not (combine_folder.exists()) or not (combine_folder.is_dir()):
+        print(f" folder {combine_folder} does not exist.")
+        return
     ##################################
 
     # get folders in the combine folder
@@ -81,5 +83,5 @@ def main():
     output_path = output_path
     )
 
-if main == '__main__':
+if __name__ == "__main__":
     main()

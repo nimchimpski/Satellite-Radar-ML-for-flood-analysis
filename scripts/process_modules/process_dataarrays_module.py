@@ -198,25 +198,21 @@ def log_clip_minmaxnorm(tile, global_min, global_max):
 
 
 
-def calculate_global_min_max_nc(datacube, layer_name, percentile_min=2, percentile_max=98):
+def get_dataarray_minmax(datacube, layer_name):
     """
-    Calculate global min and max percentiles for dataset normalization from xarray.DataArray.
-    Args:
-        datacube (str): Path to the NetCDF file or DataArray.
-        layer_name (str): Name of the layer to use for normalization (e.g., "HH").
-        percentile_min (int): Lower percentile for clipping.
-        percentile_max (int): Upper percentile for clipping.
+    FOR DATARRAY!
     Returns:
         tuple: (global_min, global_max)
     """
-    print('+++in calculate_global_min_max_nc')
+    # print('+++in calculate_global_min_max_nc')
     # print('---layer_name= ', layer_name)
     
-    # Open dataset
-    ds = xr.open_dataset(datacube)
+    da = xr.open_dataarray(datacube)
+    # print('---da= ', da)
+    # ds = xr.open_dataset(datacube)
     # print('---ds= ', ds)
-    var = list(ds.data_vars)[0]
-    da = ds[var]
+    # var = list(ds.data_vars)[0]
+    # da = ds[var]
 
     # print('---da layers= ', da.coords["layer"].values)
     
@@ -231,49 +227,39 @@ def calculate_global_min_max_nc(datacube, layer_name, percentile_min=2, percenti
     # Flatten pixel values
     all_pixel_values = layer_data.values.flatten()  # Access NumPy array and flatten
     # print(f"---Flattened pixel values, total: {len(all_pixel_values)}")
+    # CALCULATE TRUE MIN MAX
+    local_min = np.min(all_pixel_values)
+    local_max = np.max(all_pixel_values)
+    # print(f"Calculated global min={global_min}, max={global_max}")
     
-    # Compute percentiles
-    global_min = np.percentile(all_pixel_values, percentile_min)
-    global_max = np.percentile(all_pixel_values, percentile_max)
-    print(f"Calculated global min={global_min}, max={global_max}")
-    
-    return global_min, global_max
+    return local_min, local_max
 
 
-
-def get_global_min_max(data_path, layer_name, min_max_file=None, percentile_min=2, percentile_max=98):
+def compute_dataset_minmax(dataset, layer_name):
     """
-    Calculate or load global min and max for dataset normalization.
-    Args:
-        data_path (str): Path to the dataset directory.
-        layer_name (str): Layer to use for normalization.
-        min_max_file (str): Path to the file storing min-max values.
-        percentile_min (int): Lower percentile for clipping.
-        percentile_max (int): Upper percentile for clipping.
-    Returns:
-        tuple: (global_min, global_max)
-    """
-    # print('+++in get_global_min_max')
-    # print('---data_path= ', data_path)
-    # print('---layer_name= ', layer_name)
-    # Check if the file exists
-    if min_max_file.exists():
-        print(f"---Loading global min-max from {min_max_file}")
-        # Load existing min-max values
-        with open(min_max_file, "r") as f:
-            global_min, global_max = map(float, f.readline().split(","))
-        # print(f"Loaded global min-max from {min_max_file}: Min={global_min}, Max={global_max}")
-    else:
-        # Calculate min-max values
-        global_min, global_max = calculate_global_min_max_nc(data_path, layer_name, percentile_min, percentile_max)
-        # Save to file
-        with open(min_max_file, "w") as f:
-            f.write(f"{global_min},{global_max}")
-        # print(f"Calculated and saved global min-max: Min={global_min}, Max={global_max}")
-    
 
-    stats = (global_min, global_max)
-    return stats
+    """
+    print(f'+++in compute_dataset_min_max fn')
+    glob_min = float('inf')
+    glob_max = float('-inf')
+    print(f'---global min {glob_min}, global max {glob_max}---')
+
+    events = list(dataset.iterdir())
+    for event in events:
+        cubes = list(event.rglob('*.nc'))
+        assert len(cubes) > 0, f"No cubes found in {event}" 
+        cube = cubes[0]
+        lmin, lmax = get_dataarray_minmax(cube, layer_name)
+        glob_min = min(glob_min, lmin)   
+        glob_max = max(glob_max, lmax)
+        print(f"Global min: {glob_min}, max: {glob_max}")
+            
+
+    print(f"Global Min: {glob_min}, Global Max: {glob_max}")
+    return int(glob_min), int(glob_max)
+
+
+
 
 def update_min_max_csv(existing_file, new_values, output_file=None):
     """
@@ -302,6 +288,34 @@ def update_min_max_csv(existing_file, new_values, output_file=None):
         output_file = existing_file
     df.to_csv(output_file, index=False)
     print(f"Updated min-max saved to {output_file}")
+
+
+def write_min_max_to_json(min, max, output_path):
+    """
+    Writes min and max values for each variable to a JSON file.
+
+    Args:
+        min_max_values (dict): Dictionary containing min and max values for each variable.
+                               Example: {"SAR_HH": {"min": 0.0, "max": 260.0}, "DEM": {"min": -10.0, "max": 3000.0}}
+        output_path (str or Path): File path to save the JSON file.
+    """
+    print(f'---minmaxvalsdict= {min, max}')
+    output_path = Path(output_path)
+
+    # Ensure the parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write the dictionary to the JSON file
+    with open(output_path, 'w') as json_file:
+        json.dump({'hh': {'min': min, 'max' : max}}, json_file, indent=4)
+    
+    print(f"Min and max values saved to {output_path}")
+
+
+def read_min_max_from_json(input_path):
+    with open(input_path, 'r') as json_file:
+        data = json.load(json_file)
+    return data.get("hh", {})
 
 
 
@@ -1022,9 +1036,10 @@ def has_no_mask(tile):
 def has_no_mask_pixels(da):
 
     mask_values = da.sel(layer='mask').values
-    max = mask_values.max().item()
-    if max != 1:
-        # print(f"---Mask layer contains no valid pixels (max value: {max})")
+    max_val = mask_values.max().item()
+
+    tolerance = 1e-6
+    if not np.isclose(max_val, 1.0, atol=tolerance):
         return True
     return False
 

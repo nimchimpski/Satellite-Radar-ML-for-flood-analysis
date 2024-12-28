@@ -97,17 +97,19 @@ def handle_interrupt(signal, frame):
     sys.exit(0)
 
 
-def loss_chooser(loss_name):
+def loss_chooser(loss_name, alpha=0.25, gamma=2.0):
     """
     MUST ADRESS:
     CLASS IMBALANCE
     HIGH RECALL
     BOUNDARY ACCURACY
     """
+    if 'focal' in loss_name:
+        print(f'---alpha: {alpha}, gamma: {gamma}---')  
     torch_bce = torch.nn.BCEWithLogitsLoss(reduction='none')
     smp_bce =  smp.losses.SoftBCEWithLogitsLoss()
     dice = smp.losses.DiceLoss(mode='binary')
-    focal = smp.losses.FocalLoss(mode='binary', alpha=0.25, gamma=2.0)
+    focal = smp.losses.FocalLoss(mode='binary', alpha=alpha, gamma=gamma)
     # Adjust alpha if one class dominates or struggles.
     # Adjust gamma to fine-tune focus on hard examples.
 
@@ -115,6 +117,10 @@ def loss_chooser(loss_name):
         return torch_bce        
     if loss_name == "smp_bce":
         return smp_bce
+    if loss_name == "focal": # no weighting
+        return focal
+    if loss_name == "dice":
+        return dice
     # if loss_name == 'bce+dice':
     #     def combined_loss(y_pred, y_true):
     #         bce_loss = bce(y_pred, y_true)
@@ -128,17 +134,16 @@ def loss_chooser(loss_name):
     # for weighted ex. loss = 0.4 * bce + 0.6 * dice
 
 
-    elif loss_name == "tversky": # priorotises recall, USE IF ITS LOW
+    elif loss_name == "tversky": # no weighting
         return smp.losses.TverskyLoss()
     elif loss_name == "jakard":
         return smp.losses.JaccardLoss() # penalize fp and fn. use with bce
-    elif loss_name == "focal":
-        return smp.losses.FocalLoss(mode='binary', alpha=0.25, gamma=2.0)
+
     else:
         raise ValueError(f"Unknown loss: {loss_name}")
 
 
-def wandb_initialization(job_type, repo_path, project,  dataset_name, dataset_version, train_list, val_list, test_list=None):
+def wandb_initialization(job_type, repo_path, project,  dataset_name, dataset_version, train_list, val_list, test_list, wandb_config):
         name='train'
         mode='online'
         if job_type == "reproduce":
@@ -146,15 +151,16 @@ def wandb_initialization(job_type, repo_path, project,  dataset_name, dataset_ve
             artifact_dataset_name = f'unosat_emergencymapping-United Nations Satellite Centre/{project}/{dataset_name}/ {dataset_name}'
         if job_type == "test":
             name = 'test'
-        if job_type == "debog":
+        if job_type == "debug":
             mode='disabled'
           
         with wandb.init(project=project, 
                         job_type=job_type, 
                         name=name, 
+                        config=wandb_config,
                         mode=mode,
                         dir=repo_path / "4results", 
-                        settings=wandb.Settings(program=__file__)
+                        # settings=wandb.Settings(program=__file__)
                         ) as run:
                 if job_type != 'reproduce':
                     # ARTIFACT CREATION
@@ -181,3 +187,18 @@ def wandb_initialization(job_type, repo_path, project,  dataset_name, dataset_ve
                     val_list = Path(metadata_data['val_list'])    
             
                 
+def job_type_selector(job_type):
+
+    train, test,  debug = False, False, False
+
+    if job_type == "train":
+        train = True
+    elif job_type == "test":
+        test = True
+    elif job_type == "debug":
+        debug = True
+
+    return train, test, debug
+
+    
+

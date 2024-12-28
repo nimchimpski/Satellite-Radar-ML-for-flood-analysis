@@ -8,9 +8,9 @@ import os
 import click
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 
-from scripts.process_modules.process_tiffs_module import create_event_datacube_TSX, remove_mask_3_vals, compute_dataset_min_max, reproject_to_4326_fixpx_gdal, make_float32,  create_extent_from_mask, write_min_max_to_json, clip_image_to_mask_gdal, read_min_max_from_json
+from scripts.process_modules.process_tiffs_module import create_event_datacube_TSX, clean_mask, compute_dataset_min_max, reproject_to_4326_fixpx_gdal, make_float32,  create_extent_from_mask, write_min_max_to_json, clip_image_to_mask_gdal, read_min_max_from_json
 
-from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr, calculate_global_min_max_nc, get_global_min_max
+from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr, compute_dataset_minmax
 from scripts.process_modules.process_helpers import  print_tiff_info_TSX
 
 start=time.time()
@@ -21,47 +21,31 @@ start=time.time()
 def main(test=None):
 
     ############################################################################
-    data_root = Path(r'C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_all_processing')
+    data_root = Path(r"Y:\1NEW_DATA\1data\2interim\ALL TSX PROCESSING")
+
     if test:
         print('>>>TEST MODE<<<')
         dataset =  data_root / 'TSX_TO_PROCESS_TEST' 
     else:
         print('>>>FULL DATASET MODE<<<')
         dataset =  data_root / 'TSX_TO_PROCESS_###' 
+        # dataset=Path(r"Y:\1NEW_DATA\1data\2interim\TSX aa datacubes") 
+        # dataset = Path(r'Y:\1NEW_DATA\1data\2interim\TSX aa datacubes\ok')
+    make_tifs = 0
+    make_datacubes = 0
     get_minmax = 0
-    make_tifs = 1
-    make_datacubes = 1
     make_norm_tiles = 1
     norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
-    minmax_path = dataset / 'global_min_max.json'
+    minmax_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\global_minmax_###\global_minmax.json")
     percent_non_flood = 100
     ############################################################################
-
-
-
-    print(f'>>>make_tifs= {make_tifs==1} \n>>>make_datacubes= {make_datacubes==1} \n>>>make_tiles= {make_norm_tiles==1}')
-    # GET THE MINMAX FROM ALL THE IMAGES
-    
-    if get_minmax:
-        if minmax_path.exists():
-            print(f'>>>minmax file exists: {minmax_path}')
-            # shutil.rmtree(minmax_path)
-        else:
-            print(f'>>>minmax file does not exist: getting vals')
-            min, max = compute_dataset_min_max(dataset, band_to_read=1)
-            write_min_max_to_json(min,max, minmax_path)
-
-    min_max_data = read_min_max_from_json(minmax_path)
-    print(f'>>>json minmax= {min_max_data}')
-    print('>>>data:', min_max_data['min'])
-    print('>>>data:', min_max_data['max'])
-    minmax = (min_max_data['min'], min_max_data['max'])
+    print(f'>>>make_tifs= {make_tifs==1} \n>>>make_datacubes= {make_datacubes==1} \n>>>get minmax= {get_minmax==1} \n>>>make_tiles= {make_norm_tiles==1}')
 
     # ITERATE OVER THE DATASET
     # for folder in dataset.iterdir(): # ITER ARCHIVE AND CURRENT
-    if True:
+    if make_tifs or make_datacubes:
         # print(f'################### FOLDER={folder.name}  ###################')
-        for event in dataset.iterdir(): # ITER EVENT
+        for event in tqdm(dataset.iterdir(), desc='events') : # ITER EVENT
             if event.is_dir():
                 print(f'################### EVENT={event.name}  ###################')
 
@@ -131,13 +115,14 @@ def main(test=None):
                         print(f'---resampleAlg= {resampleAlg}')
                         reproject_to_4326_fixpx_gdal(i, j, resampleAlg, px_size=0.0001)
 
-                    print_tiff_info_TSX(reproj_image, reproj_mask)
+                    print_tiff_info_TSX(reproj_image)
+                    print_tiff_info_TSX(reproj_mask)
 
                     # CLEAN THE MASK
                     print('\n>>>>>>>>>>>>>>>> clean mask >>>>>>>>>>>>>>>>>')
                     cleaned_mask = extract_folder / f'{mask_code}_cleaned_mask.tif'
-                    remove_mask_3_vals(reproj_mask, cleaned_mask)
-
+                    clean_mask(reproj_mask, cleaned_mask)
+                    
                     # print('>>>TIFF CHECK 2')
                     # print_tiff_info_TSX(image=reproj_image, mask=cleaned_mask)
 
@@ -164,13 +149,33 @@ def main(test=None):
                     final_extent = extract_folder / f'{mask_code}_final_extent.tif'
                     make_float32(reproj_extent, final_extent)
 
-                    print_tiff_info_TSX(image=final_image, mask=final_mask) 
+                    print_tiff_info_TSX(final_image) 
+                    print_tiff_info_TSX(final_mask) 
 
                 # CREATE AN EVENT DATA CUBE
                 if make_datacubes:
                     print('\n>>>>>>>>>>>>>>>> create 1 event datacube >>>>>>>>>>>>>>>>>')
                     create_event_datacube_TSX(event, mask_code)
 
+    # CALCULATE MIN MAX
+    if get_minmax:
+        if minmax_path.exists():
+            print(f'>>>minmax file exists: {minmax_path}')
+            # shutil.rmtree(minmax_path)
+        else:
+            print(f'>>>minmax file does not exist: getting vals')
+            glob_min, glob_max = compute_dataset_minmax(dataset, layer_name='hh')
+            print(f'>>>new gmin= {glob_min} gmax= {glob_max}')
+            write_min_max_to_json(glob_min,glob_max, minmax_path)
+        # CHECK THE NEW JSON
+    min_max_data = read_min_max_from_json(minmax_path)
+    print(f'>>>from json minmax= {min_max_data}')
+    print('>>>data min:', min_max_data['min'])
+    print('>>>data: max', min_max_data['max'])
+    minmax = (min_max_data['min'], min_max_data['max'])
+    print(f'>>>minmax= {minmax}') 
+
+    # MAKE NORMALIZED TILES
     if make_norm_tiles:
         total_num_tiles = 0
         total_saved = 0
@@ -196,9 +201,7 @@ def main(test=None):
                 shutil.rmtree(save_tiles_path)
             save_tiles_path.mkdir(exist_ok=True, parents=True)
 
-               # CALCULATE THE STATISTICS
-            # stats = get_global_min_max(cube, 'hh', min_max_file= min_max_file)
-            print(f'>>>stats= {minmax}') 
+
             print(f"\n################### tiling ###################")
             # DO THE TILING AND GET THE STATISTICS
             num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask_px, num_skip_nomask_pixels, num_failed_norm , num_not_256, num_px_outside_extent= tile_datacube_rxr(cube, save_tiles_path, tile_size=256, stride=256, norm_func=norm_func, stats=minmax, percent_non_flood=percent_non_flood, inference=False)
@@ -234,7 +237,7 @@ def main(test=None):
         print(f'>>>num failed normalization : {total_failed_norm}')
         print(f'>>>num not 256: {total_num_not_256}')
         print(f'>>>num px outside extent: {total_num_px_outside_extent}')
-        print(f'>>>all tiles tally: {total_num_tiles == total_saved + total_has_nans + total_novalid_layer + total_novalid_pixels + total_skip_nomask_pixels + total_failed_norm + num_not_256 + total_num_px_outside_extent}')
+        print(f'>>>all tiles tally: {total_num_tiles == total_saved + total_has_nans + total_novalid_layer + total_novalid_pixels + total_skip_nomask_pixels + total_failed_norm + total_num_not_256 + total_num_px_outside_extent}')
 
     end = time.time()
     # time taken in minutes to 2 decimal places

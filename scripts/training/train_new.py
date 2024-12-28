@@ -39,46 +39,66 @@ from datetime import datetime
 
 from scripts.train_modules.train_helpers import *
 from scripts.train_modules.train_classes import  UnetModel,   Segmentation_training_loop 
-from scripts.train_modules.train_functions import handle_interrupt, loss_chooser, wandb_initialization
-#########################################################################
+from scripts.train_modules.train_functions import handle_interrupt, loss_chooser, wandb_initialization, job_type_selector
 
+#.............................................................
 load_dotenv()
 os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
 
 @click.command()
-@click.option('--train', is_flag=True, show_default=False)
-@click.option('--test', is_flag=True, show_default=False)
-@click.option('--reproduce', is_flag=True, show_default=False)
-@click.option('--debug', is_flag=True, show_default=False)
-#########################################################################
+@click.option('--train', is_flag=True, help="Train the model")
+@click.option('--test', is_flag=True, help="Test the model")
 
-def main(train=None, test=None, reproduce=None, debug=None):
+def main(train, test):
     '''
     CONDA ENVIRONMENT = 'floodenv2"
     expects that the data is in tile_root, with 3 tile_lists for train, test and val
     ***NAVIGATE IN TERMINAL TO THE UNMAPPED ADRESS TO RUN THIS SCRIPT.***
     cd //cerndata100/AI_files/users/ai_flood_service/1new_data/3scripts/training
     '''
-    print('>>>in main')
-    start = time.time()
-  
+    if train and test:
+        raise click.UsageError("You can only specify one of --train or --test.")
+    elif not (train or test):
+        while True:
+            user_input = input("Choose an option (--train or --test): ").strip().lower()
+            if user_input == "--train":
+                click.echo("Training the model...")
+                break
+            elif user_input == "--test":
+                click.echo("Testing the model...")
+                break
+            else:
+                click.echo("Invalid input. Please choose '--train' or '--test'.")
+    else:
+        # Handle valid flag input
+        if train:
+            click.echo("Training the model...")
+            job_type = 'train'
+        elif test:
+            click.echo("Testing the model...")
+            job_type = 'test'
 
+    start = time.time()
+
+    # train, test, debug = job_type_selector(job_type)
+    print(f'>>>train = {train}, test = {test}')
+  
     timestamp = datetime.now().strftime("%y%m%d_%H%M")
-    print('>>>start time = ', start)
-    print('>>>timestamp = ', timestamp)
     
     signal.signal(signal.SIGINT, handle_interrupt)
     torch.set_float32_matmul_precision('medium')  # TODO try high
     pl.seed_everything(42, workers=True, verbose = False)
-    #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+ 
+    ##########################################################################
     repo_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2")
-    dataset_path  = repo_path / "1data" / "3final" / "train_input"
-    test_ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\ckpt_###")
+    dataset_path  = repo_path / "1data" / "3final" / "train_INPUT"
+    test_ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_INPUT")
     save_path = repo_path / "4results"
     project = "TSX"    
     subset_fraction = 1 # 1 = full dataset
     bs = 16
-    max_epoch = 100
+    max_epoch = 200
     # DATALOADER PARAMS
     num_workers = 8
     # WANDB PARAMS
@@ -90,15 +110,22 @@ def main(train=None, test=None, reproduce=None, debug=None):
     in_channels = 1
     DEVRUN = 0
     # metric_threshold = 0.9
-    loss =  "focal" # 'smp_bce' # bce+dice' # 'focal+dice' # 'tversky' # 'jakard' # 'focal'
-    #+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+    user_loss =  'focal' # "focal" # bce+dice' # 'focal+dice' # 'tversky' # 'jakard' # 'focal'
+    focal_alpha = 0.75
+    focal_gamma = 2.0
+    ##########################################################################
+
     # CHECK ONLY 1 INPUT FOLDER - CHECK NAME IS CORRECT
     input_folders = [i for i in dataset_path.iterdir()]
     assert len(input_folders) == 1
     dataset_name = input_folders[0].name
     dataset_path = dataset_path / dataset_name
     print(f'>>>RUN NAME WILL INCLUDE (AS DS): = {dataset_name}')
-    run_name = f'{dataset_name}__BS{bs}__EP{max_epoch}_{loss}_{timestamp}'
+    if user_loss == 'focal':
+        loss_desc = f'{user_loss}_{focal_alpha}_{focal_gamma}'
+    else:
+        loss_desc = user_loss
+    run_name = f'{job_type}_{dataset_name}_BS{bs}_EP{max_epoch}_{loss_desc}_{timestamp}'
     # ENSURE CORRECT CKPT IN FLODER !!!
     if test:
         ckpt_to_test = next(test_ckpt_path.rglob("*.ckpt"), None)
@@ -118,32 +145,20 @@ def main(train=None, test=None, reproduce=None, debug=None):
     dataset_version = run_name
     torch.cuda.empty_cache()
 
-    if reproduce:
-        job_type = "reproduce"
 
-    wandb_logger = WandbLogger(
-    project=project,
-    name=run_name,
-    )
-    logger = wandb_logger
-    print(f'>>>logger = {logger}')
     train_list = dataset_path / "train.txt" 
     val_list  = dataset_path / "val.txt" 
     test_list = dataset_path / "test.txt"
 
     if train:
-        job_type = "train"
         print('>>>-start train or eval')
         train_dl = create_subset(train_list, dataset_path, 'train' , subset_fraction, inputs, bs, num_workers, persistent_workers)
         val_dl = create_subset(val_list, dataset_path, 'val',  subset_fraction, inputs, bs, num_workers, persistent_workers) 
-    if debug:
-        print('>>>-start debug')
-        logger = None
-        job_type = "debug"
+    # if debug:
+    #     print('>>>-start debug')
+    #     logger = None
     if test:
         print(f'>>>-start test with {ckpt_to_test}')
-
-        job_type = "test"
         test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs, num_workers, persistent_workers) 
 
         # DEBUG
@@ -159,16 +174,35 @@ def main(train=None, test=None, reproduce=None, debug=None):
         #     print(f">>>///Model input shape: {model_input.shape}, Mask shape: {mask.shape}")
         #     break  
  
-    loss_fn = loss_chooser(loss)
+    loss_fn = loss_chooser(user_loss, focal_alpha, focal_gamma)
     print(f'>>>loss_fn = {loss_fn}')
 
-    wandb_initialization(job_type, repo_path, project,  dataset_name, dataset_version, train_list,  val_list, test_list,)
+    # Logging additional run metadata (e.g., dataset info)
+    # wandb_logger.experiment.config.update({ 
+    #     "dataset_name": dataset_name,
+    #     "max_epoch": max_epoch,
+    #     "subset_fraction": subset_fraction,
+    #     "devrun": DEVRUN,
+    #     "offline_mode": WBOFFLINE,  
+    # })
+
+    wandb_config = { 
+        "dataset_name": dataset_name,
+        "subset_fraction": subset_fraction,
+    }
+
+    wandb_initialization(job_type, repo_path, project,  dataset_name, dataset_version, train_list,  val_list, test_list, wandb_config)
+
+    wandb_logger = WandbLogger(
+    project=project,
+    name=run_name,
+    )
 
     # MAKE MODEL
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED)
     # print('>>>model =', model)
     # Check the first convolution layer
-    print(model.model.encoder.conv1)
+    # print(model.model.encoder.conv1)
 
     # dummy_input = torch.randn(16, 1, 256, 256).to('cuda')  # Batch size 16, 1 input channel
     # with torch.no_grad():
@@ -180,18 +214,10 @@ def main(train=None, test=None, reproduce=None, debug=None):
 
     print(f'>>>RUN NAME= {run_name}')
 
-    # Logging additional run metadata (e.g., dataset info)
-    wandb_logger.experiment.config.update({ 
-        "dataset_name": dataset_name,
-        "max_epoch": max_epoch,
-        "subset_fraction": subset_fraction,
-        "devrun": DEVRUN,
-        "offline_mode": WBOFFLINE,  
-    })
 
-    ckpt_dir = repo_path / "4results" / "checkpoints"
+
+    ckpt_dir = repo_path / "5checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-    print('>>>ckpt exists = ', ckpt_dir.exists())
          
     checkpoint_callback = ModelCheckpoint(
         dirpath=ckpt_dir,  # Save checkpoints locally in this directory
@@ -202,9 +228,8 @@ def main(train=None, test=None, reproduce=None, debug=None):
         save_top_k=1                   # Only keep the best model
     )
     # print(f'>>>///model location: {device}')
-    print('>>>trainer')
     trainer= pl.Trainer(
-        logger=logger,
+        logger=wandb_logger,
         log_every_n_steps=LOGSTEPS,
         max_epochs=max_epoch,
         accelerator='gpu', 
@@ -224,7 +249,7 @@ def main(train=None, test=None, reproduce=None, debug=None):
 
         best_val_loss = trainer.callback_metrics.get("val_loss", None)
         if best_val_loss is not None:
-            wandb_logger.experiment.summary["final_val_loss"] = float(best_val_loss)
+            wandb_logger.experiment.summary["best_val_loss"] = float(best_val_loss)
 
         # RUN A TRAINER.TEST HERE FOR A SIMPLE ONE RUN TRAIN/TEST CYCLE        
         # trainer.test(model=training_loop, dataloaders=test_dl, ckpt_path='best')
@@ -289,11 +314,11 @@ def main(train=None, test=None, reproduce=None, debug=None):
     model = model.to('cuda')
     end = time.time()
     run_time = f'{(end - start)/60:.2f}'
-    if wandb.run:
-        wandb_logger.experiment.config.update({ 
-        "run_time": run_time,
-    })
-        wandb.finish()  # Properly finish the W&B run
+    # if wandb.run:
+    #     wandb_logger.experiment.config.update({ 
+    #     "run_time": run_time,
+    # })
+    wandb.finish()  # Properly finish the W&B run
     torch.cuda.empty_cache()
     # end timing
     
