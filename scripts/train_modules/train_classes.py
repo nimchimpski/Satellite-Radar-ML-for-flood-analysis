@@ -17,6 +17,7 @@ from surface_distance.metrics import compute_surface_distances, compute_surface_
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 from PIL import Image
+from sklearn.metrics import auc
 import torch
 import torch.nn as nn
 import rasterio
@@ -116,7 +117,7 @@ class FloodDataset(Dataset):
 
 class Segmentation_training_loop(pl.LightningModule):
 
-    def __init__(self, model, loss_fn, save_path):
+    def __init__(self, model, loss_fn, save_path, user_loss):
         super().__init__()
         self.model = model
         self.loss_fn = loss_fn
@@ -124,6 +125,8 @@ class Segmentation_training_loop(pl.LightningModule):
         self.save_hyperparameters(ignore = ['model', 'loss_fn', 'save_path'])   
         # Container to store validation results
         self.validation_outputs = []
+        self.dynamic_weights = False
+        self.user_loss = user_loss
 
         print(f'---loss_fn: {loss_fn}')
 
@@ -148,12 +151,12 @@ class Segmentation_training_loop(pl.LightningModule):
         images, masks = images.to(self.device), masks.to(self.device)
         logits = self(images)
         loss_per_pixel = self.loss_fn(logits, masks)  
-        loss = self.dynamic_weight_chooser(masks, loss_per_pixel)
+        loss, dynamic_weights = self.dynamic_weight_chooser(masks, loss_per_pixel, self.user_loss)
         assert logits.device == masks.device
 
         lr = self._get_current_lr()
 
-        _, _, _, _= self.metrics_maker(logits, masks, job_type, loss, lr)
+        _, _, _, _, _= self.metrics_maker(logits, masks, job_type, loss, self.user_loss, lr)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -164,23 +167,32 @@ class Segmentation_training_loop(pl.LightningModule):
         images, masks = images.to(self.device), masks.to(self.device)
         logits = self(images)
         loss_per_pixel = self.loss_fn(logits, masks)
-        loss = self.dynamic_weight_chooser(masks, loss_per_pixel)
+        loss, dynamic_weights = self.dynamic_weight_chooser(masks, loss_per_pixel, self.user_loss)
         assert logits.device == masks.device
 
         # CALCULATE PREDICTIONS for METRICS (not loss)
-        preds = self.pred_threshold_chooser(logits)
+
 
         # Check if this is the last batch and save visualization
         val_dataloader = self.trainer.val_dataloaders
         total_batches = len(val_dataloader) 
         # print(f"---Total batches: {total_batches}")
         # print info about images, preds, masks
-        if (self.current_epoch % 50 == 0 ) and (batch_idx < 2):
-            self.log_combined_visualization( images, preds, masks)
+        # if (self.current_epoch % 50 == 0 ) and (batch_idx < 2):
+        #     self.log_combined_visualization( images, preds, masks)
 
-        ioumean, _, _, _ = self.metrics_maker(logits, masks, job_type,  loss)
+        if self.current_epoch == self.trainer.max_epochs - 1 and batch_idx < 2:
+            # This is the last epoch
+            self.log_combined_visualization(images, logits, masks, self.user_loss)
+            if batch_idx == 1:
+                print(f'---used dynamic weights = {dynamic_weights}')
+        # Save images if this is the best-performing model
+        if loss == self.trainer.checkpoint_callback.best_model_score and batch_idx < 2:
+            self.log_combined_visualization(images, logits, masks, self.user_loss)
 
-        return {"loss": loss, "iou": ioumean}   
+        ioumean, _, recall, _ , auc_pr = self.metrics_maker(logits, masks, job_type,  loss, self.user_loss )
+
+        return {"loss": loss, "recall": recall, "iou": ioumean, 'auc_pr':auc_pr}   
 
     def test_step(self, batch, batch_idx):
         # print(f'+++++++++++++    test step')
@@ -190,15 +202,15 @@ class Segmentation_training_loop(pl.LightningModule):
         images, masks = images.to('cuda'), masks.to('cuda')
         logits = self(images)
         loss_per_pixel = self.loss_fn(logits, masks)
-        loss = self.dynamic_weight_chooser(masks, loss_per_pixel)
+        loss, dynamic_weights = self.dynamic_weight_chooser(masks, loss_per_pixel, self.user_loss)
         assert logits.device == masks.device
 
         # print(f"---weighted_loss device: {weighted_loss.device}")
 
-        preds = self.pred_threshold_chooser(logits)
+        # preds = (torch.sigmoid(logits) > 0.5).int() # BCE, 
 
         # CALCULATE METRICS
-        ioumean, precisionmean, recallmean, f1mean = self.metrics_maker(logits, masks, job_type, loss)
+        ioumean, precisionmean, recallmean, f1mean, auc_pr = self.metrics_maker(logits, masks, job_type, loss, self.user_loss)
         # Determine if this is the last batch
         test_dataloader = self.trainer.test_dataloaders # First DataLoader
         total_batches = len(test_dataloader)
@@ -206,10 +218,13 @@ class Segmentation_training_loop(pl.LightningModule):
         if batch_idx < 2:
             print('---batch_idx:', batch_idx)
             print(f"---Saving test outputs for batch {batch_idx}")
-            self.log_combined_visualization(images, preds, masks)  # Log the last batch visualization
+            self.log_combined_visualization(images, logits, masks, self.user_loss)  # Log the last batch visualization
+            if batch_idx == 1:
+                print(f'---used dynamic weights = {dynamic_weights}')
 
 
-        return {"iou": ioumean, "precision": precisionmean, "recall": recallmean, "f1": f1mean, "loss": loss}
+
+        return {"iou": ioumean, "precision": precisionmean, "recall": recallmean, "f1": f1mean, "loss": loss,'auc_pr':auc_pr}
     
     
     def _get_current_lr(self):
@@ -242,29 +257,29 @@ class Segmentation_training_loop(pl.LightningModule):
 
         return weights
     
-    def dynamic_weight_chooser(self, masks, loss):
+    def dynamic_weight_chooser(self, masks, loss, user_loss):
         # print(f'+++++++++++++    dynamic weight chooser')
         # print(f'---loss_fn: {self.loss_fn}')
-        if any(x in self.loss_fn.__class__.__name__.lower() for x in ['bce', 'dice']):
+        if user_loss in ['smp_bce', 'bce_dice']:
+
             # print(f'*********computing dynamic weights')
             weights = self.compute_dynamic_weights(masks)
             weights = weights.to('cuda')
             assert masks.device == weights.device
-            return  (loss * weights).mean()
+            dynamic = True
+            return  (loss * weights).mean(), dynamic
         else:
             # print(f'---no dynamic weights')
-            return loss.mean()
+            dynamic = False
+            return loss.mean(), dynamic 
         
-    def pred_threshold_chooser(self, logits):
-            if any(x in self.loss_fn.__class__.__name__.lower() for x in ['bce', 'jaccard', 'IOU']):
-                preds = (torch.sigmoid(logits) > 0.5).int() # BCE, 
-                # print(f'******THRESHOLDING PREDICTIONS FOR {self.loss_fn}******')
-            else:
-                preds = (torch.sigmoid(logits))
-                # print(f'******NOT THRESHOLDING PREDICTIONS for {self.loss_fn}******')
-                # # FOCAL, DICE, COMBO ):
-            return preds
+    # from sklearn.metrics import f1_score
 
+    # def find_best_threshold(y_true, y_probs):
+    #     thresholds = [i / 100 for i in range(100)]
+    #     f1_scores = [f1_score(y_true.flatten(), (y_probs.flatten() >= t)) for t in thresholds]
+    #     best_threshold = thresholds[f1_scores.index(max(f1_scores))]
+    #     return best_threshold
 
     def configure_optimizers(self):
         print(f'+++++++++++++    configure optimizers')
@@ -283,11 +298,22 @@ class Segmentation_training_loop(pl.LightningModule):
         }
     
     
-    def log_combined_visualization(self, images, preds, masks):
+    def log_combined_visualization(self, images, logits, masks, loss_name):
         """
         Visualizes input images, predictions, and ground truth masks side by side for a batch.
         """
-        
+        # Handle thresholding based on the loss name
+        if loss_name in ['smp_bce', 'bce_dice']:
+            # Threshold predictions for visualization
+            preds = (torch.sigmoid(logits) > 0.5).int()
+            print(f'---THRESHOLDING FOR VISUALISATION')
+        elif loss_name in ['dice', 'focal']:
+            # Use continuous probabilities for visualization
+            preds = torch.sigmoid(logits)
+        else:
+            raise ValueError(f"Unsupported loss name: {loss_name}. Choose from: 'smp_bce', 'dice', 'focal', 'bce_dice'.")
+
+
         print(f'+++++++++++++    log combined visualization')
         print(f'---images shape: {images.shape[0]}') 
         assert images.ndim == 4, f"Expected images with 4 dimensions (B, C, H, W), got {images.shape}"
@@ -296,7 +322,7 @@ class Segmentation_training_loop(pl.LightningModule):
         max_samples = 50  # Maximum number of samples to visualize
         for i in range(min(images.shape[0], max_samples)):  # Loop through each sample in the batch
 
-            print(f"---Sample {i}")
+            # print(f"---Sample {i}")
             # Convert tensors to numpy
             image = images[i].squeeze().cpu().numpy()
             pred = preds[i].squeeze().cpu().numpy()
@@ -312,7 +338,8 @@ class Segmentation_training_loop(pl.LightningModule):
             # print(f"Mask min: {mask.min()}, max: {mask.max()}")
 
             # Normalize images and masks if needed (e.g., scale to [0, 255])
-            image = (image - image.min()) / (image.max() - image.min()) * 255  # Normalize input image to [0, 255]
+            epsilon = 1e-6
+            image = (image - image.min()) / (image.max() - image.min() + epsilon) * 255  # Normalize input image to [0, 255]
             pred *= 255  # Threshold predictions and scale to [0, 255]
             mask *= 255  # Scale ground truth mask to [0, 255]
 
@@ -377,13 +404,24 @@ class Segmentation_training_loop(pl.LightningModule):
         # Close buffer
         buf.close()
 
-    def metrics_maker(self, logits, masks, job_type, loss, lr=None):
-        preds = (torch.sigmoid(logits) > 0.5).int()
+    def metrics_maker(self, logits, masks, job_type, loss, user_loss, lr=None):
+
+        # Handle thresholding based on the user-defined loss name
+        if user_loss in ['smp_bce', 'bce_dice', 'focal']:
+            # Threshold predictions for metrics
+            preds = (torch.sigmoid(logits) > 0.5).int()
+        elif user_loss in ['dice']:
+            # Leave predictions as continuous probabilities
+            preds = torch.sigmoid(logits)
+        else:
+            raise ValueError(f"Unsupported loss name: {user_loss}. Choose from:  'smp_bce', 'dice', 'focal', 'bce_dice'.")
+
         tp, fp, fn, tn = smp.metrics.get_stats(preds, masks.long(), mode='binary')
         iou = smp.metrics.iou_score(tp, fp, fn, tn)
         precision = smp.metrics.precision(tp, fp, fn, tn)
         recall = smp.metrics.recall(tp, fp, fn, tn)
         f1 = smp.metrics.f1_score(tp, fp, fn, tn)
+        
         # # Optionally save predictions
         # Log metrics (if needed)
         ioumean = iou.mean()
@@ -391,17 +429,39 @@ class Segmentation_training_loop(pl.LightningModule):
         recallmean = recall.mean()
         f1mean = f1.mean()
 
+        precision_np = precision.cpu().numpy().flatten()
+        recall_np = recall.cpu().numpy().flatten()
+
+        # Sort recall and precision for AUC calculation
+        sorted_indices = np.argsort(recall_np)
+        recall_sorted = recall_np[sorted_indices]
+        precision_sorted = precision_np[sorted_indices]
+
+        # Calculate AUC-PR
+            # Calculate AUC only if recall and precision arrays have more than one element
+        if len(recall_sorted) > 1 and len(precision_sorted) > 1:
+            auc_pr = auc(recall_sorted, precision_sorted)
+        else:
+            auc_pr = 0.0  # Fallback value for AUC if arrays are insufficient
+    
+
+
+
         if job_type != 'test':
             assert loss != None, f"Loss is None for {job_type} job"
             self.log(f'{job_type}_loss',loss , prog_bar=True, on_step=True, on_epoch=True)
         elif job_type == 'train':
+            job_type = 'tr'
             self.log('lr', lr, on_step=True, on_epoch=True, prog_bar=False, logger=True)
+        elif job_type == 'test':
+            job_type = 'te'
         self.log(f'{job_type}_iou', ioumean, prog_bar=True, on_step=True, on_epoch=True)
         self.log(f'{job_type}_precision', precisionmean, prog_bar=True, on_step=True, on_epoch=True)
         self.log(f'{job_type}_recall', recallmean, prog_bar=True, on_step=True, on_epoch=True)
         self.log(f'{job_type}_f1', f1mean, prog_bar=True, on_step=True, on_epoch=True)
+        self.log(f'{job_type}_auc_pr', auc_pr, prog_bar=True, on_step=True, on_epoch=True)
 
-        return ioumean, precisionmean, recallmean, f1mean
+        return ioumean, precisionmean, recallmean, f1mean, auc_pr
 
 
 

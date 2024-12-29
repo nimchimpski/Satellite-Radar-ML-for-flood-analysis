@@ -97,21 +97,31 @@ def handle_interrupt(signal, frame):
     sys.exit(0)
 
 
-def loss_chooser(loss_name, alpha=0.25, gamma=2.0):
-    """
-    MUST ADRESS:
-    CLASS IMBALANCE
-    HIGH RECALL
-    BOUNDARY ACCURACY
-    """
+def loss_chooser(loss_name, alpha=0.25, gamma=2.0, bce_weight=0.5):
+    '''
+    MUST ADDRESS:
+    - CLASS IMBALANCE: Handled by Focal Loss and BCE-Dice combinations.
+    - HIGH RECALL: Dice loss emphasizes overlap, helping improve recall.
+    - BOUNDARY ACCURACY: Dice and Focal Loss focus on boundary regions.
+
+    Parameters:
+    - loss_name: Name of the desired loss function.
+    - alpha: Weighting factor for the minority class (used in Focal Loss).
+    - gamma: Modulating factor for hard examples (used in Focal Loss).
+    - bce_
+    '''
+
     if 'focal' in loss_name:
         print(f'---alpha: {alpha}, gamma: {gamma}---')  
-    torch_bce = torch.nn.BCEWithLogitsLoss(reduction='none')
+    torch_bce = torch.nn.BCEWithLogitsLoss()
     smp_bce =  smp.losses.SoftBCEWithLogitsLoss()
     dice = smp.losses.DiceLoss(mode='binary')
     focal = smp.losses.FocalLoss(mode='binary', alpha=alpha, gamma=gamma)
     # Adjust alpha if one class dominates or struggles.
-    # Adjust gamma to fine-tune focus on hard examples.
+    # Adjust gamma to fine-tune focus on hard examples
+
+    def bce_dice(preds, targets):
+        return bce_weight * smp_bce(preds, targets) + (1 - bce_weight) * dice(preds, targets)
 
     if loss_name == "torch_bce":
         return torch_bce        
@@ -121,18 +131,8 @@ def loss_chooser(loss_name, alpha=0.25, gamma=2.0):
         return focal
     if loss_name == "dice":
         return dice
-    # if loss_name == 'bce+dice':
-    #     def combined_loss(y_pred, y_true):
-    #         bce_loss = bce(y_pred, y_true)
-    #         dice_loss = dice(y_pred, y_true)
-    #         return bce_loss + dice_loss  # Adjust weights if necessary
-    #     loss = smp_bce + dice
-    #     return loss
-    # if loss_name == 'focal+dice':
-    #     loss = focal + dice
-    #     return loss
-    # for weighted ex. loss = 0.4 * bce + 0.6 * dice
-
+    if loss_name == "bce_dice":
+        return bce_dice
 
     elif loss_name == "tversky": # no weighting
         return smp.losses.TverskyLoss()
@@ -141,7 +141,7 @@ def loss_chooser(loss_name, alpha=0.25, gamma=2.0):
 
     else:
         raise ValueError(f"Unknown loss: {loss_name}")
-
+    
 
 def wandb_initialization(job_type, repo_path, project,  dataset_name, dataset_version, train_list, val_list, test_list, wandb_config):
         name='train'

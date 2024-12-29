@@ -93,7 +93,7 @@ def main(train, test):
     PRETRAINED = True
     inputs = ['hh', 'mask']
     in_channels = 1
-    DEVRUN = 0
+    DEVRUN = 1
     user_loss = 'bce_dice'
     focal_alpha = 0.25
     focal_gamma = 2.0
