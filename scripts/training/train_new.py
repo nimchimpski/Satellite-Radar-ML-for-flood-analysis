@@ -48,14 +48,10 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
 @click.command()
 @click.option('--train', is_flag=True, help="Train the model")
 @click.option('--test', is_flag=True, help="Test the model")
-
 def main(train, test):
-    '''
-    CONDA ENVIRONMENT = 'floodenv2"
-    expects that the data is in tile_root, with 3 tile_lists for train, test and val
-    ***NAVIGATE IN TERMINAL TO THE UNMAPPED ADRESS TO RUN THIS SCRIPT.***
-    cd //cerndata100/AI_files/users/ai_flood_service/1new_data/3scripts/training
-    '''
+    """
+    CONDA ENVIRONMENT = 'floodenv2'
+    """
     if train and test:
         raise click.UsageError("You can only specify one of --train or --test.")
     elif not (train or test):
@@ -63,266 +59,128 @@ def main(train, test):
             user_input = input("Choose an option (--train or --test): ").strip().lower()
             if user_input == "--train":
                 click.echo("Training the model...")
+                train = True
                 break
             elif user_input == "--test":
                 click.echo("Testing the model...")
+                test = True
                 break
             else:
                 click.echo("Invalid input. Please choose '--train' or '--test'.")
-    else:
-        # Handle valid flag input
-        if train:
-            click.echo("Training the model...")
-            job_type = 'train'
-        elif test:
-            click.echo("Testing the model...")
-            job_type = 'test'
 
+    job_type = "train" if train else "test"
+
+    # Basic Setup
     start = time.time()
-
-    # train, test, debug = job_type_selector(job_type)
-    print(f'>>>train = {train}, test = {test}')
-  
     timestamp = datetime.now().strftime("%y%m%d_%H%M")
-    
     signal.signal(signal.SIGINT, handle_interrupt)
-    torch.set_float32_matmul_precision('medium')  # TODO try high
-    pl.seed_everything(42, workers=True, verbose = False)
+    torch.set_float32_matmul_precision('medium')
+    pl.seed_everything(42, workers=True)
 
- 
-    ##########################################################################
+    # Paths and Parameters
     repo_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2")
-    dataset_path  = repo_path / "1data" / "3final" / "train_INPUT"
+    dataset_path = repo_path / "1data" / "3final" / "train_INPUT"
     test_ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_INPUT")
     save_path = repo_path / "4results"
-    project = "TSX"    
-    subset_fraction = 1 # 1 = full dataset
+    project = "TSX"
+
+    subset_fraction = 1
     bs = 16
-    max_epoch = 200
-    # DATALOADER PARAMS
+    max_epoch = 10
     num_workers = 8
-    # WANDB PARAMS
     WBOFFLINE = False
-    LOGSTEPS = 50 # STEPS/EPOCH = DATASET SIZE / BATCH SIZE
-    # MODEL PARAMS
+    LOGSTEPS = 50
     PRETRAINED = True
-    inputs = ['hh' , 'mask'] 
+    inputs = ['hh', 'mask']
     in_channels = 1
     DEVRUN = 0
-    # metric_threshold = 0.9
-    user_loss =  'focal' # "focal" # bce+dice' # 'focal+dice' # 'tversky' # 'jakard' # 'focal'
-    focal_alpha = 0.75
+    user_loss = 'bce_dice'
+    focal_alpha = 0.25
     focal_gamma = 2.0
-    ##########################################################################
+    bce_weight = 0.5
 
-    # CHECK ONLY 1 INPUT FOLDER - CHECK NAME IS CORRECT
+    # Dataset Setup
     input_folders = [i for i in dataset_path.iterdir()]
     assert len(input_folders) == 1
     dataset_name = input_folders[0].name
     dataset_path = dataset_path / dataset_name
-    print(f'>>>RUN NAME WILL INCLUDE (AS DS): = {dataset_name}')
-    if user_loss == 'focal':
-        loss_desc = f'{user_loss}_{focal_alpha}_{focal_gamma}'
-    else:
-        loss_desc = user_loss
-    run_name = f'{job_type}_{dataset_name}_BS{bs}_EP{max_epoch}_{loss_desc}_{timestamp}'
-    # ENSURE CORRECT CKPT IN FLODER !!!
-    if test:
-        ckpt_to_test = next(test_ckpt_path.rglob("*.ckpt"), None)
-        if ckpt_to_test is None:
-            print(f"---No checkpoint found in {test_ckpt_path}")
-            return
-        print(f'>>>ckpt: {ckpt_to_test}')
-    if not dataset_path.exists():
-        print('>>>base path not exists')
-    else:
-        print(f'>>>dataset path = {dataset_path}')
 
-    persistent_workers = False
-    if num_workers > 0:
-        persistent_workers = True
+    loss_desc = f"{user_loss}_{focal_alpha}_{focal_gamma}" if user_loss == "focal" else f"{user_loss}_{bce_weight}"
+    run_name = f"{dataset_name}_{timestamp}_BS{bs}_s{subset_fraction}_{loss_desc}"
 
-    dataset_version = run_name
-    torch.cuda.empty_cache()
-
-
-    train_list = dataset_path / "train.txt" 
-    val_list  = dataset_path / "val.txt" 
-    test_list = dataset_path / "test.txt"
-
-    if train:
-        print('>>>-start train or eval')
-        train_dl = create_subset(train_list, dataset_path, 'train' , subset_fraction, inputs, bs, num_workers, persistent_workers)
-        val_dl = create_subset(val_list, dataset_path, 'val',  subset_fraction, inputs, bs, num_workers, persistent_workers) 
-    # if debug:
-    #     print('>>>-start debug')
-    #     logger = None
-    if test:
-        print(f'>>>-start test with {ckpt_to_test}')
-        test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs, num_workers, persistent_workers) 
-
-        # DEBUG
-        # for image, mask in train_dl:
-        #     num_flood_pixels = (mask == 1).sum()
-        #     num_non_flood_pixels = (mask == 0).sum()
-        #     print(f">>>[Dataset] Flood Pixels: {num_flood_pixels}, Non-Flood Pixels: {num_non_flood_pixels}")
-        #     break  # Print for just one sample to avoid flooding the output
-        # for batch in train_dl:
-        #     print('>>>batch+ ',batch)  # Ensure batches are correctly created
-        #     break
-        # for model_input, mask in train_dl:
-        #     print(f">>>///Model input shape: {model_input.shape}, Mask shape: {mask.shape}")
-        #     break  
- 
-    loss_fn = loss_chooser(user_loss, focal_alpha, focal_gamma)
-    print(f'>>>loss_fn = {loss_fn}')
-
-    # Logging additional run metadata (e.g., dataset info)
-    # wandb_logger.experiment.config.update({ 
-    #     "dataset_name": dataset_name,
-    #     "max_epoch": max_epoch,
-    #     "subset_fraction": subset_fraction,
-    #     "devrun": DEVRUN,
-    #     "offline_mode": WBOFFLINE,  
-    # })
-
-    wandb_config = { 
+    # Initialize W&B using your custom function
+    wandb_config = {
         "dataset_name": dataset_name,
         "subset_fraction": subset_fraction,
+        "bs": bs,
+        "max_epoch": max_epoch,
+        "user_loss": user_loss,
+        "loss_desc": loss_desc,
+        "focal_alpha": focal_alpha,
+        "focal_gamma": focal_gamma,
+        "bce_weight": bce_weight,
     }
+    wandb_logger = wandb_initialization(job_type, repo_path, project, dataset_name, run_name, wandb_config)
 
-    wandb_initialization(job_type, repo_path, project,  dataset_name, dataset_version, train_list,  val_list, test_list, wandb_config)
+    # Dataset Lists
+    train_list = dataset_path / "train.txt"
+    val_list = dataset_path / "val.txt"
+    test_list = dataset_path / "test.txt"
 
-    wandb_logger = WandbLogger(
-    project=project,
-    name=run_name,
-    )
+    persistent_workers = num_workers > 0
+    train_dl = create_subset(train_list, dataset_path, 'train', subset_fraction, inputs, bs, num_workers, persistent_workers)
+    val_dl = create_subset(val_list, dataset_path, 'val', subset_fraction, inputs, bs, num_workers, persistent_workers)
 
-    # MAKE MODEL
-    model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED)
-    # print('>>>model =', model)
-    # Check the first convolution layer
-    # print(model.model.encoder.conv1)
+    if test:
+        test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs, num_workers, persistent_workers)
+        ckpt_to_test = next(test_ckpt_path.rglob("*.ckpt"), None)
+        if ckpt_to_test is None:
+            raise FileNotFoundError(f"No checkpoint found in {test_ckpt_path}")
 
-    # dummy_input = torch.randn(16, 1, 256, 256).to('cuda')  # Batch size 16, 1 input channel
-    # with torch.no_grad():
-    #     outputd = model(dummy_input)
-    # print(f">>>/// dummy model output shape: {outputd.shape}")# Expected: torch.Size([16, 1, 256, 256])
+    # Model Initialization
+    model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED).to('cuda')
+    loss_fn = loss_chooser(user_loss, focal_alpha, focal_gamma, bce_weight)
 
-    model = model.to('cuda')  # Ensure the model is on GPU
-    device = next(model.parameters()).device # for debugging
-
-    print(f'>>>RUN NAME= {run_name}')
-
-
-
+    # Trainer Setup
     ckpt_dir = repo_path / "5checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
-         
     checkpoint_callback = ModelCheckpoint(
-        dirpath=ckpt_dir,  # Save checkpoints locally in this directory
-        filename=run_name,  # Custom filename format
-        # filename="best-checkpoint",  # Custom filename format
-        monitor="val_loss",              # Monitor validation loss
-        mode="min",                      # Save the model with the lowest validation loss
-        save_top_k=1                   # Only keep the best model
+        dirpath=ckpt_dir,
+        filename=run_name,
+        monitor="val_loss",
+        mode="min",
+        save_top_k=1,
     )
-    # print(f'>>>///model location: {device}')
-    trainer= pl.Trainer(
+    trainer = pl.Trainer(
         logger=wandb_logger,
         log_every_n_steps=LOGSTEPS,
         max_epochs=max_epoch,
-        accelerator='gpu', 
-        devices=1, 
+        accelerator='gpu',
+        devices=1,
         precision='16-mixed',
         fast_dev_run=DEVRUN,
         num_sanity_val_steps=2,
-        callbacks = [checkpoint_callback]
+        callbacks=[checkpoint_callback],
     )
-    # print('>>>trainer done')
 
-    if not test:
-        print('>>>>>>>>>>>>>>>>>>>>   training / val  (NOT test)')
-        training_loop = Segmentation_training_loop(model, loss_fn, save_path)
-
-        trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl,)
-
-        best_val_loss = trainer.callback_metrics.get("val_loss", None)
-        if best_val_loss is not None:
-            wandb_logger.experiment.summary["best_val_loss"] = float(best_val_loss)
-
-        # RUN A TRAINER.TEST HERE FOR A SIMPLE ONE RUN TRAIN/TEST CYCLE        
-        # trainer.test(model=training_loop, dataloaders=test_dl, ckpt_path='best')
-        
-    else:
-        print('>>>>>>>>>>>>>> test >>>>>>>>>>>>>>>>>>>>>>>>>>> ')
-        
-        # ckpt = ckpt_dir / f'{run_name}.ckpt'
-        ckpt = ckpt_to_test
-        print(f'>>>evaluation ckpt = {ckpt.name}')
-        if not ckpt.exists():
-            raise FileNotFoundError(f"Checkpoint not found: {ckpt}")
-
-        model.to('cuda')
-
-        training_loop = Segmentation_training_loop.load_from_checkpoint(ckpt, model=model, loss_fn=loss_fn, save_path=save_path, accelerator='gpu')
-        print(f'>>>checkpoint loaded ok {ckpt.name}')
-        # print(f'>>>ckpt test = {torch.load(ckpt)}')
-        # training_loop = training_loop.to('cuda')
-        # training_loop.model = training_loop.model.to('cuda')  # Ensure submodules are on GPU
-        training_loop.eval()
-        # training_loop = training_loop.to('cuda')
-        # Debug weight placement
-        # for name, param in training_loop.model.named_parameters():
-        #     print(f">>>Layer {name}. device {device}: {param.device==device}")
-        
-        
-        # Debugging
-        print(f">>>Training loop device: {next(training_loop.parameters()).device}")
+    # Training or Testing
+    if train:
+        print(">>> Starting training")
+        training_loop = Segmentation_training_loop(model, loss_fn, save_path, user_loss)
+        trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl)
+    elif test:
+        print(f">>> Starting testing with checkpoint: {ckpt_to_test}")
+        training_loop = Segmentation_training_loop.load_from_checkpoint(
+            ckpt_to_test, model=model, loss_fn=loss_fn, save_path=save_path
+        )
         trainer.test(model=training_loop, dataloaders=test_dl)
 
-        print('>>>loading batch')
-
-        for batch in tqdm(test_dl, total=len(test_dl)):
-            images, masks = batch
-                # Debug device alignment
-            images, masks = images.to('cuda'), masks.to('cuda')  # Ensure input tensors are on GPU
-            # print(f">>>images device: {images.device}")
-            # print(f">>>masks device: {masks.device}")
-            model = model.to('cuda')    
-            with torch.no_grad():
-                try:
-                    logits = training_loop(images)
-                    # print(f">>>Logits device: {logits.device}")
-                except Exception as e:
-                    print(f"Error during forward pass: {e}")
-                    raise
-
-                logits = torch.sigmoid(logits) # Softmax + select "flood" class
-            logits = logits.to('cuda')
-            masks = masks.to('cuda')
-            # print(f">>>Logits device: {logits.device}")
-            # print(f">>>Images device: {images.device}")
-            # try:
-            #     metrics = calculate_metrics(logits, masks, metric_threshold)
-            # except Exception as e:
-            #     print(f"Error in calculate_metrics: {e}")
-            #     continue
-
-
-    # Ensure the model is on GPU
-    model = model.to('cuda')
-    end = time.time()
-    run_time = f'{(end - start)/60:.2f}'
-    # if wandb.run:
-    #     wandb_logger.experiment.config.update({ 
-    #     "run_time": run_time,
-    # })
-    wandb.finish()  # Properly finish the W&B run
+    # Cleanup
+    run_time = (time.time() - start) / 60
+    print(f">>> Total runtime: {run_time:.2f} minutes")
+    wandb.finish()
     torch.cuda.empty_cache()
-    # end timing
-    
-    print(f'>>>total time = {run_time} minutes')  
+
 
 if __name__ == '__main__':
     main()
