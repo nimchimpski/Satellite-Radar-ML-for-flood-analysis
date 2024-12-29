@@ -86,7 +86,7 @@ def main(train, test):
 
     subset_fraction = 1
     bs = 16
-    max_epoch = 1
+    max_epoch = 10
     num_workers = 8
     WBOFFLINE = False
     LOGSTEPS = 50
@@ -97,7 +97,7 @@ def main(train, test):
     user_loss = 'bce_dice'
     focal_alpha = 0.25
     focal_gamma = 2.0
-    bce_weight = 0.5
+    bce_weight = 0.9
 
     # Dataset Setup
     input_folders = [i for i in dataset_path.iterdir()]
@@ -118,16 +118,12 @@ def main(train, test):
         "dataset_name": dataset_name,
         "subset_fraction": subset_fraction,
         "bs": bs,
-        "max_epoch": max_epoch,
         "user_loss": user_loss,
-        "loss_desc": loss_desc,
         "focal_alpha": focal_alpha,
         "focal_gamma": focal_gamma,
         "bce_weight": bce_weight,
     }
     wandb_logger = wandb_initialization(job_type, repo_path, project, dataset_name, run_name,train_list, val_list, test_list,wandb_config)
-
-
 
     persistent_workers = num_workers > 0
     train_dl = create_subset(train_list, dataset_path, 'train', subset_fraction, inputs, bs, num_workers, persistent_workers)
