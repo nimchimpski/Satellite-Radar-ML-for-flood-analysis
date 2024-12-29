@@ -18,6 +18,7 @@ from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 from PIL import Image
 from sklearn.metrics import auc
+from sklearn.metrics import precision_recall_curve
 import torch
 import torch.nn as nn
 import rasterio
@@ -405,56 +406,45 @@ class Segmentation_training_loop(pl.LightningModule):
         buf.close()
 
     def metrics_maker(self, logits, masks, job_type, loss, user_loss, lr=None):
-
-        # Handle thresholding based on the user-defined loss name
+        # Thresholded predictions for metrics like IoU, precision, recall
         if user_loss in ['smp_bce', 'bce_dice', 'focal']:
-            # Threshold predictions for metrics
             preds = (torch.sigmoid(logits) > 0.5).int()
         elif user_loss in ['dice']:
-            # Leave predictions as continuous probabilities
             preds = torch.sigmoid(logits)
         else:
             raise ValueError(f"Unsupported loss name: {user_loss}. Choose from:  'smp_bce', 'dice', 'focal', 'bce_dice'.")
 
+        # Continuous probabilities for AUC-PR
+        auc_preds = torch.sigmoid(logits)
+
+        # Compute metrics
         tp, fp, fn, tn = smp.metrics.get_stats(preds, masks.long(), mode='binary')
         iou = smp.metrics.iou_score(tp, fp, fn, tn)
         precision = smp.metrics.precision(tp, fp, fn, tn)
         recall = smp.metrics.recall(tp, fp, fn, tn)
         f1 = smp.metrics.f1_score(tp, fp, fn, tn)
-        
-        # # Optionally save predictions
-        # Log metrics (if needed)
+
+        # Averages
         ioumean = iou.mean()
         precisionmean = precision.mean()
         recallmean = recall.mean()
         f1mean = f1.mean()
 
-        precision_np = precision.cpu().numpy().flatten()
-        recall_np = recall.cpu().numpy().flatten()
+        # AUC-PR Calculation
+        from sklearn.metrics import precision_recall_curve, auc
+        auc_preds_np = auc_preds.cpu().numpy().flatten()
+        masks_np = masks.cpu().numpy().flatten()
 
-        # Sort recall and precision for AUC calculation
-        sorted_indices = np.argsort(recall_np)
-        recall_sorted = recall_np[sorted_indices]
-        precision_sorted = precision_np[sorted_indices]
+        precision_array, recall_array, _ = precision_recall_curve(masks_np, auc_preds_np)
+        auc_pr = auc(recall_array, precision_array) if len(recall_array) > 1 else 0.0
 
-        # Calculate AUC-PR
-            # Calculate AUC only if recall and precision arrays have more than one element
-        if len(recall_sorted) > 1 and len(precision_sorted) > 1:
-            auc_pr = auc(recall_sorted, precision_sorted)
-        else:
-            auc_pr = 0.0  # Fallback value for AUC if arrays are insufficient
-    
-
-
-
+        # Logging
         if job_type != 'test':
-            assert loss != None, f"Loss is None for {job_type} job"
-            self.log(f'{job_type}_loss',loss , prog_bar=True, on_step=True, on_epoch=True)
+            assert loss is not None, f"Loss is None for {job_type} job"
+            self.log(f'{job_type}_loss', loss, prog_bar=True, on_step=True, on_epoch=True)
         elif job_type == 'train':
-            job_type = 'tr'
             self.log('lr', lr, on_step=True, on_epoch=True, prog_bar=False, logger=True)
-        elif job_type == 'test':
-            job_type = 'te'
+
         self.log(f'{job_type}_iou', ioumean, prog_bar=True, on_step=True, on_epoch=True)
         self.log(f'{job_type}_precision', precisionmean, prog_bar=True, on_step=True, on_epoch=True)
         self.log(f'{job_type}_recall', recallmean, prog_bar=True, on_step=True, on_epoch=True)
@@ -462,7 +452,6 @@ class Segmentation_training_loop(pl.LightningModule):
         self.log(f'{job_type}_auc_pr', auc_pr, prog_bar=True, on_step=True, on_epoch=True)
 
         return ioumean, precisionmean, recallmean, f1mean, auc_pr
-
 
 
 # MODELS
