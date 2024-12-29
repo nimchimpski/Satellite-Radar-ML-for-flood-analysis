@@ -86,14 +86,14 @@ def main(train, test):
 
     subset_fraction = 1
     bs = 16
-    max_epoch = 10
+    max_epoch = 1
     num_workers = 8
     WBOFFLINE = False
     LOGSTEPS = 50
     PRETRAINED = True
     inputs = ['hh', 'mask']
     in_channels = 1
-    DEVRUN = 1
+    DEVRUN = 0
     user_loss = 'bce_dice'
     focal_alpha = 0.25
     focal_gamma = 2.0
@@ -108,7 +108,12 @@ def main(train, test):
     loss_desc = f"{user_loss}_{focal_alpha}_{focal_gamma}" if user_loss == "focal" else f"{user_loss}_{bce_weight}"
     run_name = f"{dataset_name}_{timestamp}_BS{bs}_s{subset_fraction}_{loss_desc}"
 
-    # Initialize W&B using your custom function
+        # Dataset Lists
+    train_list = dataset_path / "train.txt"
+    val_list = dataset_path / "val.txt"
+    test_list = dataset_path / "test.txt"
+
+        # Initialize W&B using your custom function
     wandb_config = {
         "dataset_name": dataset_name,
         "subset_fraction": subset_fraction,
@@ -120,12 +125,9 @@ def main(train, test):
         "focal_gamma": focal_gamma,
         "bce_weight": bce_weight,
     }
-    wandb_logger = wandb_initialization(job_type, repo_path, project, dataset_name, run_name, wandb_config)
+    wandb_logger = wandb_initialization(job_type, repo_path, project, dataset_name, run_name,train_list, val_list, test_list,wandb_config)
 
-    # Dataset Lists
-    train_list = dataset_path / "train.txt"
-    val_list = dataset_path / "val.txt"
-    test_list = dataset_path / "test.txt"
+
 
     persistent_workers = num_workers > 0
     train_dl = create_subset(train_list, dataset_path, 'train', subset_fraction, inputs, bs, num_workers, persistent_workers)
