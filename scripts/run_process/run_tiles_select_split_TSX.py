@@ -21,16 +21,18 @@ def main(test=None):
         src_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_all_processing\TSX_TILES\NORM_TILES_FOR_SELECT_AND_SPLIT_TEST")
     else:
         click.echo("SERIOUS DATA")
-        src_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_all_processing\TSX_TILES\NORM_TILES_FOR_SELECT_AND_SPLIT_###")
+        src_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_all_processing\TSX_TILES\NORM_TILES_FOR_SELECT_AND_SPLIT_INPUT")
 
     dataset_name = None
     ############################################
     MAKEFOLDER = True
     analysis_threshold=1
     mask_threshold=0.3
-    percent_under_thresh=0 # this * total_files = HOW MANY FILES PASS UNDER THE THRESHOLD
+    percent_under_thresh=0.1 # this * total_files = HOW MANY FILES PASS UNDER THE THRESHOLD
 
-    dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_input_###")
+    dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_INPUT")
+    if not dst_base.exists():
+        raise FileNotFoundError(f"Destination folder {dst_base} does not exist.")
   
     train_ratio=0.7
     val_ratio=0.15

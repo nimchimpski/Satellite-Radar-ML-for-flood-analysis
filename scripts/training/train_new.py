@@ -86,7 +86,9 @@ def main(train, test):
 
     subset_fraction = 1
     bs = 16
-    max_epoch = 10
+    max_epoch = 400
+    early_stop = False
+    patience=5
     num_workers = 8
     WBOFFLINE = False
     LOGSTEPS = 50
@@ -94,10 +96,11 @@ def main(train, test):
     inputs = ['hh', 'mask']
     in_channels = 1
     DEVRUN = 0
-    user_loss = 'bce_dice'
-    focal_alpha = 0.25
-    focal_gamma = 2.0
+    user_loss = 'focal'
+    focal_alpha = 0.9
+    focal_gamma = 5.0
     bce_weight = 0.9
+   
 
     # Dataset Setup
     input_folders = [i for i in dataset_path.iterdir()]
@@ -115,6 +118,7 @@ def main(train, test):
 
         # Initialize W&B using your custom function
     wandb_config = {
+        "name": run_name,
         "dataset_name": dataset_name,
         "subset_fraction": subset_fraction,
         "bs": bs,
@@ -139,6 +143,12 @@ def main(train, test):
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED).to('cuda')
     loss_fn = loss_chooser(user_loss, focal_alpha, focal_gamma, bce_weight)
 
+    early_stopping = pl.callbacks.EarlyStopping(
+        monitor="val_loss",
+        patience=patience,  # Stop if no improvement for 3 consecutive epochs
+        mode="min",
+    )
+
     # Trainer Setup
     ckpt_dir = repo_path / "5checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -149,6 +159,11 @@ def main(train, test):
         mode="min",
         save_top_k=1,
     )
+    if early_stop:
+        callbacks=[checkpoint_callback, early_stopping]
+    else:
+        callbacks=[checkpoint_callback]
+
     trainer = pl.Trainer(
         logger=wandb_logger,
         log_every_n_steps=LOGSTEPS,
@@ -158,7 +173,7 @@ def main(train, test):
         precision='16-mixed',
         fast_dev_run=DEVRUN,
         num_sanity_val_steps=2,
-        callbacks=[checkpoint_callback],
+        callbacks=callbacks
     )
 
     # Training or Testing

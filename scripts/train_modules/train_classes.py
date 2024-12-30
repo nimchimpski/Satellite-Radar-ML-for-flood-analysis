@@ -191,9 +191,9 @@ class Segmentation_training_loop(pl.LightningModule):
         if loss == self.trainer.checkpoint_callback.best_model_score and batch_idx < 2:
             self.log_combined_visualization(images, logits, masks, self.user_loss)
 
-        ioumean, _, recall, _ , auc_pr = self.metrics_maker(logits, masks, job_type,  loss, self.user_loss )
+        ioumean, _, recall, _  = self.metrics_maker(logits, masks, job_type,  loss, self.user_loss )
 
-        return {"loss": loss, "recall": recall, "iou": ioumean, 'auc_pr':auc_pr}   
+        return {"loss": loss, "recall": recall, "iou": ioumean,  'logits': logits, 'labels': masks}   
 
     def test_step(self, batch, batch_idx):
         # print(f'+++++++++++++    test step')
@@ -211,7 +211,7 @@ class Segmentation_training_loop(pl.LightningModule):
         # preds = (torch.sigmoid(logits) > 0.5).int() # BCE, 
 
         # CALCULATE METRICS
-        ioumean, precisionmean, recallmean, f1mean, auc_pr = self.metrics_maker(logits, masks, job_type, loss, self.user_loss)
+        ioumean, precisionmean, recallmean, f1mean = self.metrics_maker(logits, masks, job_type, loss, self.user_loss)
         # Determine if this is the last batch
         test_dataloader = self.trainer.test_dataloaders # First DataLoader
         total_batches = len(test_dataloader)
@@ -225,7 +225,36 @@ class Segmentation_training_loop(pl.LightningModule):
 
 
 
-        return {"iou": ioumean, "precision": precisionmean, "recall": recallmean, "f1": f1mean, "loss": loss,'auc_pr':auc_pr}
+        return {"iou": ioumean, "precision": precisionmean, "recall": recallmean, "f1": f1mean, "loss": loss, 'logits': logits, 'labels': masks}
+    
+    def test_auc_pr(self, outputs):
+        # Gather all logits and labels from the test set
+        all_logits = torch.cat([out['logits'] for out in outputs], dim=0)
+        all_labels = torch.cat([out['labels'] for out in outputs], dim=0)
+
+        # Convert to NumPy arrays
+        logits_np = all_logits.cpu().numpy().flatten()
+        labels_np = all_labels.cpu().numpy().flatten()
+
+        # Compute Precision-Recall and AUC
+        from sklearn.metrics import precision_recall_curve, auc
+        precision, recall, _ = precision_recall_curve(labels_np, logits_np)
+        auc_pr = auc(recall, precision)
+
+        # Compute IoU, Precision, Recall, F1 (if needed)
+        iou = smp.metrics.iou_score(
+            tp=torch.sum((all_logits > 0.5) & (all_labels == 1)),
+            fp=torch.sum((all_logits > 0.5) & (all_labels == 0)),
+            fn=torch.sum((all_logits <= 0.5) & (all_labels == 1)),
+            tn=torch.sum((all_logits <= 0.5) & (all_labels == 0)),
+        )
+
+        # Log test metrics
+        self.log('test_auc_pr', auc_pr, prog_bar=True)
+        self.log('test_iou', iou.mean().item(), prog_bar=True)
+        self.log('test_precision', precision.mean(), prog_bar=True)
+        self.log('test_recall', recall.mean(), prog_bar=True)
+
     
     
     def _get_current_lr(self):
@@ -405,6 +434,27 @@ class Segmentation_training_loop(pl.LightningModule):
         # Close buffer
         buf.close()
 
+    def validation_auc_pr_log(self, outputs):
+        # Gather all logits and labels from the validation set
+        all_logits = torch.cat([out['logits'] for out in outputs], dim=0)
+        all_labels = torch.cat([out['labels'] for out in outputs], dim=0)
+
+        # Convert to NumPy arrays
+        logits_np = all_logits.cpu().numpy().flatten()
+        labels_np = all_labels.cpu().numpy().flatten()
+
+        # Compute Precision-Recall and AUC
+        precision, recall, _ = precision_recall_curve(labels_np, logits_np)
+        auc_pr = auc(recall, precision)
+
+        # Log AUC-PR (only for the last epoch, if desired)
+        if self.current_epoch == self.trainer.max_epochs - 1:
+            self.log('final_val_auc_pr', auc_pr, prog_bar=True)
+
+        # Log AUC-PR for every epoch (optional)
+        self.log('val_auc_pr', auc_pr, prog_bar=True)
+
+
     def metrics_maker(self, logits, masks, job_type, loss, user_loss, lr=None):
         # Thresholded predictions for metrics like IoU, precision, recall
         if user_loss in ['smp_bce', 'bce_dice', 'focal']:
@@ -413,9 +463,6 @@ class Segmentation_training_loop(pl.LightningModule):
             preds = torch.sigmoid(logits)
         else:
             raise ValueError(f"Unsupported loss name: {user_loss}. Choose from:  'smp_bce', 'dice', 'focal', 'bce_dice'.")
-
-        # Continuous probabilities for AUC-PR
-        auc_preds = torch.sigmoid(logits)
 
         # Compute metrics
         tp, fp, fn, tn = smp.metrics.get_stats(preds, masks.long(), mode='binary')
@@ -430,14 +477,6 @@ class Segmentation_training_loop(pl.LightningModule):
         recallmean = recall.mean()
         f1mean = f1.mean()
 
-        # AUC-PR Calculation
-        from sklearn.metrics import precision_recall_curve, auc
-        auc_preds_np = auc_preds.cpu().numpy().flatten()
-        masks_np = masks.cpu().numpy().flatten()
-
-        precision_array, recall_array, _ = precision_recall_curve(masks_np, auc_preds_np)
-        auc_pr = auc(recall_array, precision_array) if len(recall_array) > 1 else 0.0
-
         # Logging
         if job_type != 'test':
             assert loss is not None, f"Loss is None for {job_type} job"
@@ -449,9 +488,9 @@ class Segmentation_training_loop(pl.LightningModule):
         self.log(f'{job_type}_precision', precisionmean, prog_bar=True, on_step=True, on_epoch=True)
         self.log(f'{job_type}_recall', recallmean, prog_bar=True, on_step=True, on_epoch=True)
         self.log(f'{job_type}_f1', f1mean, prog_bar=True, on_step=True, on_epoch=True)
-        self.log(f'{job_type}_auc_pr', auc_pr, prog_bar=True, on_step=True, on_epoch=True)
+  
 
-        return ioumean, precisionmean, recallmean, f1mean, auc_pr
+        return ioumean, precisionmean, recallmean, f1mean
 
 
 # MODELS

@@ -4,7 +4,7 @@ import wandb
 import sys
 import signal
 from pathlib import Path
-
+from pytorch_lightning.loggers import WandbLogger
 
 import segmentation_models_pytorch as smp
 from scripts.train_modules.train_helpers import nsd
@@ -142,7 +142,6 @@ def loss_chooser(loss_name, alpha=0.25, gamma=2.0, bce_weight=0.5):
     else:
         raise ValueError(f"Unknown loss: {loss_name}")
     
-from pytorch_lightning.loggers import WandbLogger
 
 def wandb_initialization(job_type, repo_path, project, dataset_name, run_name, train_list, val_list, test_list, wandb_config):
     """
@@ -208,51 +207,7 @@ def wandb_initialization(job_type, repo_path, project, dataset_name, run_name, t
     # Return WandbLogger for PyTorch Lightning
     return WandbLogger(experiment=run)
 
-
-# def wandb_initialization(job_type, repo_path, project,  dataset_name, dataset_version, train_list, val_list, test_list, wandb_config):
-#         name='train'
-#         mode='online'
-#         if job_type == "reproduce":
-#             name = 'reproduce'
-#             artifact_dataset_name = f'unosat_emergencymapping-United Nations Satellite Centre/{project}/{dataset_name}/ {dataset_name}'
-#         if job_type == "test":
-#             name = 'test'
-#         if job_type == "debug":
-#             mode='disabled'
-          
-#         with wandb.init(project=project, 
-#                         job_type=job_type, 
-#                         name=name, 
-#                         config=wandb_config,
-#                         mode=mode,
-#                         dir=repo_path / "4results", 
-#                         # settings=wandb.Settings(program=__file__)
-#                         ) as run:
-#                 if job_type != 'reproduce':
-#                     # ARTIFACT CREATION
-#                     data_artifact = wandb.Artifact(
-#                         dataset_name, 
-#                         type="dataset",
-#                         description=f"{dataset_name} 12 events",
-#                         metadata={"train_list": str(train_list),
-#                                 "test_list": str(test_list),
-#                                 "val_list": str(val_list)})
-#                     # TODO check the uri - only uri accepted? may work in Z: now
-#                     train_list_path = str(train_list).replace("\\", "/")
-#                     train_list_uri = f"file:////{train_list_path}"
-#                     # ADDING REFERENCES
-#                     data_artifact.add_reference(train_list_uri, name="train_list")
-#                     run.log_artifact(data_artifact, aliases=[dataset_version, dataset_name])
-
-#                 elif job_type == 'reproduce':
-#                     data_artifact = run.use_artifact(artifact_dataset_name)
-#                     metadata_data = data_artifact.metadata
-#                     print(">>>Current Artifact Metadata:", metadata_data)
-#                     train_list = Path(metadata_data['train_list'])
-#                     test_list = Path(metadata_data['test_list'])
-#                     val_list = Path(metadata_data['val_list'])    
-            
-                
+              
 def job_type_selector(job_type):
 
     train, test,  debug = False, False, False

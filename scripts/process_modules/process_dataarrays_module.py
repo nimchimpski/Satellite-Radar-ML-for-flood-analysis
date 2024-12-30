@@ -372,6 +372,7 @@ def has_enough_valid_pixels(file_path, mask_threshold):
                     mask_data = dataset.read(mask_layer)
                     mask_px = ((mask_data > 0.5).sum()) / total_pixels
                     # print('---mask_px= ', mask_px)
+                    # print('---mask_threshold= ', mask_threshold)
                     if mask_px >= mask_threshold:
                         # print(f"---MASK pixels deficit: {file_path}")
                         # print(f'---mask_px > {mask_threshold}  ', mask_px)
@@ -383,7 +384,7 @@ def has_enough_valid_pixels(file_path, mask_threshold):
                 else:
                     missing_mask = True
                 # print('---final rejected= ', rejected)
-                return rejected, missing_extent,
+                return rejected, missing_extent
         except Exception as e:
             print(f"---Unexpected error: {e}")
             return 0,0,0,0  # Handle any other exceptions
@@ -404,7 +405,7 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
     total_files = len(list(source_dir.iterdir()))
     print(f'---size of folder = {total_files}')
 
-    max_under_thresh = int(total_files * (percent_under_thresh / 100))
+    max_under_thresh = int(total_files * percent_under_thresh)
     print(f'---max_under_thresh= {max_under_thresh}')
 
     rejected = 0
@@ -434,7 +435,7 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
                     else:
                         tot_under_thresh += 1
                         # print(f'---allowed: num under thresh= {num_under_thresh}')
-                selected_tiles.append(file)
+                        selected_tiles.append(file)
 
                 # print(f'---tot under thresh = {tot_under_thresh}')
 
