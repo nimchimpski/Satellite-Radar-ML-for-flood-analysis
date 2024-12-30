@@ -1,0 +1,16 @@
+sweep_configuration = {
+    "name": "TSX18_0u30pc_241229_1733_BS16_s1_focal_0.9_5.0",
+    "method": "bayes",
+    "metric": {"goal": "minimize", "name": "validation_loss"},
+    "parameters": {
+        "user_loss": {"value": "focal"},
+        "dataset_name": {"values": ["TSX_all18"]},
+        "subset_fraction": {"value": 1},
+        "bs": {"value": 16},
+        "focal_alpha": {"values": [1.0, 0.9, 0.8, 0.7, 0.6, 0.5]},
+        "focal_gamma": {"values": [9.0, 8.0,7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0]},
+
+    },
+}
+
+sweep_config['parameters'] = sweep_configuration

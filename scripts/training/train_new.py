@@ -76,7 +76,7 @@ def main(train, test):
     signal.signal(signal.SIGINT, handle_interrupt)
     torch.set_float32_matmul_precision('medium')
     pl.seed_everything(42, workers=True)
-
+    ###########################################################
     # Paths and Parameters
     repo_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2")
     dataset_path = repo_path / "1data" / "3final" / "train_INPUT"
@@ -99,9 +99,8 @@ def main(train, test):
     user_loss = 'focal'
     focal_alpha = 0.9
     focal_gamma = 5.0
-    bce_weight = 0.9
-   
-
+    bce_weight = 0.5
+    ###########################################################
     # Dataset Setup
     input_folders = [i for i in dataset_path.iterdir()]
     assert len(input_folders) == 1

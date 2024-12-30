@@ -405,7 +405,7 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
     total_files = len(list(source_dir.iterdir()))
     print(f'---size of folder = {total_files}')
 
-    max_under_thresh = int(total_files * percent_under_thresh)
+    max_under_thresh = int(total_files * (percent_under_thresh))
     print(f'---max_under_thresh= {max_under_thresh}')
 
     rejected = 0
