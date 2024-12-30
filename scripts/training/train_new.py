@@ -76,7 +76,7 @@ def main(train, test):
     signal.signal(signal.SIGINT, handle_interrupt)
     torch.set_float32_matmul_precision('medium')
     pl.seed_everything(42, workers=True)
-
+    ###########################################################
     # Paths and Parameters
     repo_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2")
     dataset_path = repo_path / "1data" / "3final" / "train_INPUT"
@@ -86,7 +86,7 @@ def main(train, test):
 
     subset_fraction = 1
     bs = 16
-    max_epoch = 1
+    max_epoch = 200
     num_workers = 8
     WBOFFLINE = False
     LOGSTEPS = 50
@@ -94,11 +94,11 @@ def main(train, test):
     inputs = ['hh', 'mask']
     in_channels = 1
     DEVRUN = 0
-    user_loss = 'bce_dice'
-    focal_alpha = 0.25
-    focal_gamma = 2.0
+    user_loss = 'focal'
+    focal_alpha = 0.9
+    focal_gamma = 5.0
     bce_weight = 0.5
-
+    ###########################################################
     # Dataset Setup
     input_folders = [i for i in dataset_path.iterdir()]
     assert len(input_folders) == 1

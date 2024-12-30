@@ -27,8 +27,8 @@ def main(test=None):
     ############################################
     MAKEFOLDER = True
     analysis_threshold=1
-    mask_threshold=0.3
-    percent_under_thresh=0.08 # this * total_files = HOW MANY FILES PASS UNDER THE THRESHOLD
+    mask_threshold=0.001
+    percent_under_thresh=0.5 # 0.001 = 1% 
 
     dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_INPUT")
   
@@ -59,7 +59,7 @@ def main(test=None):
     # print(f'>>>newname= {parts}')
     # newname = '_'.join(parts)
     # print(f'>>>newname= {newname}')
-    dest_dir = get_incremental_filename(dst_base, f'{src_tiles.name}')
+    dest_dir = get_incremental_filename(dst_base, f'{src_tiles.name}_mt{mask_threshold}_pcu{percent_under_thresh}')
 
     print(f'>>>source dir = {src_base}')
     dest_dir.mkdir(parents=True, exist_ok=True)
