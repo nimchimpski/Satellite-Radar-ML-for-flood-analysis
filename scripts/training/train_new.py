@@ -86,7 +86,7 @@ def main(train, test):
 
     subset_fraction = 1
     bs = 16
-    max_epoch = 200
+    max_epoch = 25
     num_workers = 8
     WBOFFLINE = False
     LOGSTEPS = 50

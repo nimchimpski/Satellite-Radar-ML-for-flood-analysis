@@ -15,8 +15,8 @@ from rasterio.windows import Window
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from scripts.train_modules.train_classes import UnetModel
 from scripts.process_modules.process_tiffs_module import  create_event_datacube_TSX_inf,         reproject_to_4326_gdal, make_float32_inf
-from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr,  get_global_min_max
-from scripts.process_modules.process_helpers import  print_tiff_info_TSX, check_single_input_filetype, rasterize_kml_rasterio, compute_image_minmax, read_min_max_from_json, process_raster_minmax, path_not_exists
+from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr, read_min_max_from_json
+from scripts.process_modules.process_helpers import  print_tiff_info_TSX, check_single_input_filetype, rasterize_kml_rasterio, compute_image_minmax, process_raster_minmax, path_not_exists, read_min_max_from_json
 from collections import OrderedDict
 
 start=time.time()
@@ -152,20 +152,20 @@ def main(test=None):
         print("TEST SOURCE")
         img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\predict_input_test")
     else:
-        img_src =  Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\predict_input_###")
+        img_src =  Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\predict_INPUT")
     if path_not_exists(img_src):
         return
 
     ############################################################################
-    minmax_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\global_minmax_###\global_minmax.json")
+    minmax_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\global_minmax_INPUT\global_minmax.json")
     if path_not_exists(minmax_path):
         return
     norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
     stats = None
     # ckpt = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\checkpoints\good\mtnweighted_NO341_3__BS16__EP10_weighted_bce.ckpt")
-    ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_###")
+    ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_INPUT")
 
-    threshold = 0.5 # PREDICTION CONFIDENCE THRESHOLD
+    threshold = 0.8 # PREDICTION CONFIDENCE THRESHOLD
     ############################################################################
 
     # FIND THE CKPT
