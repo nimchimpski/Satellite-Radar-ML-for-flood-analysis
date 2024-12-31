@@ -8,7 +8,7 @@ from tqdm import tqdm
 flooded_count = 0
 non_flooded_count = 0
 
-tiles = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_all_processing\TSX_TILES\HOLD_BACK\695971749_2.nc_normalized_tiles_logclipmm_g_pcnf100" )
+tiles = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_INPUT\TSX_17_mt0.3_pcu0.3\train" )
 for tile in tqdm(tiles.iterdir(), total=len(list(tiles.iterdir()))):
     if tile.suffix != ".tif":
         continue
@@ -21,5 +21,5 @@ for tile in tqdm(tiles.iterdir(), total=len(list(tiles.iterdir()))):
 # Calculate class ratio
 total_pixels = flooded_count + non_flooded_count
 class_ratio = flooded_count / total_pixels
-print(f'---event: {event.name}')
+# print(f'---event: {event.name}')
 print(f"Flooded Class Ratio: {class_ratio:.2f}")

@@ -1,0 +1,34 @@
+
+import numpy as np
+import random
+# count tiles in each region
+# get class balance per region
+# split tiles into 0-10-90-100 % flood pixels 
+
+region_stats = {}
+for region, tiles in dataset.items():
+    total_tiles = len(tiles)
+    flood_ratios = [(tile == 1).sum() / tile.size for tile in tiles]
+    region_stats[region] = {
+        "total_tiles": total_tiles,
+        "flood_ratio": np.mean(flood_ratios),
+        "fully_flooded": sum(ratio >= 0.9 for ratio in flood_ratios),
+        "non_flooded": sum(ratio <= 0.1 for ratio in flood_ratios),
+        "mixed": total_tiles - sum(ratio >= 0.9 for ratio in flood_ratios) - sum(ratio <= 0.1 for ratio in flood_ratios),
+    }
+
+# max_tiles_per_region = 1000
+# training_set = []
+# for region, tiles in dataset.items():
+#     # Stratified sampling
+#     flooded_tiles = [tile for tile in tiles if (tile == 1).sum() / tile.size >= 0.9]
+#     non_flooded_tiles = [tile for tile in tiles if (tile == 1).sum() / tile.size <= 0.1]
+#     mixed_tiles = [tile for tile in tiles if 0.1 < (tile == 1).sum() / tile.size < 0.9]
+    
+#     # Sample from each category
+#     region_tiles = (
+#         random.sample(flooded_tiles, min(len(flooded_tiles), max_tiles_per_region // 3))
+#         + random.sample(non_flooded_tiles, min(len(non_flooded_tiles), max_tiles_per_region // 3))
+#         + random.sample(mixed_tiles, min(len(mixed_tiles), max_tiles_per_region // 3))
+#     )
+#     training_set.extend(region_tiles)

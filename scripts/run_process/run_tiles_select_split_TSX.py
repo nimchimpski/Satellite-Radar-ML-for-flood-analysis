@@ -27,8 +27,8 @@ def main(test=None):
     ############################################
     MAKEFOLDER = True
     analysis_threshold=1
-    mask_threshold=0.001
-    percent_under_thresh=0.5 # 0.001 = 1% 
+    mask_threshold=0.3
+    percent_under_thresh=0.3 # 0.001 = 1% 
 
     dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_INPUT")
     if not dst_base.exists():

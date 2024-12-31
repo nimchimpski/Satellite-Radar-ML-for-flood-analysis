@@ -124,6 +124,36 @@ def check_loc_max_and_rescale(image, glob_max, output_path, band_to_read=1):
 
 
 
+def write_min_max_to_json(min, max, output_path):
+    """
+    Writes min and max values for each variable to a JSON file.
+
+    Args:
+        min_max_values (dict): Dictionary containing min and max values for each variable.
+                               Example: {"SAR_HH": {"min": 0.0, "max": 260.0}, "DEM": {"min": -10.0, "max": 3000.0}}
+        output_path (str or Path): File path to save the JSON file.
+    """
+    print(f'---minmaxvalsdict= {min, max}')
+    output_path = Path(output_path)
+
+    # Ensure the parent directory exists
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Write the dictionary to the JSON file
+    with open(output_path, 'w') as json_file:
+        json.dump({'hh': {'min': min, 'max' : max}}, json_file, indent=4)
+    
+    print(f"Min and max values saved to {output_path}")
+
+
+
+
+def read_min_max_from_json(input_path):
+    with open(input_path, 'r') as json_file:
+        data = json.load(json_file)
+    return data.get("hh", {})
+
+
 
 
 def compute_image_minmax(image, band_to_read=1):
