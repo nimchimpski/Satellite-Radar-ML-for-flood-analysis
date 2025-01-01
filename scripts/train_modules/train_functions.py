@@ -157,6 +157,7 @@ def wandb_initialization(job_type, repo_path, project, dataset_name, run_name, t
     elif job_type == "debug":
         mode = 'disabled'
 
+
     # Initialize W&B run
     run = wandb.init(
         project=project,
@@ -166,6 +167,8 @@ def wandb_initialization(job_type, repo_path, project, dataset_name, run_name, t
         mode=mode,
         dir=repo_path / "4results",
     )
+
+    
 
     if job_type != 'reproduce':
         # Create and log dataset artifact

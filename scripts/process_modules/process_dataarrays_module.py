@@ -1115,13 +1115,6 @@ def make_train_folders(dest_dir):
     test_dir.mkdir(parents=True, exist_ok=True)
     return train_dir, val_dir, test_dir
 
-def handle_interrupt(signal, frame):
-    '''
-    usage: signal.signal(signal.SIGINT, handle_interrupt)
-    '''
-    print("Interrupt received! Cleaning up...")
-    # Add any necessary cleanup code here (e.g., saving model checkpoints)
-    sys.exit(0)
 
 def pad_tile(tile, target_size):
     # Get the current dimensions

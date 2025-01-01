@@ -1,0 +1,15 @@
+
+name :  focal_loss_sweep  
+project :  focal_loss_sweep 
+program : UNOSAT_FloodAI_v2.train_new 
+method :  grid  
+metric :   
+  goal :  minimize    
+  name :  validation_loss   
+parameters :  
+  focal_alpha :   
+    value : 6.5  
+  focal_gamma :  
+    values : [0.40 ,  0.7  ]  
+      
+ 

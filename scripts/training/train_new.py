@@ -10,6 +10,9 @@ import os.path as osp
 from pathlib import Path 
 from dotenv import load_dotenv  
 import sys
+# import handle interupt
+import signal
+
 # .............................................................
 import torch.nn as nn
 import torch.nn.functional as F
@@ -46,28 +49,41 @@ from scripts.train_modules.train_functions import  loss_chooser, wandb_initializ
 load_dotenv()
 os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
 
+def handle_interrupt(signum, frame):
+    print("\n---Custom signal handler: SIGINT received. Exiting.")
+    exit(0)
+# Register signal handler for SIGINT (Ctrl+C)
+signal.signal(signal.SIGINT, handle_interrupt)
+
 @click.command()
-@click.option('--train', is_flag=True, help="Train the model")
+@click.option('--train', is_flag=True,  help="Train the model", default=True)
 @click.option('--test', is_flag=True, help="Test the model")
-def main(train, test):
+def main(train=True, test=False):
     """
     CONDA ENVIRONMENT = 'floodenv2'
     """
-    if train and test:
-        raise click.UsageError("You can only specify one of --train or --test.")
-    elif not (train or test):
-        while True:
-            user_input = input("Choose an option (--train or --test): ").strip().lower()
-            if user_input == "--train":
-                click.echo("Training the model...")
-                train = True
-                break
-            elif user_input == "--test":
-                click.echo("Testing the model...")
-                test = True
-                break
-            else:
-                click.echo("Invalid input. Please choose '--train' or '--test'.")
+    # if train and test:
+    #     raise click.UsageError("You can only specify one of --train or --test.")
+    # elif not (train or test):
+    #     while True:
+    #         user_input = input("Choose an option (--train or --test): ").strip().lower()
+    #         if user_input == "--train":
+    #             click.echo("Training the model...")
+    #             train = True
+    #             break
+    #         elif user_input == "--test":
+    #             click.echo("Testing the model...")
+    #             test = True
+    #             break
+    #         else:
+    #             click.echo("Invalid input. Please choose '--train' or '--test'.")
+
+
+    if  test:
+        train = False
+    print(f"train={train}, test={test}")
+
+
 
     job_type = "train" if train else "test"
 
@@ -87,7 +103,7 @@ def main(train, test):
 
     subset_fraction = 1
     bs = 16
-    max_epoch = 50
+    max_epoch = 200
     early_stop = False
     patience=5
     num_workers = 8
@@ -119,7 +135,8 @@ def main(train, test):
 
         # Initialize W&B using your custom function
     wandb_config = {
-        "name": run_name,
+        # "name": run_name,
+        "name": 'focal_loss_sweep',
         "dataset_name": dataset_name,
         "subset_fraction": subset_fraction,
         "bs": bs,
@@ -128,7 +145,10 @@ def main(train, test):
         "focal_gamma": focal_gamma,
         "bce_weight": bce_weight,
     }
-    wandb_logger = wandb_initialization(job_type, repo_path, project, dataset_name, run_name,train_list, val_list, test_list,wandb_config)
+    wandb_logger = wandb_initialization(job_type, repo_path, project, dataset_name, run_name,train_list, val_list, test_list, wandb_config)
+
+    config = wandb.config
+    print(f"---Config: {config}")
 
     persistent_workers = num_workers > 0
     if job_type == "train":
@@ -143,7 +163,7 @@ def main(train, test):
 
     # Model Initialization
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED).to('cuda')
-    loss_fn = loss_chooser(user_loss, focal_alpha, focal_gamma, bce_weight)
+    loss_fn = loss_chooser(user_loss, config.focal_alpha, config.focal_gamma, bce_weight)
 
     early_stopping = pl.callbacks.EarlyStopping(
         monitor="val_loss",
