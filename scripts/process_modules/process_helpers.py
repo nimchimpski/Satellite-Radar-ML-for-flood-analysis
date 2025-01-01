@@ -9,6 +9,9 @@ from rasterio.features import rasterize
 from shapely.geometry import shape
 import fiona
 import json
+import random
+import sys
+from tqdm import tqdm
 
 
 # CHECKS FOR INITIAL FOLDERS
@@ -391,3 +394,33 @@ def min_max_vals(band_data): # IF UNIQUE VALS NOT 0 OR 1 - FLAG IT
 
 def datatype_check(band_data):
     return band_data.dtype  
+
+
+def handle_interrupt(signal, frame):
+    '''
+    usage: signal.signal(signal.SIGINT, handle_interrupt)
+    '''
+    print("Interrupt received! Cleaning up...")
+    # Add any necessary cleanup code here (e.g., saving model checkpoints)
+    sys.exit(0)
+
+def calc_ratio(tiles):
+    flooded_count = 0
+    non_flooded_count = 0
+    for tile in tqdm(tiles.iterdir(), total=len(list(tiles.iterdir()))):
+        if tile.suffix != ".tif":
+            continue
+        # print(f"---Processing {tile.name}")
+        with rasterio.open(tile) as src:
+            data = src.read(3)
+            flooded_count += np.sum(data == 1)
+            non_flooded_count += np.sum(data == 0)
+            # print(f'---flooded_count: {flooded_count}')
+
+
+    # Calculate class ratio
+    total_pixels = flooded_count + non_flooded_count
+    class_ratio = flooded_count / total_pixels
+    # print(f'---event: {event.name}')
+    print(f"{tile.parent.name} Ratio: {class_ratio:.2f}")
+    return class_ratio

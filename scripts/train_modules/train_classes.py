@@ -17,8 +17,8 @@ from surface_distance.metrics import compute_surface_distances, compute_surface_
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
 from PIL import Image
-from sklearn.metrics import auc
-from sklearn.metrics import precision_recall_curve
+from sklearn.metrics import precision_recall_curve, auc
+
 import torch
 import torch.nn as nn
 import rasterio
@@ -157,7 +157,7 @@ class Segmentation_training_loop(pl.LightningModule):
 
         lr = self._get_current_lr()
 
-        _, _, _, _, _= self.metrics_maker(logits, masks, job_type, loss, self.user_loss, lr)
+        _, _, _, _= self.metrics_maker(logits, masks, job_type, loss, self.user_loss, lr)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -167,6 +167,8 @@ class Segmentation_training_loop(pl.LightningModule):
         images, masks = batch
         images, masks = images.to(self.device), masks.to(self.device)
         logits = self(images)
+        # print(f"---Validation Step {batch_idx}: logits shape={logits.shape}, masks shape={masks.shape}")
+        self.validation_outputs.append({'logits': logits, 'masks': masks})  # Store outputs
         loss_per_pixel = self.loss_fn(logits, masks)
         loss, dynamic_weights = self.dynamic_weight_chooser(masks, loss_per_pixel, self.user_loss)
         assert logits.device == masks.device
@@ -202,6 +204,8 @@ class Segmentation_training_loop(pl.LightningModule):
         images, masks = batch
         images, masks = images.to('cuda'), masks.to('cuda')
         logits = self(images)
+        self.test_outputs.append({'logits': logits, 'masks': masks})  # Store outputs
+
         loss_per_pixel = self.loss_fn(logits, masks)
         loss, dynamic_weights = self.dynamic_weight_chooser(masks, loss_per_pixel, self.user_loss)
         assert logits.device == masks.device
@@ -217,45 +221,19 @@ class Segmentation_training_loop(pl.LightningModule):
         total_batches = len(test_dataloader)
         # print(f"---Total batches: {total_batches}")
         if batch_idx < 2:
-            print('---batch_idx:', batch_idx)
-            print(f"---Saving test outputs for batch {batch_idx}")
+            # print('---batch_idx:', batch_idx)
+            # print(f"---Saving test outputs for batch {batch_idx}")
             self.log_combined_visualization(images, logits, masks, self.user_loss)  # Log the last batch visualization
+
+            # JUST PRINT ON FIRST BATCH
             if batch_idx == 1:
                 print(f'---used dynamic weights = {dynamic_weights}')
 
 
 
         return {"iou": ioumean, "precision": precisionmean, "recall": recallmean, "f1": f1mean, "loss": loss, 'logits': logits, 'labels': masks}
-    
-    def test_auc_pr(self, outputs):
-        # Gather all logits and labels from the test set
-        all_logits = torch.cat([out['logits'] for out in outputs], dim=0)
-        all_labels = torch.cat([out['labels'] for out in outputs], dim=0)
 
-        # Convert to NumPy arrays
-        logits_np = all_logits.cpu().numpy().flatten()
-        labels_np = all_labels.cpu().numpy().flatten()
-
-        # Compute Precision-Recall and AUC
-        from sklearn.metrics import precision_recall_curve, auc
-        precision, recall, _ = precision_recall_curve(labels_np, logits_np)
-        auc_pr = auc(recall, precision)
-
-        # Compute IoU, Precision, Recall, F1 (if needed)
-        iou = smp.metrics.iou_score(
-            tp=torch.sum((all_logits > 0.5) & (all_labels == 1)),
-            fp=torch.sum((all_logits > 0.5) & (all_labels == 0)),
-            fn=torch.sum((all_logits <= 0.5) & (all_labels == 1)),
-            tn=torch.sum((all_logits <= 0.5) & (all_labels == 0)),
-        )
-
-        # Log test metrics
-        self.log('test_auc_pr', auc_pr, prog_bar=True)
-        self.log('test_iou', iou.mean().item(), prog_bar=True)
-        self.log('test_precision', precision.mean(), prog_bar=True)
-        self.log('test_recall', recall.mean(), prog_bar=True)
-
-    
+   
     
     def _get_current_lr(self):
         # print(f'+++++++++++++    get current lr')
@@ -387,6 +365,7 @@ class Segmentation_training_loop(pl.LightningModule):
                 )
             })
 
+
             
     
     def log_combined_visualization_plt(self, preds, mask):
@@ -434,10 +413,49 @@ class Segmentation_training_loop(pl.LightningModule):
         # Close buffer
         buf.close()
 
-    def validation_auc_pr_log(self, outputs):
-        # Gather all logits and labels from the validation set
-        all_logits = torch.cat([out['logits'] for out in outputs], dim=0)
-        all_labels = torch.cat([out['labels'] for out in outputs], dim=0)
+    def on_validation_epoch_start(self):
+        self.validation_outputs = []  # Reset the list for the new epoch
+
+    def on_validation_epoch_end(self):
+        """
+        Compute AUC-PR only during the final validation epoch.
+        """
+        # Check if this is the final epoch
+        if self.current_epoch == self.trainer.max_epochs - 1:
+            print(f"---Calculating AUC-PR for the final validation epoch: {self.current_epoch}")
+
+            # Ensure validation_outputs has been populated
+            if not self.validation_outputs:
+                raise ValueError("---Validation outputs are empty. Check your validation_step implementation.")
+
+            # Aggregate outputs from all validation batches
+            all_logits = torch.cat([output['logits'] for output in self.validation_outputs], dim=0)
+            all_labels = torch.cat([output['masks'] for output in self.validation_outputs], dim=0)
+
+            # Flatten logits and labels
+            logits_np = all_logits.cpu().numpy().flatten()
+            labels_np = all_labels.cpu().numpy().flatten()
+
+            # Compute Precision-Recall and AUC
+            precision, recall, _ = precision_recall_curve(labels_np, logits_np)
+            auc_pr = auc(recall, precision)
+
+            # Log the final AUC-PR
+            self.log('final_val_auc_pr', auc_pr, prog_bar=True, logger=True)
+        else:
+        #     print(f"---Skipping AUC-PR calculation for epoch: {self.current_epoch}")
+            self.validation_outputs = []
+
+    def on_test_epoch_start(self):
+        self.test_outputs = []
+
+    def on_test_epoch_end(self):
+        # Ensure validation_outputs has been populated
+        if not self.test_outputs:
+            raise ValueError("---test outputs are empty. Check your test_step implementation.")
+        # Aggregate outputs
+        all_logits = torch.cat([output['logits'] for output in self.test_outputs], dim=0)
+        all_labels = torch.cat([output['masks'] for output in self.test_outputs], dim=0)
 
         # Convert to NumPy arrays
         logits_np = all_logits.cpu().numpy().flatten()
@@ -447,13 +465,8 @@ class Segmentation_training_loop(pl.LightningModule):
         precision, recall, _ = precision_recall_curve(labels_np, logits_np)
         auc_pr = auc(recall, precision)
 
-        # Log AUC-PR (only for the last epoch, if desired)
-        if self.current_epoch == self.trainer.max_epochs - 1:
-            self.log('final_val_auc_pr', auc_pr, prog_bar=True)
-
-        # Log AUC-PR for every epoch (optional)
-        self.log('val_auc_pr', auc_pr, prog_bar=True)
-
+        # Log AUC-PR for the test set
+        self.log('test_auc_pr', auc_pr, prog_bar=True, logger=True)
 
     def metrics_maker(self, logits, masks, job_type, loss, user_loss, lr=None):
         # Thresholded predictions for metrics like IoU, precision, recall

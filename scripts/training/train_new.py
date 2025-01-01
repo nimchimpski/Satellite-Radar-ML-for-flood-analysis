@@ -37,9 +37,10 @@ from wandb import Artifact
 from datetime import datetime
 # .............................................................
 
+from scripts.process_modules.process_helpers import handle_interrupt
 from scripts.train_modules.train_helpers import *
 from scripts.train_modules.train_classes import  UnetModel,   Segmentation_training_loop 
-from scripts.train_modules.train_functions import handle_interrupt, loss_chooser, wandb_initialization, job_type_selector
+from scripts.train_modules.train_functions import  loss_chooser, wandb_initialization, job_type_selector
 
 #.............................................................
 load_dotenv()
@@ -86,8 +87,7 @@ def main(train, test):
 
     subset_fraction = 1
     bs = 16
-    max_epoch = 25
-    max_epoch = 400
+    max_epoch = 50
     early_stop = False
     patience=5
     num_workers = 8
@@ -98,8 +98,8 @@ def main(train, test):
     in_channels = 1
     DEVRUN = 0
     user_loss = 'focal'
-    focal_alpha = 0.9
-    focal_gamma = 5.0
+    focal_alpha = 0.65
+    focal_gamma = 2.0
     bce_weight = 0.5
     ###########################################################
     # Dataset Setup
@@ -109,7 +109,8 @@ def main(train, test):
     dataset_path = dataset_path / dataset_name
 
     loss_desc = f"{user_loss}_{focal_alpha}_{focal_gamma}" if user_loss == "focal" else f"{user_loss}_{bce_weight}"
-    run_name = f"{dataset_name}_{timestamp}_BS{bs}_s{subset_fraction}_{loss_desc}"
+    # run_name = f"{dataset_name}_{timestamp}_BS{bs}_s{subset_fraction}_{loss_desc}"
+    run_name = 'sweep1'
 
         # Dataset Lists
     train_list = dataset_path / "train.txt"
@@ -130,8 +131,9 @@ def main(train, test):
     wandb_logger = wandb_initialization(job_type, repo_path, project, dataset_name, run_name,train_list, val_list, test_list,wandb_config)
 
     persistent_workers = num_workers > 0
-    train_dl = create_subset(train_list, dataset_path, 'train', subset_fraction, inputs, bs, num_workers, persistent_workers)
-    val_dl = create_subset(val_list, dataset_path, 'val', subset_fraction, inputs, bs, num_workers, persistent_workers)
+    if job_type == "train":
+        train_dl = create_subset(train_list, dataset_path, 'train', subset_fraction, inputs, bs, num_workers, persistent_workers)
+        val_dl = create_subset(val_list, dataset_path, 'val', subset_fraction, inputs, bs, num_workers, persistent_workers)
 
     if test:
         test_dl = create_subset(test_list, dataset_path, 'test', subset_fraction, inputs, bs, num_workers, persistent_workers)

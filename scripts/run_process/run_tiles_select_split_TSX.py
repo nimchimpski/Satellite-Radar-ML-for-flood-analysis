@@ -35,9 +35,9 @@ def main(test=None):
         raise FileNotFoundError(f"Destination folder {dst_base} does not exist.")
     dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_INPUT")
   
-    train_ratio=0.7
+    train_ratio=0.15
     val_ratio=0.15
-    test_ratio=0.15
+    test_ratio=0.7
     ########################################
 
     total = 0
@@ -49,6 +49,7 @@ def main(test=None):
 
     # GET EVENT FOLDER NAME
     folder_to_process = list(f for f  in iter(src_base.iterdir()) if f.is_dir())
+    print(f'>>>folder_to_process= {folder_to_process.name}')
     if len(folder_to_process) == 0:
         print(">>>No event folder found.")
         return
@@ -75,7 +76,7 @@ def main(test=None):
     make_train_folders(dest_dir)
 
     #GET ALL NORMALIZED FOLDERS
-    recursive_list = list(src_base.rglob('*normalized_tiles*'))
+    recursive_list = list(src_base.rglob('*normalized*'))
     print(f'>>>len recursive_list= {len(recursive_list)}')
     if not recursive_list:
         print(">>>No normalized folders found.")
