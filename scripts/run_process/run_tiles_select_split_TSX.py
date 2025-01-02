@@ -35,9 +35,9 @@ def main(test=None):
         raise FileNotFoundError(f"Destination folder {dst_base} does not exist.")
     dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_INPUT")
   
-    train_ratio=0.15
+    train_ratio=0.7
     val_ratio=0.15
-    test_ratio=0.7
+    test_ratio=0.15
     ########################################
 
     total = 0
@@ -49,7 +49,7 @@ def main(test=None):
 
     # GET EVENT FOLDER NAME
     folder_to_process = list(f for f  in iter(src_base.iterdir()) if f.is_dir())
-    print(f'>>>folder_to_process= {folder_to_process.name}')
+    print(f'>>>folder_to_process= {folder_to_process[0].name}')
     if len(folder_to_process) == 0:
         print(">>>No event folder found.")
         return
@@ -103,6 +103,7 @@ def main(test=None):
         # print(f">>>subtotal missing extent: {tot_missing_extent}")
         # print(f">>>subtotal missing mask: {tot_missing_mask}")
         print(f">>>subtotal under threshold: {tot_under_thresh}")
+        
     print('>>>>>>>>>>>>>>>> DONE >>>>>>>>>>>>>>>>>')
     with open(dest_dir / "train.txt", "r") as traintxt,  open(dest_dir / "val.txt", "r") as valtxt,  open(dest_dir / "test.txt", "r") as testtxt:
         traintxtlen = sum(1 for _ in traintxt)

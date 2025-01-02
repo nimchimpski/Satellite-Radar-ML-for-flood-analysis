@@ -87,7 +87,7 @@ def main(train, test):
 
     subset_fraction = 1
     bs = 16
-    max_epoch = 50
+    max_epoch = 2
     early_stop = False
     patience=5
     num_workers = 8
@@ -109,8 +109,8 @@ def main(train, test):
     dataset_path = dataset_path / dataset_name
 
     loss_desc = f"{user_loss}_{focal_alpha}_{focal_gamma}" if user_loss == "focal" else f"{user_loss}_{bce_weight}"
-    # run_name = f"{dataset_name}_{timestamp}_BS{bs}_s{subset_fraction}_{loss_desc}"
-    run_name = 'sweep1'
+    run_name = f"{dataset_name}_{timestamp}_BS{bs}_s{subset_fraction}_{loss_desc}"
+    # run_name = 'sweep1'
 
         # Dataset Lists
     train_list = dataset_path / "train.txt"
