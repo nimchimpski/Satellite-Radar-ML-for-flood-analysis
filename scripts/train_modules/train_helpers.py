@@ -5,7 +5,6 @@ from torch.utils.data import Dataset, DataLoader
 from torch.utils.data.dataloader import default_collate
 from torch import Tensor, einsum
 from surface_distance.metrics import compute_surface_distances, compute_surface_dice_at_tolerance
-from torch.utils.data import DataLoader
 import torch
 import torch.nn as nn
 #------------------------------------------
@@ -16,35 +15,10 @@ import wandb
 import numpy as np
 import random
 #--------------------------
-from .train_classes import FloodDataset
+# from scripts.train_modules.train_classes import FloodDataset
 #------------------------------------------
 
 
-def initialize_wandb(project, job_type, run_name):
-    """
-    Initializes WandB if not already initialized.
-    
-    Args:
-    - project (str): The name of the WandB project.
-    - job_type (str): The type of job (e.g., 'train', 'reproduce').
-    - run_name (str): The name of the WandB run.
-    
-    Returns:
-    - wandb.run: The active WandB run.
-    """
-    # Check if WandB is already initialized
-    if wandb.run is None:
-        # Initialize WandB
-        run = wandb.init(
-            project=project,
-            job_type=job_type,
-            name=run_name
-        )
-        return run
-    else:
-        # If already initialized, return the existing run
-        return wandb.run
-    
 
 def collate_fn(batch):
     return (default_collate([b[0] for b in batch]),
@@ -78,21 +52,6 @@ def nsd(input, target, threshold=1):
 
 #########
 
-def one_hot(label, n_classes, requires_grad=True):
-    """Return One Hot Label"""
-    device = label.device
-    one_hot_label = torch.eye(
-        n_classes, device=device, requires_grad=requires_grad)[label]
-    one_hot_label = one_hot_label.transpose(1, 3).transpose(2, 3)
-
-    return one_hot_label
-
-def create_subset(file_list, event, stage,  subset_fraction , inputs, bs, num_workers, persistent_workers):
-    dataset = FloodDataset(file_list, event, stage=stage, inputs=inputs)    
-    subset_indices = random.sample(range(len(dataset)), int(subset_fraction * len(dataset)))
-    subset = Subset(dataset, subset_indices)
-    dl = DataLoader(subset, batch_size=bs, num_workers=num_workers, persistent_workers= persistent_workers,  shuffle = (stage == 'train'))
-    return dl
 
 def reassemble_tiles(tiles, coords, image_shape, tile_size):
     """
@@ -105,3 +64,6 @@ def reassemble_tiles(tiles, coords, image_shape, tile_size):
         prediction_image[y:y+tile_size, x:x+tile_size] = tile
 
     return prediction_image
+
+def is_sweep_run():
+    return wandb.run.sweep_id is not None

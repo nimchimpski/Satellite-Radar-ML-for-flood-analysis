@@ -29,6 +29,7 @@ from matplotlib.lines import Line2D
 import numpy as np
 import wandb
 import io
+from scripts.train_modules.train_helpers import is_sweep_run
 
 
 class FloodDataset(Dataset):
@@ -172,26 +173,21 @@ class Segmentation_training_loop(pl.LightningModule):
         loss_per_pixel = self.loss_fn(logits, masks)
         loss, dynamic_weights = self.dynamic_weight_chooser(masks, loss_per_pixel, self.user_loss)
         assert logits.device == masks.device
-
-        # CALCULATE PREDICTIONS for METRICS (not loss)
-
-
         # Check if this is the last batch and save visualization
         val_dataloader = self.trainer.val_dataloaders
         total_batches = len(val_dataloader) 
         # print(f"---Total batches: {total_batches}")
         # print info about images, preds, masks
-        # if (self.current_epoch % 50 == 0 ) and (batch_idx < 2):
-        #     self.log_combined_visualization( images, preds, masks)
 
-        if self.current_epoch == self.trainer.max_epochs - 1 and batch_idx < 2:
-            # This is the last epoch
-            self.log_combined_visualization(images, logits, masks, self.user_loss)
-            if batch_idx == 1:
-                print(f'---used dynamic weights = {dynamic_weights}')
-        # Save images if this is the best-performing model
-        if loss == self.trainer.checkpoint_callback.best_model_score and batch_idx < 2:
-            self.log_combined_visualization(images, logits, masks, self.user_loss)
+        if not is_sweep_run():
+            if self.current_epoch == self.trainer.max_epochs - 1 and batch_idx < 2:
+                # This is the last epoch
+                self.log_combined_visualization(images, logits, masks, self.user_loss)
+                if batch_idx == 1:
+                    print(f'---used dynamic weights = {dynamic_weights}')
+            # Save images if this is the best-performing model
+            if loss == self.trainer.checkpoint_callback.best_model_score and batch_idx < 2:
+                self.log_combined_visualization(images, logits, masks, self.user_loss)
 
         ioumean, _, recall, _  = self.metrics_maker(logits, masks, job_type,  loss, self.user_loss )
 
@@ -368,7 +364,132 @@ class Segmentation_training_loop(pl.LightningModule):
 
             
     
-    def log_combined_visualization_plt(self, preds, mask):
+    
+
+    def on_validation_epoch_start(self):
+        self.validation_outputs = []  # Reset the list for the new epoch
+
+    def on_validation_epoch_end(self):
+        """
+        Compute AUC-PR only during the final validation epoch.
+        """
+        if is_sweep_run():
+            print(f'---in sweep mode so skipping auc-pr calculation')
+            return
+        # Check if this is the final epoch
+        if self.current_epoch == self.trainer.max_epochs - 1:
+            print(f"---Calculating AUC-PR for the final validation epoch: {self.current_epoch}")
+
+            # Ensure validation_outputs has been populated
+            if not self.validation_outputs:
+                raise ValueError("---Validation outputs are empty. Check your validation_step implementation.")
+
+            # Aggregate outputs from all validation batches
+            all_logits = torch.cat([output['logits'] for output in self.validation_outputs], dim=0)
+            all_labels = torch.cat([output['masks'] for output in self.validation_outputs], dim=0)
+
+            if all_logits.numel() == 0 or all_labels.numel() == 0:
+                raise ValueError("Validation outputs are empty. Ensure validation_step is properly implemented.")
+
+
+            # Flatten logits and labels
+            logits_np = all_logits.detach().cpu().numpy().flatten()
+            labels_np = all_labels.detach().cpu().numpy().flatten()
+
+            # Check for NaN or Inf values in logits_np and labels_np
+            if not np.isfinite(logits_np).all():
+                raise ValueError("---logits_np contains NaN or Inf values.")
+
+            if not np.isfinite(labels_np).all():
+                raise ValueError("---labels_np contains NaN or Inf values.")
+            
+                        # Count unique classes
+            unique_classes, class_counts = np.unique(labels_np, return_counts=True)
+            print(f"Unique classes: {unique_classes}, Counts: {class_counts}")
+            
+            # Raise an error if there's only one class
+            if len(unique_classes) < 2:
+                raise ValueError("---Precision-Recall curve requires at least two classes in the ground truth.")
+
+
+            try:
+                precision, recall, _ = precision_recall_curve(labels_np, logits_np)
+                auc_pr = auc(recall, precision)
+            except ValueError as e:
+                print(f"---AUC-PR calculation failed: {e}")
+                auc_pr = 0.0  # Default value for invalid AUC-PR
+
+            # Log the final AUC-PR
+            self.log('val_auc_pr', auc_pr, prog_bar=True, logger=True)
+        else:
+        #     print(f"---Skipping AUC-PR calculation for epoch: {self.current_epoch}")
+            self.validation_outputs = []
+
+    def on_test_epoch_start(self):
+        self.test_outputs = []
+
+    def on_test_epoch_end(self):
+        # Ensure validation_outputs has been populated
+        if not self.test_outputs:
+            raise ValueError("---test outputs are empty. Check your test_step implementation.")
+        # Aggregate outputs
+        all_logits = torch.cat([output['logits'] for output in self.test_outputs], dim=0)
+        all_labels = torch.cat([output['masks'] for output in self.test_outputs], dim=0)
+
+        # Convert to NumPy arrays
+        logits_np = all_logits.cpu().numpy().flatten()
+        labels_np = all_labels.cpu().numpy().flatten()
+
+        # Compute Precision-Recall and AUC
+        precision, recall, _ = precision_recall_curve(labels_np, logits_np)
+        auc_pr = auc(recall, precision)
+
+        # Log AUC-PR for the test set
+        self.log('auc_pr_test', auc_pr, prog_bar=True, logger=True)
+
+    def metrics_maker(self, logits, masks, job_type, loss, user_loss, lr=None):
+        # print(f'+++++++++++++    metrics maker')
+        # print(f"---Job type: {job_type}")
+        # Thresholded predictions for metrics like IoU, precision, recall
+        if user_loss in ['smp_bce', 'bce_dice', 'focal']:
+            preds = (torch.sigmoid(logits) > 0.5).int()
+        elif user_loss in ['dice']:
+            preds = torch.sigmoid(logits)
+        else:
+            raise ValueError(f"Unsupported loss name: {user_loss}. Choose from:  'smp_bce', 'dice', 'focal', 'bce_dice'.")
+
+        # Compute metrics
+        tp, fp, fn, tn = smp.metrics.get_stats(preds, masks.long(), mode='binary')
+        iou = smp.metrics.iou_score(tp, fp, fn, tn)
+        precision = smp.metrics.precision(tp, fp, fn, tn)
+        recall = smp.metrics.recall(tp, fp, fn, tn)
+        f1 = smp.metrics.f1_score(tp, fp, fn, tn)
+
+        # Averages
+        ioumean = iou.mean()
+        precisionmean = precision.mean()
+        recallmean = recall.mean()
+        f1mean = f1.mean()
+
+        assert loss is not None, f"Loss is None for {job_type} job" 
+
+        # Logging
+        if job_type == 'train':
+            self.log('train_loss', loss, prog_bar=True, on_step=True, on_epoch=True)
+            self.log('train_lr', lr, on_step=False, on_epoch=True, prog_bar=False, logger=True)
+        elif job_type == 'val':
+            self.log('val_loss', loss, prog_bar=True, on_step=True, on_epoch=True)
+
+        if not job_type == 'train':
+            self.log(f'iou_{job_type}', ioumean, prog_bar=True, on_step=False, on_epoch=True)
+            self.log(f'precision_{job_type}', precisionmean, prog_bar=True, on_step=False, on_epoch=True)
+            self.log(f'recall_{job_type}', recallmean, prog_bar=True, on_step=False, on_epoch=True)
+            self.log(f'f1_{job_type}', f1mean, prog_bar=True, on_step=False, on_epoch=True)
+    
+
+        return ioumean, precisionmean, recallmean, f1mean
+'''
+def log_combined_visualization_plt(self, preds, mask):
         print(f'+++++++++++++    log combined visualization plt')
         print(f"Global Step: {self.global_step}")
         # Convert tensors to numpy
@@ -412,100 +533,7 @@ class Segmentation_training_loop(pl.LightningModule):
     
         # Close buffer
         buf.close()
-
-    def on_validation_epoch_start(self):
-        self.validation_outputs = []  # Reset the list for the new epoch
-
-    def on_validation_epoch_end(self):
-        """
-        Compute AUC-PR only during the final validation epoch.
-        """
-        # Check if this is the final epoch
-        if self.current_epoch == self.trainer.max_epochs - 1:
-            print(f"---Calculating AUC-PR for the final validation epoch: {self.current_epoch}")
-
-            # Ensure validation_outputs has been populated
-            if not self.validation_outputs:
-                raise ValueError("---Validation outputs are empty. Check your validation_step implementation.")
-
-            # Aggregate outputs from all validation batches
-            all_logits = torch.cat([output['logits'] for output in self.validation_outputs], dim=0)
-            all_labels = torch.cat([output['masks'] for output in self.validation_outputs], dim=0)
-
-            # Flatten logits and labels
-            logits_np = all_logits.cpu().numpy().flatten()
-            labels_np = all_labels.cpu().numpy().flatten()
-
-            # Compute Precision-Recall and AUC
-            precision, recall, _ = precision_recall_curve(labels_np, logits_np)
-            auc_pr = auc(recall, precision)
-
-            # Log the final AUC-PR
-            self.log('final_val_auc_pr', auc_pr, prog_bar=True, logger=True)
-        else:
-        #     print(f"---Skipping AUC-PR calculation for epoch: {self.current_epoch}")
-            self.validation_outputs = []
-
-    def on_test_epoch_start(self):
-        self.test_outputs = []
-
-    def on_test_epoch_end(self):
-        # Ensure validation_outputs has been populated
-        if not self.test_outputs:
-            raise ValueError("---test outputs are empty. Check your test_step implementation.")
-        # Aggregate outputs
-        all_logits = torch.cat([output['logits'] for output in self.test_outputs], dim=0)
-        all_labels = torch.cat([output['masks'] for output in self.test_outputs], dim=0)
-
-        # Convert to NumPy arrays
-        logits_np = all_logits.cpu().numpy().flatten()
-        labels_np = all_labels.cpu().numpy().flatten()
-
-        # Compute Precision-Recall and AUC
-        precision, recall, _ = precision_recall_curve(labels_np, logits_np)
-        auc_pr = auc(recall, precision)
-
-        # Log AUC-PR for the test set
-        self.log('test_auc_pr', auc_pr, prog_bar=True, logger=True)
-
-    def metrics_maker(self, logits, masks, job_type, loss, user_loss, lr=None):
-        # Thresholded predictions for metrics like IoU, precision, recall
-        if user_loss in ['smp_bce', 'bce_dice', 'focal']:
-            preds = (torch.sigmoid(logits) > 0.5).int()
-        elif user_loss in ['dice']:
-            preds = torch.sigmoid(logits)
-        else:
-            raise ValueError(f"Unsupported loss name: {user_loss}. Choose from:  'smp_bce', 'dice', 'focal', 'bce_dice'.")
-
-        # Compute metrics
-        tp, fp, fn, tn = smp.metrics.get_stats(preds, masks.long(), mode='binary')
-        iou = smp.metrics.iou_score(tp, fp, fn, tn)
-        precision = smp.metrics.precision(tp, fp, fn, tn)
-        recall = smp.metrics.recall(tp, fp, fn, tn)
-        f1 = smp.metrics.f1_score(tp, fp, fn, tn)
-
-        # Averages
-        ioumean = iou.mean()
-        precisionmean = precision.mean()
-        recallmean = recall.mean()
-        f1mean = f1.mean()
-
-        # Logging
-        if job_type != 'test':
-            assert loss is not None, f"Loss is None for {job_type} job"
-            self.log(f'{job_type}_loss', loss, prog_bar=True, on_step=True, on_epoch=True)
-        elif job_type == 'train':
-            self.log('lr', lr, on_step=True, on_epoch=True, prog_bar=False, logger=True)
-
-        self.log(f'{job_type}_iou', ioumean, prog_bar=True, on_step=True, on_epoch=True)
-        self.log(f'{job_type}_precision', precisionmean, prog_bar=True, on_step=True, on_epoch=True)
-        self.log(f'{job_type}_recall', recallmean, prog_bar=True, on_step=True, on_epoch=True)
-        self.log(f'{job_type}_f1', f1mean, prog_bar=True, on_step=True, on_epoch=True)
-  
-
-        return ioumean, precisionmean, recallmean, f1mean
-
-
+'''
 # MODELS
 
 class UnetModel(nn.Module):

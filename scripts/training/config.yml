@@ -1,22 +1,22 @@
 
-name :  focal_loss_sweep  
-project :  focal_loss_sweep 
-program : UNOSAT_FloodAI_v2.train_new 
+name :  'focal_loss_sweep' 
+project :  'TSX' 
+program : 'UNOSAT_FloodAI_v2.train_new' 
 method :  grid  
 metric :   
   goal :  minimize    
-  name :  validation_loss   
+  name :  val_loss  
 parameters :  
   batch_size :   
     value : 16
-  max_epochs :   
-    value : 2
+  max_epoch :   
+    value : 15
   focal_alpha :   
-    # values : [6, 6.5, 7]  
-    values : [6]  
+    values : [0.6, 0.65, 0.7]  
+    # value : 0.65 
   focal_gamma :  
-    # values : [0.2 , 0.3, 0.4, 0.5  ]  
-    values : [0.2 , 0.3 ]  
+    values : [2, 3, 4, 5  ]  
+    # value :  2
 command :
 - python
 - -m 

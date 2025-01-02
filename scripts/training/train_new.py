@@ -14,6 +14,7 @@ import sys
 import signal
 
 # .............................................................
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
@@ -41,9 +42,9 @@ from datetime import datetime
 # .............................................................
 
 from scripts.process_modules.process_helpers import handle_interrupt
-from scripts.train_modules.train_helpers import *
+from scripts.train_modules.train_helpers import is_sweep_run
 from scripts.train_modules.train_classes import  UnetModel,   Segmentation_training_loop 
-from scripts.train_modules.train_functions import  loss_chooser, wandb_initialization, job_type_selector
+from scripts.train_modules.train_functions import  loss_chooser, wandb_initialization, job_type_selector, create_subset
 
 #.............................................................
 load_dotenv()
@@ -83,8 +84,6 @@ def main(train=True, test=False):
         train = False
     print(f"train={train}, test={test}")
 
-
-
     job_type = "train" if train else "test"
 
     # Basic Setup
@@ -103,7 +102,7 @@ def main(train=True, test=False):
 
     subset_fraction = 1
     bs = 16
-    max_epoch = 2
+    max_epoch = 1
     early_stop = False
     patience=5
     num_workers = 8
@@ -136,20 +135,27 @@ def main(train=True, test=False):
         # Initialize W&B using your custom function
     wandb_config = {
         # "name": run_name,
-        "name": 'focal_loss_sweep',
+        "name": run_name,
         "dataset_name": dataset_name,
         "subset_fraction": subset_fraction,
-        "bs": bs,
+        "batch_size": bs,
         "user_loss": user_loss,
         "focal_alpha": focal_alpha,
         "focal_gamma": focal_gamma,
         "bce_weight": bce_weight,
+        "max_epoch": max_epoch,
     }
     wandb_logger = wandb_initialization(job_type, repo_path, project, dataset_name, run_name,train_list, val_list, test_list, wandb_config)
 
     config = wandb.config
-    print(f"---Config: {config}")
+    print(f"---Current config: {wandb.config}")
+    print(f"---focal_alpha: {wandb.config.get('focal_alpha', 'Not Found')}")
+    print(f"---focal_gamma: {wandb.config.get('focal_gamma', 'Not Found')}")
 
+
+    if is_sweep_run():
+        print(">>> IN SWEEP MODE <<<")
+    
     persistent_workers = num_workers > 0
     if job_type == "train":
         train_dl = create_subset(train_list, dataset_path, 'train', subset_fraction, inputs, bs, num_workers, persistent_workers)
@@ -189,7 +195,7 @@ def main(train=True, test=False):
     trainer = pl.Trainer(
         logger=wandb_logger,
         log_every_n_steps=LOGSTEPS,
-        max_epochs=max_epoch,
+        max_epochs=config.max_epoch,
         accelerator='gpu',
         devices=1,
         precision='16-mixed',
