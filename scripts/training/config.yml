@@ -7,9 +7,15 @@ metric :
   goal :  minimize    
   name :  validation_loss   
 parameters :  
+  batch_size :   
+    value : 16
+  max_epochs :   
+    value : 15
   focal_alpha :   
-    value : 6.5  
+    values : [6, 6.5, 7]  
   focal_gamma :  
-    values : [0.40 ,  0.7  ]  
-      
- 
+    values : [0.2 , 0.3, 0.4, 0.5  ]  
+command :
+- python
+- -m 
+- scripts.training.train_new

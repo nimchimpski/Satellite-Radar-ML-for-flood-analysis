@@ -103,7 +103,7 @@ def main(train=True, test=False):
 
     subset_fraction = 1
     bs = 16
-    max_epoch = 200
+    max_epoch = 15
     early_stop = False
     patience=5
     num_workers = 8

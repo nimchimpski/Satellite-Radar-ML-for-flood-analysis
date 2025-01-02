@@ -6,7 +6,7 @@ from scripts.process_modules.process_dataarrays_module import select_tiles_and_s
 import click
 import shutil
 import signal
-from scripts.process_modules.process_dataarrays_module  import  make_train_folders, handle_interrupt, get_incremental_filename
+from scripts.process_modules.process_dataarrays_module  import  make_train_folders, get_incremental_filename
 
 @click.command()
 @click.option("--test",is_flag=True)
