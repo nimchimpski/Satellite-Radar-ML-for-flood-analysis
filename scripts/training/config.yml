@@ -10,11 +10,13 @@ parameters :
   batch_size :   
     value : 16
   max_epochs :   
-    value : 15
+    value : 2
   focal_alpha :   
-    values : [6, 6.5, 7]  
+    # values : [6, 6.5, 7]  
+    values : [6]  
   focal_gamma :  
-    values : [0.2 , 0.3, 0.4, 0.5  ]  
+    # values : [0.2 , 0.3, 0.4, 0.5  ]  
+    values : [0.2 , 0.3 ]  
 command :
 - python
 - -m 
