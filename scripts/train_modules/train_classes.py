@@ -373,9 +373,9 @@ class Segmentation_training_loop(pl.LightningModule):
         """
         Compute AUC-PR only during the final validation epoch.
         """
-        if is_sweep_run():
-            print(f'---in sweep mode so skipping auc-pr calculation')
-            return
+        # if is_sweep_run():
+        #     print(f'---in sweep mode so skipping auc-pr calculation')
+        #     return
         # Check if this is the final epoch
         if self.current_epoch == self.trainer.max_epochs - 1:
             print(f"---Calculating AUC-PR for the final validation epoch: {self.current_epoch}")
