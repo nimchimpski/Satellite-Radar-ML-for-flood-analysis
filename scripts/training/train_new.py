@@ -59,7 +59,7 @@ signal.signal(signal.SIGINT, handle_interrupt)
 @click.command()
 @click.option('--train', is_flag=True,  help="Train the model", default=True)
 @click.option('--test', is_flag=True, help="Test the model")
-def main(train=True, test=False):
+def main(train, test):
     """
     CONDA ENVIRONMENT = 'floodenv2'
     """
@@ -78,7 +78,9 @@ def main(train=True, test=False):
     #             break
     #         else:
     #             click.echo("Invalid input. Please choose '--train' or '--test'.")
-
+    if test and train:
+        raise ValueError("You can only specify one of --train or --test.")
+    train = True
 
     if  test:
         train = False
@@ -102,7 +104,7 @@ def main(train=True, test=False):
 
     subset_fraction = 1
     bs = 16
-    max_epoch = 1
+    max_epoch = 200
     early_stop = False
     patience=5
     num_workers = 8
@@ -113,8 +115,8 @@ def main(train=True, test=False):
     in_channels = 1
     DEVRUN = 0
     user_loss = 'focal'
-    focal_alpha = 0.65
-    focal_gamma = 2.0
+    focal_alpha = 0.8
+    focal_gamma = 8
     bce_weight = 0.5
     ###########################################################
     # Dataset Setup
@@ -134,7 +136,6 @@ def main(train=True, test=False):
 
         # Initialize W&B using your custom function
     wandb_config = {
-        # "name": run_name,
         "name": run_name,
         "dataset_name": dataset_name,
         "subset_fraction": subset_fraction,
