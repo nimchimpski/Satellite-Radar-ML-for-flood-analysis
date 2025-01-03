@@ -13,12 +13,12 @@ def calc_ratio(tiles):
     for tile in tqdm(tiles.iterdir(), total=len(list(tiles.iterdir()))):
         if tile.suffix != ".tif":
             continue
-        print(f"---Processing {tile.name}")
+        # print(f"---Processing {tile.name}")
         with rasterio.open(tile) as src:
             data = src.read(3)
             flooded_count += np.sum(data == 1)
             non_flooded_count += np.sum(data == 0)
-            print(f'---flooded_count: {flooded_count}')
+            # print(f'---flooded_count: {flooded_count}')
 
 
     # Calculate class ratio
@@ -37,8 +37,8 @@ for event in train_INPUT.iterdir():
     for splitfolder in event.iterdir():
         if not splitfolder.is_dir():
             continue
-        if not splitfolder.name == "test":
-            continue
+        # if not splitfolder.name == "test":
+        #     continue
         print(f"---Processing {splitfolder.name}")
         calc_ratio(splitfolder)
 

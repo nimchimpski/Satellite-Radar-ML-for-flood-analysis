@@ -7,7 +7,6 @@ import shutil
 import random
 import os
 import xarray as xr
-import json
 import rasterio
 import sys
 import json
@@ -15,7 +14,6 @@ import pandas as pd
 from pyproj import Transformer
 from geopy.geocoders import Nominatim
 from pathlib import Path
-import json
 import time
 from rasterio.crs import CRS
 from rasterio.warp import calculate_default_transform, reproject, Resampling
@@ -402,45 +400,56 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
     val_dir = dest_dir / "val"
     test_dir = dest_dir / "test"
 
-    total_files = len(list(source_dir.iterdir()))
+    total_files = len([f for f in source_dir.iterdir() if f.suffix.lower() in ['.tif', '.tiff']])
     print(f'---size of folder = {total_files}')
-
+    if total_files < 300:
+        print(f'---FOLDER SIZE UNDER 300 - SELECTING ALL TILES')
+    print(f'---percent_under_thresh= {percent_under_thresh}')   
     max_under_thresh = int(total_files * (percent_under_thresh))
     print(f'---max_under_thresh= {max_under_thresh}')
 
     rejected = 0
     missing_mask = 0
-    tot_missing_extent = 0
-    tot_missing_mask = 0
-    tot_under_thresh = 0  
+    folder_missing_extent = 0
+    folder_missing_mask = 0
+    folder_under_thresh = 0  
 
     with open(dest_dir / "train.txt", "a") as traintxt,  open(dest_dir / "val.txt", "a") as valtxt,  open(dest_dir / "test.txt", "a") as testtxt:
-        print(f'---tot under thresh 1= {tot_under_thresh}')
 
         # Get a list of all files in the source directory
         files = list(source_dir.glob('*'))  # Modify '*' if you want a specific file extension
 
         # FILTER FILES BY VALID PIXELS
         selected_tiles = []
-        for file in files:
+        for file in tqdm(files, desc="Filtering files", unit="file"):
+            if total_files < 300:
+
+                selected_tiles.append(file)
+                continue
             # print(f"---Checking {file.name}")
             if file.suffix.lower()  in ['.tif', '.tiff'] and 'aux' not in file.name:
                 too_few_px, missing_extent,  = has_enough_valid_pixels(file, mask_threshold)
-
+                # print(f'---too_few_px= {too_few_px}')
                 if too_few_px:
-                    if  tot_under_thresh > max_under_thresh:
+                    # print(f'---rejected: too_few_px= {too_few_px}')
+                    # print(f'---folder under thresh= {folder_under_thresh}') 
+                    # print(f'---max under thresh= {max_under_thresh}')
+                    if  folder_under_thresh >= max_under_thresh:
                         rejected +=1
                         # print(f'---reached max under thresh= {max_under_thresh}')
                         continue
                     else:
-                        tot_under_thresh += 1
-                        # print(f'---allowed: num under thresh= {num_under_thresh}')
+                        folder_under_thresh += 1
+                        # print(f'---allowed: num under thresh= {folder_under_thresh}')
                         selected_tiles.append(file)
 
-                # print(f'---tot under thresh = {tot_under_thresh}')
+                else:
+                    selected_tiles.append(file)
 
-                tot_missing_extent  += missing_extent
-                tot_missing_mask += missing_mask
+                # print(f'---tot under thresh = {folder_under_thresh}')
+
+                folder_missing_extent  += missing_extent
+                folder_missing_mask += missing_mask
             else:
                 print(f"---Skipping {file.name}: not a TIFF file")
 
@@ -498,8 +507,7 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
             assert int(len(train_files)) + int(len(val_files)) + int(len(test_files)) == num_selected_tiles, "Files not split correctly"
 
             print('---END OF SPLIT FUNCTION--------------------------------')
-    print(f'@@@@tot under thresh = {tot_under_thresh}')
-    return total_files, num_selected_tiles, rejected, tot_missing_extent, tot_missing_mask, tot_under_thresh
+    return total_files, num_selected_tiles, rejected, folder_missing_extent, folder_missing_mask, folder_under_thresh
 
 
 def copy_data_and_generate_txt(data_folders, destination):
@@ -1115,13 +1123,6 @@ def make_train_folders(dest_dir):
     test_dir.mkdir(parents=True, exist_ok=True)
     return train_dir, val_dir, test_dir
 
-def handle_interrupt(signal, frame):
-    '''
-    usage: signal.signal(signal.SIGINT, handle_interrupt)
-    '''
-    print("Interrupt received! Cleaning up...")
-    # Add any necessary cleanup code here (e.g., saving model checkpoints)
-    sys.exit(0)
 
 def pad_tile(tile, target_size):
     # Get the current dimensions

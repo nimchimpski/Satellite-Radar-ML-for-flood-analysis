@@ -2,11 +2,11 @@ from pathlib import Path
 import sys
 import os
 from tqdm import tqdm
-from scripts.process_modules.process_dataarrays_module import select_tiles_and_split
 import click
 import shutil
 import signal
-from scripts.process_modules.process_dataarrays_module  import  make_train_folders, handle_interrupt, get_incremental_filename
+from scripts.process_modules.process_dataarrays_module  import  make_train_folders, get_incremental_filename, select_tiles_and_split
+from scripts.process_modules.process_helpers import handle_interrupt
 
 @click.command()
 @click.option("--test",is_flag=True)
@@ -36,7 +36,9 @@ def main(test=None):
     dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_INPUT")
   
     train_ratio=0.7
+    train_ratio=0.7
     val_ratio=0.15
+    test_ratio=0.15
     test_ratio=0.15
     ########################################
 
@@ -48,17 +50,18 @@ def main(test=None):
     low_selection = []
 
     # GET EVENT FOLDER NAME
-    folder_to_process = list(f for f  in iter(src_base.iterdir()) if f.is_dir())
-    print(f'>>>folder_to_process= {folder_to_process[0].name}')
-    if len(folder_to_process) == 0:
+    folders_to_process = list(f for f  in iter(src_base.iterdir()) if f.is_dir())
+    # folder_to_process = folders_to_process[0]
+    # print(f'>>>folder_to_process= {folder_to_process.name}')
+    if len(folders_to_process) == 0:
         print(">>>No event folder found.")
         return
-    elif len(folder_to_process) > 1:
+    elif len(folders_to_process) > 1:
         print(">>>Multiple event folders found.")
         return
     else:
-        src_tiles = folder_to_process[0]
-        print(f'>>>src_tiles_name name= {src_tiles.name}')
+        src_tiles = folders_to_process[0]
+        print(f'>>>src_tiles_name= {src_tiles.name}')
     # parts = src_tiles.name.split('_')[:3]
     # print(f'>>>newname= {parts}')
     # newname = '_'.join(parts)
@@ -87,16 +90,19 @@ def main(test=None):
         # GET NUMBER OF FILES IN FOLDER
 
         print(f"\n>>>>>>>>>>>>>>>>>>> AT FOLDER {folder.name}>>>>>>>>>>>>>>>")
-        foldertotal, selected_tiles, folderrejected, missing_extent, missing_mask, under_thresh = select_tiles_and_split(folder, dest_dir, train_ratio, val_ratio, test_ratio, analysis_threshold, mask_threshold, percent_under_thresh, MAKEFOLDER)
-        print(f'>>>subtotal under threshold= {under_thresh}')
-        if selected_tiles < 10:
+        foldertotal, folder_selected, folderrejected, folder_missing_extent, folder_missing_mask, folder_under_thresh = select_tiles_and_split(folder, dest_dir, train_ratio, val_ratio, test_ratio, analysis_threshold, mask_threshold, percent_under_thresh, MAKEFOLDER)
+        print(f'>>>folder total= {foldertotal}')
+        print(f'>>>folder selected= {folder_selected}')
+        print(f'>>>folder rejected= {folderrejected}')
+        print(f'>>>folder under threshold= {folder_under_thresh}')
+        if folder_selected < 10:
             low_selection.append(folder.name)
 
         total += foldertotal
         rejected += folderrejected   
-        tot_missing_mask += missing_mask
-        tot_missing_extent += missing_extent 
-        tot_under_thresh += under_thresh    
+        tot_missing_mask += folder_missing_mask
+        tot_missing_extent += folder_missing_extent 
+        tot_under_thresh += folder_under_thresh    
  
         print(f">>>subtotal tiles: {total}")
         print(f">>>subtotal Rejected tiles: {rejected}")

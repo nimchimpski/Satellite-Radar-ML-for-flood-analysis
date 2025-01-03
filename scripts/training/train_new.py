@@ -10,7 +10,11 @@ import os.path as osp
 from pathlib import Path 
 from dotenv import load_dotenv  
 import sys
+# import handle interupt
+import signal
+
 # .............................................................
+import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.data import Dataset, DataLoader
@@ -38,36 +42,49 @@ from datetime import datetime
 # .............................................................
 
 from scripts.process_modules.process_helpers import handle_interrupt
-from scripts.train_modules.train_helpers import *
+from scripts.train_modules.train_helpers import is_sweep_run
 from scripts.train_modules.train_classes import  UnetModel,   Segmentation_training_loop 
-from scripts.train_modules.train_functions import  loss_chooser, wandb_initialization, job_type_selector
+from scripts.train_modules.train_functions import  loss_chooser, wandb_initialization, job_type_selector, create_subset
 
 #.............................................................
 load_dotenv()
 os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
 
+def handle_interrupt(signum, frame):
+    print("\n---Custom signal handler: SIGINT received. Exiting.")
+    exit(0)
+# Register signal handler for SIGINT (Ctrl+C)
+signal.signal(signal.SIGINT, handle_interrupt)
+
 @click.command()
-@click.option('--train', is_flag=True, help="Train the model")
+@click.option('--train', is_flag=True,  help="Train the model", default=True)
 @click.option('--test', is_flag=True, help="Test the model")
 def main(train, test):
     """
     CONDA ENVIRONMENT = 'floodenv2'
     """
-    if train and test:
-        raise click.UsageError("You can only specify one of --train or --test.")
-    elif not (train or test):
-        while True:
-            user_input = input("Choose an option (--train or --test): ").strip().lower()
-            if user_input == "--train":
-                click.echo("Training the model...")
-                train = True
-                break
-            elif user_input == "--test":
-                click.echo("Testing the model...")
-                test = True
-                break
-            else:
-                click.echo("Invalid input. Please choose '--train' or '--test'.")
+    # if train and test:
+    #     raise click.UsageError("You can only specify one of --train or --test.")
+    # elif not (train or test):
+    #     while True:
+    #         user_input = input("Choose an option (--train or --test): ").strip().lower()
+    #         if user_input == "--train":
+    #             click.echo("Training the model...")
+    #             train = True
+    #             break
+    #         elif user_input == "--test":
+    #             click.echo("Testing the model...")
+    #             test = True
+    #             break
+    #         else:
+    #             click.echo("Invalid input. Please choose '--train' or '--test'.")
+    if test and train:
+        raise ValueError("You can only specify one of --train or --test.")
+    train = True
+
+    if  test:
+        train = False
+    print(f"train={train}, test={test}")
 
     job_type = "train" if train else "test"
 
@@ -87,7 +104,7 @@ def main(train, test):
 
     subset_fraction = 1
     bs = 16
-    max_epoch = 2
+    max_epoch = 50
     early_stop = False
     patience=5
     num_workers = 8
@@ -98,8 +115,8 @@ def main(train, test):
     in_channels = 1
     DEVRUN = 0
     user_loss = 'focal'
-    focal_alpha = 0.65
-    focal_gamma = 2.0
+    focal_alpha = 0.8
+    focal_gamma = 8
     bce_weight = 0.5
     ###########################################################
     # Dataset Setup
@@ -109,6 +126,8 @@ def main(train, test):
     dataset_path = dataset_path / dataset_name
 
     loss_desc = f"{user_loss}_{focal_alpha}_{focal_gamma}" if user_loss == "focal" else f"{user_loss}_{bce_weight}"
+    run_name = f"{dataset_name}_{timestamp}_BS{bs}_s{subset_fraction}_{loss_desc}"
+    # run_name = 'sweep1'
     run_name = f"{dataset_name}_{timestamp}_BS{bs}_s{subset_fraction}_{loss_desc}"
     # run_name = 'sweep1'
 
@@ -122,14 +141,24 @@ def main(train, test):
         "name": run_name,
         "dataset_name": dataset_name,
         "subset_fraction": subset_fraction,
-        "bs": bs,
+        "batch_size": bs,
         "user_loss": user_loss,
         "focal_alpha": focal_alpha,
         "focal_gamma": focal_gamma,
         "bce_weight": bce_weight,
+        "max_epoch": max_epoch,
     }
-    wandb_logger = wandb_initialization(job_type, repo_path, project, dataset_name, run_name,train_list, val_list, test_list,wandb_config)
+    wandb_logger = wandb_initialization(job_type, repo_path, project, dataset_name, run_name,train_list, val_list, test_list, wandb_config)
 
+    config = wandb.config
+    print(f"---Current config: {wandb.config}")
+    print(f"---focal_alpha: {wandb.config.get('focal_alpha', 'Not Found')}")
+    print(f"---focal_gamma: {wandb.config.get('focal_gamma', 'Not Found')}")
+
+
+    if is_sweep_run():
+        print(">>> IN SWEEP MODE <<<")
+    
     persistent_workers = num_workers > 0
     if job_type == "train":
         train_dl = create_subset(train_list, dataset_path, 'train', subset_fraction, inputs, bs, num_workers, persistent_workers)
@@ -143,7 +172,7 @@ def main(train, test):
 
     # Model Initialization
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED).to('cuda')
-    loss_fn = loss_chooser(user_loss, focal_alpha, focal_gamma, bce_weight)
+    loss_fn = loss_chooser(user_loss, config.focal_alpha, config.focal_gamma, bce_weight)
 
     early_stopping = pl.callbacks.EarlyStopping(
         monitor="val_loss",
@@ -169,7 +198,7 @@ def main(train, test):
     trainer = pl.Trainer(
         logger=wandb_logger,
         log_every_n_steps=LOGSTEPS,
-        max_epochs=max_epoch,
+        max_epochs=config.max_epoch,
         accelerator='gpu',
         devices=1,
         precision='16-mixed',
