@@ -417,7 +417,7 @@ def select_tiles_and_split(source_dir, dest_dir, train_ratio, val_ratio, test_ra
     with open(dest_dir / "train.txt", "a") as traintxt,  open(dest_dir / "val.txt", "a") as valtxt,  open(dest_dir / "test.txt", "a") as testtxt:
 
         # Get a list of all files in the source directory
-        files = list(source_dir.glob('*'))  # Modify '*' if you want a specific file extension
+        files = list(source_dir.glob('*.tif'))  # Modify '*' if you want a specific file extension
 
         # FILTER FILES BY VALID PIXELS
         selected_tiles = []
@@ -762,15 +762,16 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
                 continue
             tile_name = f"tile_{datacube_path.parent.name}_{x_start}_{y_start}.tif"
 
-            # Store metadata for stitching
-            tile_metadata.append({
-                "tile_name": tile_name,
-                "x_start": x_start,
-                "y_start": y_start,
-                "x_end": x_end,
-                "y_end": y_end,
-                "original_width": x_end - x_start,
-                "original_height": y_end - y_start, 
+            if inference:
+                # Store metadata for stitching
+                tile_metadata.append({
+                    "tile_name": tile_name,
+                    "x_start": x_start,
+                    "y_start": y_start,
+                    "x_end": x_end,
+                    "y_end": y_end,
+                    "original_width": x_end - x_start,
+                    "original_height": y_end - y_start, 
             })
 
             dest_path = save_tiles_path  / tile_name
@@ -807,11 +808,12 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
             num_saved += 1
             inference_tiles.append(normalized_tile)
 
-            # Save metadata for stitching
-            metadata_path = save_tiles_path / "tile_metadata.json"
-            with open(metadata_path, "w") as f:
-                json.dump(tile_metadata, f, indent=4)
-            # print(f"---Saved metadata to {metadata_path}")
+            if inference:
+                # Save metadata for stitching
+                metadata_path = save_tiles_path / "tile_metadata.json"
+                with open(metadata_path, "w") as f:
+                    json.dump(tile_metadata, f, indent=4)
+                # print(f"---Saved metadata to {metadata_path}")
 
     if inference:
         return inference_tiles, tile_metadata            
