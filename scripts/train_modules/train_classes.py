@@ -30,6 +30,7 @@ import numpy as np
 import wandb
 import io
 from scripts.train_modules.train_helpers import is_sweep_run
+from scripts.train_modules.train_functions import plot_auc_pr 
 
 
 class FloodDataset(Dataset):
@@ -55,6 +56,8 @@ class FloodDataset(Dataset):
         # print(f'+++++++++++++++++++ get item')
 
         filename = self.sample_list[idx]
+        if  filename.endswith('.json'):
+            raise ValueError(f"Unexpected filename: {filename}")
         file_path = Path(self.tile_root, filename)
         # Use rasterio to inspect layer descriptions and dynamically select layers
         with rasterio.open(file_path) as src:
@@ -166,9 +169,23 @@ class Segmentation_training_loop(pl.LightningModule):
         job_type = 'val'
 
         images, masks = batch
+
+            # DEBUGGING
+        if torch.isnan(images).any() or torch.isinf(images).any():
+            print(f"Batch {batch_idx} - Input contains NaN or Inf")
+            raise ValueError(f"Input contains NaN or Inf at batch {batch_idx}")
+        # print(f"Validation Image Stats - Batch {batch_idx}")
+        # print(f"Mean: {images.mean()}, Std: {images.std()}, Min: {images.min()}, Max: {images.max()}")
+
         images, masks = images.to(self.device), masks.to(self.device)
         logits = self(images)
         # print(f"---Validation Step {batch_idx}: logits shape={logits.shape}, masks shape={masks.shape}")
+            # DEBUGGING
+        if torch.isnan(logits).any() or torch.isinf(logits).any():
+            print(f"Batch {batch_idx} - Logits contain NaN or Inf")
+            print(f"Logits Stats - Mean: {logits.mean()}, Std: {logits.std()}, Min: {logits.min()}, Max: {logits.max()}")
+            raise ValueError(f"Logits contain NaN or Inf at batch {batch_idx}")
+        
         self.validation_outputs.append({'logits': logits, 'masks': masks})  # Store outputs
         loss_per_pixel = self.loss_fn(logits, masks)
         loss, dynamic_weights = self.dynamic_weight_chooser(masks, loss_per_pixel, self.user_loss)
@@ -361,9 +378,6 @@ class Segmentation_training_loop(pl.LightningModule):
                 )
             })
 
-
-            
-    
     
 
     def on_validation_epoch_start(self):
@@ -413,8 +427,17 @@ class Segmentation_training_loop(pl.LightningModule):
 
 
             try:
-                precision, recall, _ = precision_recall_curve(labels_np, logits_np)
+                precision, recall, thresholds = precision_recall_curve(labels_np, logits_np)
+                f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8)  # Avoid division by zero
+                best_index = f1_scores.argmax()
+                best_threshold = thresholds[best_index]
+                print(f"Best Threshold: {best_threshold}, F1-Score: {f1_scores[best_index]}")
+                aucpr_plot = plot_auc_pr(recall, precision, thresholds, best_index, best_threshold)
+                self.logger.experiment.log({"Precision-Recall Curve": wandb.Image(aucpr_plot)})
                 auc_pr = auc(recall, precision)
+                print(f"---AUC-PR area: {auc_pr}")
+
+
             except ValueError as e:
                 print(f"---AUC-PR calculation failed: {e}")
                 auc_pr = 0.0  # Default value for invalid AUC-PR
@@ -449,7 +472,7 @@ class Segmentation_training_loop(pl.LightningModule):
 
     def metrics_maker(self, logits, masks, job_type, loss, user_loss, lr=None):
         # print(f'+++++++++++++    metrics maker')
-        # print(f"---Job type: {job_type}")
+        print(f"---Job type: {job_type}")
         # Thresholded predictions for metrics like IoU, precision, recall
         if user_loss in ['smp_bce', 'bce_dice', 'focal']:
             preds = (torch.sigmoid(logits) > 0.5).int()

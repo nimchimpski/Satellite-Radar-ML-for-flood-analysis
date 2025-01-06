@@ -4,6 +4,7 @@ import wandb
 import sys
 import signal
 import random
+import matplotlib.pyplot as plt
 
 from pathlib import Path
 from pytorch_lightning.loggers import WandbLogger
@@ -16,44 +17,9 @@ from torch import Tensor, einsum
 import segmentation_models_pytorch as smp
 from scripts.train_modules.train_helpers import nsd
 from scripts.train_modules.train_classes import FloodDataset
+from sklearn.metrics import precision_recall_curve, auc, f1_score
 
 
-# DELETE
-def log_metrics_to_wandb(job_type, metrics, wandb_logger):
-    """
-    Log metrics and visualizations to wandb.
-    """
-    print('++++++++++++++LOGGING METRICS TO W&B++++++++++++++')
-    # Extract values from metrics
-    water_accuracy = metrics["tps"] / (metrics["tps"] + metrics["fns"])
-    precision = smp.metrics.precision(metrics["tps"], metrics["fps"], metrics["fns"], metrics["tns"]).mean()
-    recall = smp.metrics.recall(metrics["tps"], metrics["fps"], metrics["fns"], metrics["tns"]).mean()
-    iou = smp.metrics.iou_score(metrics["tps"], metrics["fps"], metrics["fns"], metrics["tns"]).mean()
-
-    # water_accuracy = metrics["tps"] / (metrics["tps"] + metrics["fns"]) if metrics["tps"] + metrics["fns"] > 0 else 0.0
-    # precision = metrics.get("precision", smp.metrics.precision(metrics["tps"], metrics["fps"], metrics["fns"], metrics["tns"]).mean())
-    # recall = metrics.get("recall", smp.metrics.recall(metrics["tps"], metrics["fps"], metrics["fns"], metrics["tns"]).mean())
-    # iou = metrics.get("iou", smp.metrics.iou_score(metrics["tps"], metrics["fps"], metrics["fns"], metrics["tns"]).mean())
-
-
-    # Log metrics
-    wandb_logger.log_metrics({
-        f"{job_type}flood_not_missed": water_accuracy,
-        f"{job_type}iou": iou,
-        f"{job_type}precision": precision,
-        f"{job_type}recall": recall,
-        f"{job_type}nsd_avg": metrics["nsd_avg"],
-    })
-
-    # Log images
-    # for i, (logit, mask) in enumerate(zip(logits, masks)):
-    #     pred_image = (logit[0] > 0.5).cpu().numpy()
-    #     gt_image = mask[0].cpu().numpy()
-
-    #     wandb_logger.experiment.log({
-    #         f"sample_{i}_prediction": wandb.Image(pred_image, caption="Prediction"),
-    #         f"sample_{i}_ground_truth": wandb.Image(gt_image, caption="Ground Truth")
-    #     })
 
 # FOR INFERENCE / COMPARISON FN
 def calculate_metrics(logits, masks, metric_threshold):
@@ -274,3 +240,23 @@ def create_subset(file_list, event, stage,  subset_fraction , inputs, bs, num_wo
     #     return wandb.run
     
 
+def plot_auc_pr(recall, precision, thresholds, best_index, best_threshold):
+
+
+    plt.figure(figsize=(8, 6))
+    plt.plot(recall, precision, label="Precision-Recall Curve")
+    plt.xlabel("Recall")
+    plt.ylabel("Precision")
+    plt.title("Precision-Recall Curve")
+    plt.legend(loc="best")
+    plt.grid()
+    plt.scatter(recall[best_index], precision[best_index], color='red', label=f"Best Threshold: {best_threshold:.2f}")
+    for i, t in enumerate(thresholds):
+        if i % 10 == 0:  # Mark every 10th threshold for clarity
+            plt.annotate(f"{t:.2f}", (recall[i], precision[i]))
+    # plt.show()
+    return plt
+
+
+
+    

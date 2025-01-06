@@ -29,7 +29,7 @@ def make_prediction_tiles(tile_folder, metadata, model, device, threshold):
         shutil.rmtree(predictions_folder)
     predictions_folder.mkdir(exist_ok=True)
 
-    for tile_info in metadata:
+    for tile_info in tqdm(metadata, desc="Making predictions"):
         tile_path = tile_folder /  tile_info["tile_name"]
         pred_path = predictions_folder / tile_info["tile_name"]
 
@@ -76,7 +76,7 @@ def stitch_tiles(metadata, prediction_tiles, save_path, image):
         #print unique values in the stitched image
         # print(f'>>>unique values in empty stitched image: {np.unique(stitched_image)}')
 
-    for tile_info in metadata:
+    for tile_info in tqdm(metadata, desc="Stitching tiles"):
         tile_name = tile_info["tile_name"]
         # Extract position info from metadata
         x_start, x_end = tile_info["x_start"], tile_info["x_end"]
@@ -165,7 +165,7 @@ def main(test=None):
     # ckpt = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\checkpoints\good\mtnweighted_NO341_3__BS16__EP10_weighted_bce.ckpt")
     ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_INPUT")
 
-    threshold = 0.7 # PREDICTION CONFIDENCE THRESHOLD
+    threshold = 0.8 # PREDICTION CONFIDENCE THRESHOLD
     ############################################################################
 
     # FIND THE CKPT

@@ -52,12 +52,12 @@ os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
 
 def handle_interrupt(signum, frame):
     print("\n---Custom signal handler: SIGINT received. Exiting.")
-    exit(0)
+    sys.exit(0)
 # Register signal handler for SIGINT (Ctrl+C)
 signal.signal(signal.SIGINT, handle_interrupt)
 
 @click.command()
-@click.option('--train', is_flag=True,  help="Train the model", default=True)
+@click.option('--train', is_flag=True,  help="Train the model")
 @click.option('--test', is_flag=True, help="Test the model")
 def main(train, test):
     """
@@ -101,10 +101,9 @@ def main(train, test):
     test_ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_INPUT")
     save_path = repo_path / "4results"
     project = "TSX"
-
     subset_fraction = 1
     bs = 16
-    max_epoch = 50
+    max_epoch = 15
     early_stop = False
     patience=5
     num_workers = 8
@@ -114,10 +113,10 @@ def main(train, test):
     inputs = ['hh', 'mask']
     in_channels = 1
     DEVRUN = 0
-    user_loss = 'focal'
-    focal_alpha = 0.8
-    focal_gamma = 8
-    bce_weight = 0.5
+    user_loss = 'smp_bce'
+    focal_alpha = 0.9
+    focal_gamma = 5
+    bce_weight = 0.7
     ###########################################################
     # Dataset Setup
     input_folders = [i for i in dataset_path.iterdir()]
@@ -125,11 +124,17 @@ def main(train, test):
     dataset_name = input_folders[0].name
     dataset_path = dataset_path / dataset_name
 
-    loss_desc = f"{user_loss}_{focal_alpha}_{focal_gamma}" if user_loss == "focal" else f"{user_loss}_{bce_weight}"
-    run_name = f"{dataset_name}_{timestamp}_BS{bs}_s{subset_fraction}_{loss_desc}"
+    if user_loss == "focal":
+        loss_desc = f"{user_loss}_{config.focal_alpha}_{config.focal_gamma}" 
+    elif user_loss == "smp_bce":
+        loss_desc = f"{user_loss}"
+    elif user_loss == "bce_dice":
+        loss_desc = f"{user_loss}_{bce_weight}"
+    else:
+        loss_desc = user_loss
+    run_name = "_"
     # run_name = 'sweep1'
-    run_name = f"{dataset_name}_{timestamp}_BS{bs}_s{subset_fraction}_{loss_desc}"
-    # run_name = 'sweep1'
+
 
         # Dataset Lists
     train_list = dataset_path / "train.txt"
@@ -151,10 +156,17 @@ def main(train, test):
     wandb_logger = wandb_initialization(job_type, repo_path, project, dataset_name, run_name,train_list, val_list, test_list, wandb_config)
 
     config = wandb.config
-    print(f"---Current config: {wandb.config}")
-    print(f"---focal_alpha: {wandb.config.get('focal_alpha', 'Not Found')}")
-    print(f"---focal_gamma: {wandb.config.get('focal_gamma', 'Not Found')}")
+    if not test:
+        print(f"---Current config: {wandb.config}")
+        if user_loss == "focal":
+            print(f"---focal_alpha: {wandb.config.get('focal_alpha', 'Not Found')}")
+            print(f"---focal_gamma: {wandb.config.get('focal_gamma', 'Not Found')}")
 
+    run_name = f"{dataset_name}_{timestamp}_BS{config.batch_size}_s{config.subset_fraction}_{loss_desc}"  
+
+    wandb.run.name = run_name
+    wandb.run.save()
+    print(f"---config.name: {config.name}")
 
     if is_sweep_run():
         print(">>> IN SWEEP MODE <<<")
@@ -169,17 +181,17 @@ def main(train, test):
         ckpt_to_test = next(test_ckpt_path.rglob("*.ckpt"), None)
         if ckpt_to_test is None:
             raise FileNotFoundError(f"No checkpoint found in {test_ckpt_path}")
-
+    print(':::::::::1')
     # Model Initialization
     model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED).to('cuda')
     loss_fn = loss_chooser(user_loss, config.focal_alpha, config.focal_gamma, bce_weight)
-
+    print(':::::::::2')
     early_stopping = pl.callbacks.EarlyStopping(
         monitor="val_loss",
         patience=patience,  # Stop if no improvement for 3 consecutive epochs
         mode="min",
     )
-
+    print(':::::::::3')
     # Trainer Setup
     ckpt_dir = repo_path / "5checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
@@ -194,7 +206,7 @@ def main(train, test):
         callbacks=[checkpoint_callback, early_stopping]
     else:
         callbacks=[checkpoint_callback]
-
+    print(':::::::::4')
     trainer = pl.Trainer(
         logger=wandb_logger,
         log_every_n_steps=LOGSTEPS,
@@ -211,7 +223,9 @@ def main(train, test):
     if train:
         print(">>> Starting training")
         training_loop = Segmentation_training_loop(model, loss_fn, save_path, user_loss)
+        print(':::::::::5')
         trainer.fit(training_loop, train_dataloaders=train_dl, val_dataloaders=val_dl)
+        print(':::::::::6')
     elif test:
         print(f">>> Starting testing with checkpoint: {ckpt_to_test}")
         training_loop = Segmentation_training_loop.load_from_checkpoint(

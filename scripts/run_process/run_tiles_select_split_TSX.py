@@ -34,11 +34,9 @@ def main(test=None):
     if not dst_base.exists():
         raise FileNotFoundError(f"Destination folder {dst_base} does not exist.")
     dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_INPUT")
-  
-    train_ratio=0.7
+
     train_ratio=0.7
     val_ratio=0.15
-    test_ratio=0.15
     test_ratio=0.15
     ########################################
 
