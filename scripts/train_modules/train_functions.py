@@ -16,9 +16,16 @@ from torch import Tensor, einsum
 
 import segmentation_models_pytorch as smp
 from scripts.train_modules.train_helpers import nsd
-from scripts.train_modules.train_classes import FloodDataset
-from sklearn.metrics import precision_recall_curve, auc, f1_score
 
+# from sklearn.metrics import precision_recall_curve, auc, f1_score
+
+def create_subset(file_list, event, stage,  subset_fraction , inputs, bs, num_workers, persistent_workers):
+    from scripts.train_modules.train_classes import FloodDataset
+    dataset = FloodDataset(file_list, event, stage=stage, inputs=inputs)    
+    subset_indices = random.sample(range(len(dataset)), int(subset_fraction * len(dataset)))
+    subset = Subset(dataset, subset_indices)
+    dl = DataLoader(subset, batch_size=bs, num_workers=num_workers, persistent_workers= persistent_workers,  shuffle = (stage == 'train'))
+    return dl
 
 
 # FOR INFERENCE / COMPARISON FN
@@ -85,8 +92,9 @@ def loss_chooser(loss_name, alpha=0.25, gamma=2.0, bce_weight=0.5):
     - bce_
     '''
 
-    if 'focal' in loss_name:
+    if loss_name == "focal":
         print(f'---alpha: {alpha}, gamma: {gamma}---')  
+
     torch_bce = torch.nn.BCEWithLogitsLoss()
     smp_bce =  smp.losses.SoftBCEWithLogitsLoss()
     dice = smp.losses.DiceLoss(mode='binary')
@@ -95,7 +103,9 @@ def loss_chooser(loss_name, alpha=0.25, gamma=2.0, bce_weight=0.5):
     # Adjust gamma to fine-tune focus on hard examples
 
     def bce_dice(preds, targets):
-        return bce_weight * smp_bce(preds, targets) + (1 - bce_weight) * dice(preds, targets)
+        preds_prob = torch.sigmoid(preds)  # Convert logits to probabilities for Dice Loss
+        return bce_weight * smp_bce(preds, targets) + (1 - bce_weight) * dice(preds_prob, targets)
+    
 
     if loss_name == "torch_bce":
         return torch_bce        
@@ -103,15 +113,18 @@ def loss_chooser(loss_name, alpha=0.25, gamma=2.0, bce_weight=0.5):
         return smp_bce
     if loss_name == "focal": # no weighting
         return focal
-    if loss_name == "dice":
-        return dice
+
     if loss_name == "bce_dice":
+        print(f'---loss chooser returning bce_dice with weight: {bce_weight}---')
         return bce_dice
 
-    elif loss_name == "tversky": # no weighting
-        return smp.losses.TverskyLoss()
-    elif loss_name == "jakard":
-        return smp.losses.JaccardLoss() # penalize fp and fn. use with bce
+    # THESE 3 NEED PREDS > PROBS
+    # if loss_name == "dice":
+    #     return dice
+    # elif loss_name == "tversky": # no weighting
+    #     return smp.losses.TverskyLoss()
+    # elif loss_name == "jakard":
+    #     return smp.losses.JaccardLoss() # penalize fp and fn. use with bce
 
     else:
         raise ValueError(f"Unknown loss: {loss_name}")
@@ -206,12 +219,6 @@ def one_hot(label, n_classes, requires_grad=True):
 
     return one_hot_label
 
-def create_subset(file_list, event, stage,  subset_fraction , inputs, bs, num_workers, persistent_workers):
-    dataset = FloodDataset(file_list, event, stage=stage, inputs=inputs)    
-    subset_indices = random.sample(range(len(dataset)), int(subset_fraction * len(dataset)))
-    subset = Subset(dataset, subset_indices)
-    dl = DataLoader(subset, batch_size=bs, num_workers=num_workers, persistent_workers= persistent_workers,  shuffle = (stage == 'train'))
-    return dl
 
     
 # def initialize_wandb(project, job_type, run_name):

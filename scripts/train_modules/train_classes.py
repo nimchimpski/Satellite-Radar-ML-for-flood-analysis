@@ -29,8 +29,11 @@ from matplotlib.lines import Line2D
 import numpy as np
 import wandb
 import io
+import random
 from scripts.train_modules.train_helpers import is_sweep_run
 from scripts.train_modules.train_functions import plot_auc_pr 
+
+
 
 
 class FloodDataset(Dataset):
@@ -156,7 +159,9 @@ class Segmentation_training_loop(pl.LightningModule):
         images, masks = images.to(self.device), masks.to(self.device)
         logits = self(images)
         loss_per_pixel = self.loss_fn(logits, masks)  
+        # ONLY APPLIES DYNAMIC WEIGHTS TO BCE LOSS
         loss, dynamic_weights = self.dynamic_weight_chooser(masks, loss_per_pixel, self.user_loss)
+        # print(f'---used dynamic weights = {dynamic_weights}')
         assert logits.device == masks.device
 
         lr = self._get_current_lr()
@@ -194,17 +199,17 @@ class Segmentation_training_loop(pl.LightningModule):
         val_dataloader = self.trainer.val_dataloaders
         total_batches = len(val_dataloader) 
         # print(f"---Total batches: {total_batches}")
-        # print info about images, preds, masks
+        # is logit a prob?
 
-        if not is_sweep_run():
-            if self.current_epoch == self.trainer.max_epochs - 1 and batch_idx < 2:
-                # This is the last epoch
+        if self.current_epoch == self.trainer.max_epochs - 1 and batch_idx == 1:
+        # This is the last epoch
+            # print(f'---used dynamic weights = {dynamic_weights}')
+            if not is_sweep_run():
                 self.log_combined_visualization(images, logits, masks, self.user_loss)
-                if batch_idx == 1:
-                    print(f'---used dynamic weights = {dynamic_weights}')
+
             # Save images if this is the best-performing model
-            if loss == self.trainer.checkpoint_callback.best_model_score and batch_idx < 2:
-                self.log_combined_visualization(images, logits, masks, self.user_loss)
+            # if loss == self.trainer.checkpoint_callback.best_model_score and batch_idx < 2:
+            #     self.log_combined_visualization(images, logits, masks, self.user_loss)
 
         ioumean, _, recall, _  = self.metrics_maker(logits, masks, job_type,  loss, self.user_loss )
 
@@ -281,18 +286,18 @@ class Segmentation_training_loop(pl.LightningModule):
     def dynamic_weight_chooser(self, masks, loss, user_loss):
         # print(f'+++++++++++++    dynamic weight chooser')
         # print(f'---loss_fn: {self.loss_fn}')
-        if user_loss in ['smp_bce', 'bce_dice']:
+        if user_loss in ['smp_bce']:
 
             # print(f'*********computing dynamic weights')
             weights = self.compute_dynamic_weights(masks)
             weights = weights.to('cuda')
             assert masks.device == weights.device
-            dynamic = True
-            return  (loss * weights).mean(), dynamic
+            dynamic_bool = True
+            return  (loss * weights).mean(), dynamic_bool
         else:
             # print(f'---no dynamic weights')
-            dynamic = False
-            return loss.mean(), dynamic 
+            dynamic_bool = False
+            return loss.mean(), dynamic_bool
         
     # from sklearn.metrics import f1_score
 
@@ -323,17 +328,8 @@ class Segmentation_training_loop(pl.LightningModule):
         """
         Visualizes input images, predictions, and ground truth masks side by side for a batch.
         """
-        # Handle thresholding based on the loss name
-        if loss_name in ['smp_bce', 'bce_dice']:
-            # Threshold predictions for visualization
-            preds = (torch.sigmoid(logits) > 0.5).int()
-            print(f'---THRESHOLDING FOR VISUALISATION')
-        elif loss_name in ['dice', 'focal']:
-            # Use continuous probabilities for visualization
-            preds = torch.sigmoid(logits)
-        else:
-            raise ValueError(f"Unsupported loss name: {loss_name}. Choose from: 'smp_bce', 'dice', 'focal', 'bce_dice'.")
 
+        preds = (torch.sigmoid(logits) > 0.5).int()
 
         print(f'+++++++++++++    log combined visualization')
         print(f'---images shape: {images.shape[0]}') 
@@ -385,7 +381,7 @@ class Segmentation_training_loop(pl.LightningModule):
 
     def on_validation_epoch_end(self):
         """
-        Compute AUC-PR only during the final validation epoch.
+        Compute AUC-PR only during the final validation epoch. takes the 
         """
         # if is_sweep_run():
         #     print(f'---in sweep mode so skipping auc-pr calculation')
@@ -405,34 +401,35 @@ class Segmentation_training_loop(pl.LightningModule):
             if all_logits.numel() == 0 or all_labels.numel() == 0:
                 raise ValueError("Validation outputs are empty. Ensure validation_step is properly implemented.")
 
-
             # Flatten logits and labels
-            logits_np = all_logits.detach().cpu().numpy().flatten()
+            # logits_np = all_logits.detach().cpu().numpy().flatten()
+            logits_np = torch.sigmoid(all_logits).detach().cpu().numpy().flatten()
             labels_np = all_labels.detach().cpu().numpy().flatten()
 
             # Check for NaN or Inf values in logits_np and labels_np
             if not np.isfinite(logits_np).all():
                 raise ValueError("---logits_np contains NaN or Inf values.")
-
             if not np.isfinite(labels_np).all():
                 raise ValueError("---labels_np contains NaN or Inf values.")
-            
-                        # Count unique classes
+            print(f"---Logits: Min={logits_np.min()}, Max={logits_np.max()}, Mean={logits_np.mean()}")
+            print(f"---Labels: Unique={np.unique(labels_np)}, Counts={np.bincount(labels_np.astype(int))}")
+            # Count unique classes
             unique_classes, class_counts = np.unique(labels_np, return_counts=True)
-            print(f"Unique classes: {unique_classes}, Counts: {class_counts}")
+            print(f"---Unique classes: {unique_classes}, Counts: {class_counts}")
+
+            
             
             # Raise an error if there's only one class
             if len(unique_classes) < 2:
                 raise ValueError("---Precision-Recall curve requires at least two classes in the ground truth.")
-
-
             try:
                 precision, recall, thresholds = precision_recall_curve(labels_np, logits_np)
                 f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8)  # Avoid division by zero
                 best_index = f1_scores.argmax()
                 best_threshold = thresholds[best_index]
-                print(f"Best Threshold: {best_threshold}, F1-Score: {f1_scores[best_index]}")
+                print(f"---Best Threshold: {best_threshold}, F1-Score: {f1_scores[best_index]}")
                 aucpr_plot = plot_auc_pr(recall, precision, thresholds, best_index, best_threshold)
+                # aucpr_plot.show()
                 self.logger.experiment.log({"Precision-Recall Curve": wandb.Image(aucpr_plot)})
                 auc_pr = auc(recall, precision)
                 print(f"---AUC-PR area: {auc_pr}")
@@ -460,11 +457,20 @@ class Segmentation_training_loop(pl.LightningModule):
         all_labels = torch.cat([output['masks'] for output in self.test_outputs], dim=0)
 
         # Convert to NumPy arrays
-        logits_np = all_logits.cpu().numpy().flatten()
+        logits_np = torch.sigmoid(all_logits).cpu().numpy().flatten()
         labels_np = all_labels.cpu().numpy().flatten()
 
+            # Debugging statistics
+        print(f"Logits Stats - Min: {logits_np.min()}, Max: {logits_np.max()}, Mean: {logits_np.mean()}")
+        print(f"Labels Unique: {np.unique(labels_np, return_counts=True)}")
+
+        # Handle edge cases (e.g., single-class labels)
+        if len(np.unique(labels_np)) < 2:
+            print("---Skipping AUC-PR calculation due to insufficient class variability.")
+            return
+
         # Compute Precision-Recall and AUC
-        precision, recall, _ = precision_recall_curve(labels_np, logits_np)
+        precision, recall, _ = precision_recall_curve(labels_np, logits_np, pos_label=1)
         auc_pr = auc(recall, precision)
 
         # Log AUC-PR for the test set
@@ -472,14 +478,9 @@ class Segmentation_training_loop(pl.LightningModule):
 
     def metrics_maker(self, logits, masks, job_type, loss, user_loss, lr=None):
         # print(f'+++++++++++++    metrics maker')
-        print(f"---Job type: {job_type}")
+        # print(f"---Job type: {job_type}")
         # Thresholded predictions for metrics like IoU, precision, recall
-        if user_loss in ['smp_bce', 'bce_dice', 'focal']:
-            preds = (torch.sigmoid(logits) > 0.5).int()
-        elif user_loss in ['dice']:
-            preds = torch.sigmoid(logits)
-        else:
-            raise ValueError(f"Unsupported loss name: {user_loss}. Choose from:  'smp_bce', 'dice', 'focal', 'bce_dice'.")
+        preds = (torch.sigmoid(logits) > 0.5).int()
 
         # Compute metrics
         tp, fp, fn, tn = smp.metrics.get_stats(preds, masks.long(), mode='binary')
@@ -509,8 +510,10 @@ class Segmentation_training_loop(pl.LightningModule):
             self.log(f'recall_{job_type}', recallmean, prog_bar=True, on_step=False, on_epoch=True)
             self.log(f'f1_{job_type}', f1mean, prog_bar=True, on_step=False, on_epoch=True)
     
-
         return ioumean, precisionmean, recallmean, f1mean
+    
+
+
 '''
 def log_combined_visualization_plt(self, preds, mask):
         print(f'+++++++++++++    log combined visualization plt')
@@ -781,3 +784,4 @@ class SurfaceDiceLoss(nn.Module):
         dice = self.dice_loss(logits, targets)
         surface = self.surface_loss(logits, targets)
         return self.alpha * dice + (1 - self.alpha) * surface
+
