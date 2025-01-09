@@ -8,10 +8,10 @@ import os
 import click
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 
-from scripts.process_modules.process_tiffs_module import create_event_datacube_TSX, clean_mask, compute_dataset_min_max, reproject_to_4326_fixpx_gdal, make_float32,  create_extent_from_mask, write_min_max_to_json, clip_image_to_mask_gdal, read_min_max_from_json
+from scripts.process_modules.process_tiffs_module import create_event_datacube_TSX, clean_mask,  reproject_to_4326_fixpx_gdal, make_float32,  create_extent_from_mask,  clip_image_to_mask_gdal
 
 from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr, compute_dataset_minmax
-from scripts.process_modules.process_helpers import  print_tiff_info_TSX
+from scripts.process_modules.process_helpers import  print_tiff_info_TSX, write_minmax_to_json, read_minmax_from_json, compute_dataset_minmax
 
 start=time.time()
 
@@ -21,22 +21,23 @@ start=time.time()
 def main(test=None):
 
     ############################################################################
-    data_root = Path(r"Y:\1NEW_DATA\1data\2interim\ALL TSX PROCESSING")
+    # data_root = Path(r"Y:\1NEW_DATA\1data\2interim\ALL TSX PROCESSING")
+    data_root = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_all_processing")
 
     if test:
         print('>>>TEST MODE<<<')
         dataset =  data_root / 'TSX_TO_PROCESS_TEST' 
     else:
         print('>>>FULL DATASET MODE<<<')
-        dataset =  data_root / 'TSX_TO_PROCESS_###' 
+        dataset =  data_root / 'TSX_TO_PROCESS_INPUT' 
         # dataset=Path(r"Y:\1NEW_DATA\1data\2interim\TSX aa datacubes") 
         # dataset = Path(r'Y:\1NEW_DATA\1data\2interim\TSX aa datacubes\ok')
     make_tifs = 0
     make_datacubes = 0
-    get_minmax = 0
-    make_norm_tiles = 1
+    get_minmax = 1
+    make_norm_tiles = 0
     norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
-    minmax_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\global_minmax_###\global_minmax.json")
+    minmax_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\global_minmax_INPUT\global_minmax.json")
     percent_non_flood = 100
     ############################################################################
     print(f'>>>make_tifs= {make_tifs==1} \n>>>make_datacubes= {make_datacubes==1} \n>>>get minmax= {get_minmax==1} \n>>>make_tiles= {make_norm_tiles==1}')
@@ -161,18 +162,20 @@ def main(test=None):
     if get_minmax:
         if minmax_path.exists():
             print(f'>>>minmax file exists: {minmax_path}')
-            # shutil.rmtree(minmax_path)
-        else:
-            print(f'>>>minmax file does not exist: getting vals')
-            glob_min, glob_max = compute_dataset_minmax(dataset, layer_name='hh')
-            print(f'>>>new gmin= {glob_min} gmax= {glob_max}')
-            write_min_max_to_json(glob_min,glob_max, minmax_path)
+            # delete file
+            os.remove(minmax_path)
+
+        # else:
+        print(f'>>>minmax file does not exist: getting vals')
+        glob_min, glob_max = compute_dataset_minmax(dataset, band_to_read=1)
+        print(f'>>>new gmin= {glob_min} gmax= {glob_max}')
+        write_minmax_to_json(glob_min,glob_max, minmax_path)
         # CHECK THE NEW JSON
-    min_max_data = read_min_max_from_json(minmax_path)
-    print(f'>>>from json minmax= {min_max_data}')
-    print('>>>data min:', min_max_data['min'])
-    print('>>>data: max', min_max_data['max'])
-    minmax = (min_max_data['min'], min_max_data['max'])
+    minmax_data = read_minmax_from_json(minmax_path)
+    print(f'>>>from json minmax= {minmax_data}')
+    print('>>>data min:', minmax_data['min'])
+    print('>>>data: max', minmax_data['max'])
+    minmax = (minmax_data['min'], minmax_data['max'])
     print(f'>>>minmax= {minmax}') 
 
     # MAKE NORMALIZED TILES
@@ -194,7 +197,7 @@ def main(test=None):
             event_code = "_".join(cube.name.split('_')[:2])
             print("\n>>>>>>>>>>>> cube >>>>>>>>>>>>>>>=", cube.name)
             print(">>>event_code=", event_code)
-            save_tiles_path = data_root / 'TSX_TILES' / 'NORM_TILES_FOR_SELECT_AND_SPLIT_###' / f"{event_code}_normalized_tiles_{norm_func}_pcnf{percent_non_flood}"
+            save_tiles_path = data_root / 'TSX_TILES' / 'NORM_TILES_FOR_SELECT_AND_SPLIT_INPUT' / f"{event_code}_normalized_tiles_{norm_func}_pcnf{percent_non_flood}"
             if save_tiles_path.exists():
                 print(f"### Deleting existing tiles folder: {save_tiles_path}")
                 # delete the folder and create a new one

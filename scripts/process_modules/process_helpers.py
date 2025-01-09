@@ -90,12 +90,20 @@ def compute_dataset_minmax(dataset, band_to_read=1):
     
     # Iterate through all TIFF files
     for event in dataset.iterdir(): # ITER EVENT
+        print(f'---event= {event.name}')    
         if event.is_dir():
-            image = list(event.rglob('*IMAGE_*.tif') )[0]
+            images = list(event.rglob('*IMAGE_*.tif') )
+            print(f'---num images= {len(images)}')
+            if len(images) != 1:
+                raise (f"---Error: {event.name} contains {len(images)} images. Skipping...")
+            image = images[0]
+
+            # print(f"---Processing {image}")
             try:
-                min, max = compute_image_min_max(image, band_to_read)
-                global_min = int(min(global_min, min))
-                global_max = int(max(global_max, max))
+                lmin, lmax = compute_image_minmax(image, band_to_read)
+                global_min = int(min(global_min, lmin))
+                global_max = int(max(global_max, lmax))
+                print(f'---global_min={global_min}, global_max={global_max}')
             except Exception as e:
                 print(f"Error processing {image}: {e}")
                 continue
@@ -127,7 +135,7 @@ def check_loc_max_and_rescale(image, glob_max, output_path, band_to_read=1):
 
 
 
-def write_min_max_to_json(min, max, output_path):
+def write_minmax_to_json(min, max, output_path):
     """
     Writes min and max values for each variable to a JSON file.
 
@@ -151,7 +159,7 @@ def write_min_max_to_json(min, max, output_path):
 
 
 
-def read_min_max_from_json(input_path):
+def read_minmax_from_json(input_path):
     with open(input_path, 'r') as json_file:
         data = json.load(json_file)
     return data.get("hh", {})
@@ -163,9 +171,10 @@ def compute_image_minmax(image, band_to_read=1):
     with rasterio.open(image) as src:
         # Read the data as a NumPy array
         data = src.read(band_to_read)  # Read the first band
-        # Update global min and max
         min, max = int(data.min()), int(data.max())
         print(f"---{image.name}: Min: {data.min()}, Max: {data.max()}")
+        # get image size in pixels
+        print(f"---: Shape: {data.shape}")
     return min, max
 
 def rescale_image_minmax( data, glob_max, loc_max):
