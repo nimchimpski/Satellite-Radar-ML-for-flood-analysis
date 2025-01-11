@@ -135,6 +135,7 @@ class Segmentation_training_loop(pl.LightningModule):
         self.validation_outputs = []
         self.dynamic_weights = False
         self.user_loss = user_loss
+        self.test_images = []
 
         print(f'---loss_fn: {loss_fn}')
 
@@ -166,16 +167,14 @@ class Segmentation_training_loop(pl.LightningModule):
 
         lr = self._get_current_lr()
 
-        _, _, _, _= self.metrics_maker(logits, masks, job_type, loss, self.user_loss, lr)
+        # _, _, _, _= self.metrics_maker(logits, masks, job_type, loss, self.user_loss, lr)
         return loss
 
     def validation_step(self, batch, batch_idx):
         # print(f'+++++++++++++    validation step')
         job_type = 'val'
-
         images, masks = batch
-
-            # DEBUGGING
+        # DEBUGGING
         if torch.isnan(images).any() or torch.isinf(images).any():
             print(f"Batch {batch_idx} - Input contains NaN or Inf")
             raise ValueError(f"Input contains NaN or Inf at batch {batch_idx}")
@@ -184,6 +183,7 @@ class Segmentation_training_loop(pl.LightningModule):
 
         images, masks = images.to(self.device), masks.to(self.device)
         logits = self(images)
+
         # print(f"---Validation Step {batch_idx}: logits shape={logits.shape}, masks shape={masks.shape}")
             # DEBUGGING
         if torch.isnan(logits).any() or torch.isinf(logits).any():
@@ -211,19 +211,36 @@ class Segmentation_training_loop(pl.LightningModule):
             # if loss == self.trainer.checkpoint_callback.best_model_score and batch_idx < 2:
             #     self.log_combined_visualization(images, logits, masks, self.user_loss)
 
-        ioumean, _, recall, _  = self.metrics_maker(logits, masks, job_type,  loss, self.user_loss )
+        ioumean, precisionmean , recall, f1mean  = self.metrics_maker(logits, masks, job_type,  loss, self.user_loss )
 
-        return {"loss": loss, "recall": recall, "iou": ioumean,  'logits': logits, 'labels': masks}   
+        return {"loss": loss, "precision": precisionmean,"recall": recall, "iou": ioumean,  "f1": f1mean, 'logits': logits, 'labels': masks}   
 
     def test_step(self, batch, batch_idx):
         # print(f'+++++++++++++    test step')
         job_type = 'test'
-
         images, masks = batch
-        images, masks = images.to('cuda'), masks.to('cuda')
-        logits = self(images)
-        self.test_outputs.append({'logits': logits, 'masks': masks})  # Store outputs
 
+        self.test_images.append(images.cpu())
+        # DEBUGGING
+        if torch.isnan(images).any() or torch.isinf(images).any():
+            print(f"Batch {batch_idx} - Input contains NaN or Inf")
+            raise ValueError(f"Input contains NaN or Inf at batch {batch_idx}")
+        # print(f"Validation Image Stats - Batch {batch_idx}")
+        # print(f"Mean: {images.mean()}, Std: {images.std()}, Min: {images.min()}, Max: {images.max()}")
+
+        images, masks = images.to(self.device), masks.to(self.device)
+        logits = self(images)
+
+        # Debug tensor stats
+        # print(f"---Batch {batch_idx}: images.min={images.min()}, images.max={images.max()}")
+        # print(f"---Batch {batch_idx}: logits.min={logits.min()}, logits.max={logits.max()}")
+        # print(f"---Batch {batch_idx}: masks.min={masks.min()}, masks.max={masks.max()}")
+        if torch.isnan(logits).any() or torch.isinf(logits).any():
+            print(f"---Batch {batch_idx} - Logits contain NaN or Inf")
+            print(f"---Logits Stats - Mean: {logits.mean()}, Std: {logits.std()}, Min: {logits.min()}, Max: {logits.max()}")
+            raise ValueError(f"Logits contain NaN or Inf at batch {batch_idx}")
+
+        self.test_outputs.append({'logits': logits, 'masks': masks})  # Store outputs
         loss_per_pixel = self.loss_fn(logits, masks)
         loss, dynamic_weights = self.dynamic_weight_chooser(masks, loss_per_pixel, self.user_loss)
         assert logits.device == masks.device
@@ -232,24 +249,23 @@ class Segmentation_training_loop(pl.LightningModule):
 
         # preds = (torch.sigmoid(logits) > 0.5).int() # BCE, 
 
-        # CALCULATE METRICS
-        ioumean, precisionmean, recallmean, f1mean = self.metrics_maker(logits, masks, job_type, loss, self.user_loss)
+
         # Determine if this is the last batch
         test_dataloader = self.trainer.test_dataloaders # First DataLoader
         total_batches = len(test_dataloader)
         # print(f"---Total batches: {total_batches}")
-        if batch_idx < 2:
-            # print('---batch_idx:', batch_idx)
-            # print(f"---Saving test outputs for batch {batch_idx}")
-            self.log_combined_visualization(images, logits, masks, self.user_loss)  # Log the last batch visualization
+        # if batch_idx == 1:
+        #     # print('---batch_idx:', batch_idx)
+        #     # print(f"---Saving test outputs for batch {batch_idx}")
+        self.log_combined_visualization(images, logits, masks, self.user_loss)
+        #     # JUST PRINT ON FIRST BATCH
+        #     if batch_idx == 1:
+        #         print(f'---used dynamic weights = {dynamic_weights}')
 
-            # JUST PRINT ON FIRST BATCH
-            if batch_idx == 1:
-                print(f'---used dynamic weights = {dynamic_weights}')
+            # CALCULATE METRICS
+        ioumean, precisionmean, recallmean, f1mean = self.metrics_maker(logits, masks, job_type, loss, self.user_loss)
 
-
-
-        return {"iou": ioumean, "precision": precisionmean, "recall": recallmean, "f1": f1mean, "loss": loss, 'logits': logits, 'labels': masks}
+        return { "loss": loss,  "precision": precisionmean, "recall": recallmean, "iou": ioumean, "f1": f1mean, 'logits': logits, 'labels': masks}
 
    
     
@@ -310,7 +326,7 @@ class Segmentation_training_loop(pl.LightningModule):
     def configure_optimizers(self):
         print(f'+++++++++++++    configure optimizers')
         params = [x for x in self.model.parameters() if x.requires_grad]
-        optimizer = torch.optim.AdamW(params, lr=1e-3)
+        optimizer = torch.optim.AdamW(params, lr=1e-3, weight_decay=1e-4)
         scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[8], gamma=0.1)
 
         # Return as a list of dictionaries with `scheduler` and `interval` specified
@@ -329,10 +345,10 @@ class Segmentation_training_loop(pl.LightningModule):
         Visualizes input images, predictions, and ground truth masks side by side for a batch.
         """
 
-        preds = (torch.sigmoid(logits) > 0.5).int()
+        preds = (torch.sigmoid(logits) > 0.1).int()
 
-        print(f'+++++++++++++    log combined visualization')
-        print(f'---images shape: {images.shape[0]}') 
+        # print(f'+++++++++++++    log combined visualization')
+        # print(f'---images shape: {images.shape[0]}') 
         assert images.ndim == 4, f"Expected images with 4 dimensions (B, C, H, W), got {images.shape}"
         assert preds.ndim == 4, f"Expected preds with 4 dimensions (B, C, H, W), got {preds.shape}"
         assert masks.ndim == 4, f"Expected masks with 4 dimensions (B, C, H, W), got {masks.shape}"
@@ -386,6 +402,7 @@ class Segmentation_training_loop(pl.LightningModule):
         # if is_sweep_run():
         #     print(f'---in sweep mode so skipping auc-pr calculation')
         #     return
+
         # Check if this is the final epoch
         if self.current_epoch == self.trainer.max_epochs - 1:
             print(f"---Calculating AUC-PR for the final validation epoch: {self.current_epoch}")
@@ -406,6 +423,7 @@ class Segmentation_training_loop(pl.LightningModule):
             logits_np = torch.sigmoid(all_logits).detach().cpu().numpy().flatten()
             labels_np = all_labels.detach().cpu().numpy().flatten()
 
+            # DEBUGGING
             # Check for NaN or Inf values in logits_np and labels_np
             if not np.isfinite(logits_np).all():
                 raise ValueError("---logits_np contains NaN or Inf values.")
@@ -416,12 +434,10 @@ class Segmentation_training_loop(pl.LightningModule):
             # Count unique classes
             unique_classes, class_counts = np.unique(labels_np, return_counts=True)
             print(f"---Unique classes: {unique_classes}, Counts: {class_counts}")
-
-            
-            
             # Raise an error if there's only one class
             if len(unique_classes) < 2:
                 raise ValueError("---Precision-Recall curve requires at least two classes in the ground truth.")
+            
             try:
                 precision, recall, thresholds = precision_recall_curve(labels_np, logits_np)
                 f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8)  # Avoid division by zero
@@ -432,8 +448,6 @@ class Segmentation_training_loop(pl.LightningModule):
                 # aucpr_plot.show()
                 self.logger.experiment.log({"Precision-Recall Curve": wandb.Image(aucpr_plot)})
                 auc_pr = auc(recall, precision)
-                print(f"---AUC-PR area: {auc_pr}")
-
 
             except ValueError as e:
                 print(f"---AUC-PR calculation failed: {e}")
@@ -448,31 +462,40 @@ class Segmentation_training_loop(pl.LightningModule):
     def on_test_epoch_start(self):
         self.test_outputs = []
 
+    
     def on_test_epoch_end(self):
         # Ensure validation_outputs has been populated
+        print(f'+++++++++++++    on test epoch end')
         if not self.test_outputs:
             raise ValueError("---test outputs are empty. Check your test_step implementation.")
         # Aggregate outputs
         all_logits = torch.cat([output['logits'] for output in self.test_outputs], dim=0)
-        all_labels = torch.cat([output['masks'] for output in self.test_outputs], dim=0)
+        all_masks = torch.cat([output['masks'] for output in self.test_outputs], dim=0)
 
         # Convert to NumPy arrays
         logits_np = torch.sigmoid(all_logits).cpu().numpy().flatten()
-        labels_np = all_labels.cpu().numpy().flatten()
+        masks_np = all_masks.cpu().numpy().flatten()
 
             # Debugging statistics
         print(f"Logits Stats - Min: {logits_np.min()}, Max: {logits_np.max()}, Mean: {logits_np.mean()}")
-        print(f"Labels Unique: {np.unique(labels_np, return_counts=True)}")
+        print(f"Labels Unique: {np.unique(masks_np, return_counts=True)}")
 
-        # Handle edge cases (e.g., single-class labels)
-        if len(np.unique(labels_np)) < 2:
+        # Handle edge cases (e.g., single-class masks)
+        if len(np.unique(masks_np)) < 2:
             print("---Skipping AUC-PR calculation due to insufficient class variability.")
             return
 
         # Compute Precision-Recall and AUC
-        precision, recall, _ = precision_recall_curve(labels_np, logits_np, pos_label=1)
+        precision, recall, thresholds = precision_recall_curve(masks_np, logits_np, pos_label=1)
         auc_pr = auc(recall, precision)
-
+        f1_scores = 2 * (precision * recall) / (precision + recall + 1e-8)  # Avoid division by zero
+        best_index = f1_scores.argmax()
+        best_threshold = thresholds[best_index]
+        print(f"---Best Threshold: {best_threshold}, F1-Score: {f1_scores[best_index]}")
+        aucpr_plot = plot_auc_pr(recall, precision, thresholds, best_index, best_threshold)
+        # aucpr_plot.show()
+        self.logger.experiment.log({"Precision-Recall Curve": wandb.Image(aucpr_plot)})
+        auc_pr = auc(recall, precision)
         # Log AUC-PR for the test set
         self.log('auc_pr_test', auc_pr, prog_bar=True, logger=True)
 
@@ -480,7 +503,9 @@ class Segmentation_training_loop(pl.LightningModule):
         # print(f'+++++++++++++    metrics maker')
         # print(f"---Job type: {job_type}")
         # Thresholded predictions for metrics like IoU, precision, recall
-        preds = (torch.sigmoid(logits) > 0.5).int()
+        mthresh = 0.5
+        preds = (torch.sigmoid(logits) > mthresh).int()
+        print(f'---metric threshod={mthresh}')
 
         # Compute metrics
         tp, fp, fn, tn = smp.metrics.get_stats(preds, masks.long(), mode='binary')
@@ -581,6 +606,10 @@ class UnetModel(nn.Module):
             padding=3, 
             bias=False
         )
+
+                # Add dropout to the decoder
+        self.model.decoder.dropout = nn.Dropout(p=0.5)
+
         self.model.decoder.final_conv = nn.Conv2d(
         in_channels=1,  # Use the appropriate number of input channels from the decoder
         out_channels=1,  # Single output channel for binary segmentation

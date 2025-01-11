@@ -22,7 +22,7 @@ def main(test=None):
 
     ############################################################################
     # data_root = Path(r"Y:\1NEW_DATA\1data\2interim\ALL TSX PROCESSING")
-    data_root = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_all_processing")
+    data_root = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim")
 
     if test:
         print('>>>TEST MODE<<<')
@@ -34,8 +34,8 @@ def main(test=None):
         # dataset = Path(r'Y:\1NEW_DATA\1data\2interim\TSX aa datacubes\ok')
     make_tifs = 0
     make_datacubes = 0
-    get_minmax = 1
-    make_norm_tiles = 0
+    get_minmax = 0
+    make_norm_tiles = 1
     norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
     minmax_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\global_minmax_INPUT\global_minmax.json")
     percent_non_flood = 100
@@ -172,9 +172,7 @@ def main(test=None):
         write_minmax_to_json(glob_min,glob_max, minmax_path)
         # CHECK THE NEW JSON
     minmax_data = read_minmax_from_json(minmax_path)
-    print(f'>>>from json minmax= {minmax_data}')
-    print('>>>data min:', minmax_data['min'])
-    print('>>>data: max', minmax_data['max'])
+    print(f'>>>from json minmax now= {minmax_data}')
     minmax = (minmax_data['min'], minmax_data['max'])
     print(f'>>>minmax= {minmax}') 
 

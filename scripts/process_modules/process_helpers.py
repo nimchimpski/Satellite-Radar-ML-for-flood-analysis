@@ -17,9 +17,9 @@ from tqdm import tqdm
 # CHECKS FOR INITIAL FOLDERS
 
 def check_single_input_filetype(folder,  title, fsuffix):
-    print(f"---Checking for {title} in {folder}")
-    print(f"---Suffix: {fsuffix}")
-    print(f"---Title: {title}")
+    # print(f"---Checking for {title} in {folder}")
+    # print(f"---Suffix: {fsuffix}")
+    # print(f"---Title: {title}")
     input_list = [i for i in folder.iterdir() if i.is_file() and i.suffix.lower() == fsuffix.lower() and title.lower() in i.name.lower()]
 
     if len(input_list) == 0:
@@ -134,7 +134,6 @@ def check_loc_max_and_rescale(image, glob_max, output_path, band_to_read=1):
                 dst.write(data)
 
 
-
 def write_minmax_to_json(min, max, output_path):
     """
     Writes min and max values for each variable to a JSON file.
@@ -157,14 +156,10 @@ def write_minmax_to_json(min, max, output_path):
     print(f"Min and max values saved to {output_path}")
 
 
-
-
 def read_minmax_from_json(input_path):
     with open(input_path, 'r') as json_file:
         data = json.load(json_file)
     return data.get("hh", {})
-
-
 
 
 def compute_image_minmax(image, band_to_read=1):

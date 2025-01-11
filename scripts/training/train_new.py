@@ -85,6 +85,7 @@ def main(train, test):
 
     if  test:
         train = False
+        print('>>> ARE YOU TESTING THE CORRECT CKPT? <<<')
     print(f"train={train}, test={test}")
 
     job_type = "train" if train else "test"
@@ -104,8 +105,8 @@ def main(train, test):
     project = "TSX"
     subset_fraction = 1
     bs = 16
-    max_epoch = 100
-    early_stop = False
+    max_epoch =20
+    early_stop = True
     patience=5
     num_workers = 8
     WBOFFLINE = False
@@ -114,10 +115,10 @@ def main(train, test):
     inputs = ['hh', 'mask']
     in_channels = 1
     DEVRUN = 0
-    user_loss ='smp_bce' # 'bce_dice' #'focal' # 'bce_dice' # focal'
+    user_loss = 'bce_dice' #'smp_bce' # 'bce_dice' #'focal' # 'bce_dice' # focal'
     focal_alpha = 0.8
     focal_gamma = 8
-    bce_weight = 0.7 # FOR BCE_DICE
+    bce_weight = 0.35 # FOR BCE_DICE
     ###########################################################
     # Dataset Setup
     input_folders = [i for i in dataset_path.iterdir()]

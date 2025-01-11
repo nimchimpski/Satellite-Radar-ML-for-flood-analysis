@@ -15,9 +15,10 @@ from rasterio.windows import Window
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from scripts.train_modules.train_classes import UnetModel
 from scripts.process_modules.process_tiffs_module import  create_event_datacube_TSX_inf,         reproject_to_4326_gdal, make_float32_inf
-from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr, read_min_max_from_json
-from scripts.process_modules.process_helpers import  print_tiff_info_TSX, check_single_input_filetype, rasterize_kml_rasterio, compute_image_minmax, process_raster_minmax, path_not_exists, read_min_max_from_json
+from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr
+from scripts.process_modules.process_helpers import  print_tiff_info_TSX, check_single_input_filetype, rasterize_kml_rasterio, compute_image_minmax, process_raster_minmax, path_not_exists, read_minmax_from_json
 from collections import OrderedDict
+from skimage.morphology import binary_erosion
 
 start=time.time()
 
@@ -165,16 +166,16 @@ def main(test=None):
     # ckpt = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\checkpoints\good\mtnweighted_NO341_3__BS16__EP10_weighted_bce.ckpt")
     ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_INPUT")
 
-    threshold = 0.5 # PREDICTION CONFIDENCE THRESHOLD
+    threshold = 0.9 # PREDICTION CONFIDENCE THRESHOLD
     ############################################################################
 
     # FIND THE CKPT
     ckpt = next(ckpt_path.rglob("*.ckpt"), None)
-
+    print(f'>>> threshold: {threshold}')
     if ckpt is None:
         print(f"---No checkpoint found in {ckpt_path}")
         return
-    print(f'>>>ckpt: {ckpt}')
+    print(f'>>>ckpt: {ckpt.name}')
     # FIND THE SAR IMAGE
     image = check_single_input_filetype(img_src, 'image', '.tif')
     if image is None:
@@ -196,7 +197,7 @@ def main(test=None):
         shutil.rmtree(extracted)
     extracted.mkdir(exist_ok=True)
 
-    statsdict = read_min_max_from_json(minmax_path)
+    statsdict = read_minmax_from_json(minmax_path)
     stats = (statsdict["min"], statsdict["max"])
     print(f'>>>stats: {stats}')
 
@@ -212,7 +213,7 @@ def main(test=None):
 
     image = rescaled_image
 
-    save_path = img_src / f'{ckpt.name}_th{threshold}_prediction.tif'
+    save_path = img_src / f'{ckpt.stem}_th{threshold}_prediction.tif'
     if save_path.exists():
         try:
             print(f"--- Deleting existing prediction file: {save_path}")

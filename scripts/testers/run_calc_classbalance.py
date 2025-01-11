@@ -28,14 +28,16 @@ def calc_ratio(tiles):
     print(f"{tile.parent.name} Ratio: {class_ratio:.2f}")
     return class_ratio
 
-train_INPUT = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_INPUT" )
+# train_INPUT = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_INPUT" )
+train_INPUT = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_input_goodresultsmtnVNM\all_TSX_logclipmm_g_nomask1_full" )
 
 
 
-for event in train_INPUT.iterdir():
-    print(f"---Processing {event.name}")
-    for splitfolder in event.iterdir():
-        if not splitfolder.is_dir():
+# for event in train_INPUT.iterdir():
+if True:
+    
+    for splitfolder in train_INPUT.iterdir():
+        if not splitfolder.name in ["train", "test", "val"]:
             continue
         # if not splitfolder.name == "test":
         #     continue
