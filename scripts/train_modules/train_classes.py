@@ -63,22 +63,25 @@ class FloodDataset(Dataset):
             raise ValueError(f"Unexpected filename: {filename}")
         file_path = Path(self.tile_root, filename)
         # Use rasterio to inspect layer descriptions and dynamically select layers
-        with rasterio.open(file_path) as src:
-            layer_descriptions = src.descriptions  # Get layer descriptions
-            # print(f"Layer Descriptions: {layer_descriptions}")  # Debugging
+        try:
+            with rasterio.open(file_path) as src:
+                layer_descriptions = src.descriptions  # Get layer descriptions
+                # print(f"Layer Descriptions: {layer_descriptions}")  # Debugging
 
-            # Ensure descriptions are present
-            if not layer_descriptions:
-                raise ValueError(f"No layer descriptions found in {file_path}")
+                # Ensure descriptions are present
+                if not layer_descriptions:
+                    raise ValueError(f"No layer descriptions found in {file_path}")
 
-            # Dynamically select layers based on their descriptions
-            hh_index = layer_descriptions.index('hh')  # Index of 'hh' layer
-            mask_index = layer_descriptions.index('mask')  # Index of 'mask' layer
+                # Dynamically select layers based on their descriptions
+                hh_index = layer_descriptions.index('hh')  # Index of 'hh' layer
+                mask_index = layer_descriptions.index('mask')  # Index of 'mask' layer
 
-            # Read only the required layers
-            hh = src.read(hh_index + 1)  # Rasterio uses 1-based indexing
-            mask = src.read(mask_index + 1)
-
+                # Read only the required layers
+                hh = src.read(hh_index + 1)  # Rasterio uses 1-based indexing
+                mask = src.read(mask_index + 1)
+        except Exception as e:
+            print(f"Error reading file {file_path}: {e}")
+            raise
         # tile = tiff.imread(Path(self.tile_root, filename))
 
         # print tile info and shape
@@ -166,8 +169,9 @@ class Segmentation_training_loop(pl.LightningModule):
         assert logits.device == masks.device
 
         lr = self._get_current_lr()
+        # self.log('lr', lr,  on_step=True, on_epoch=True, prog_bar=True, logger=True)
 
-        # _, _, _, _= self.metrics_maker(logits, masks, job_type, loss, self.user_loss, lr)
+        _, _, _, _= self.metrics_maker(logits, masks, job_type, loss, self.user_loss, lr)
         return loss
 
     def validation_step(self, batch, batch_idx):
@@ -187,8 +191,8 @@ class Segmentation_training_loop(pl.LightningModule):
         # print(f"---Validation Step {batch_idx}: logits shape={logits.shape}, masks shape={masks.shape}")
             # DEBUGGING
         if torch.isnan(logits).any() or torch.isinf(logits).any():
-            print(f"Batch {batch_idx} - Logits contain NaN or Inf")
-            print(f"Logits Stats - Mean: {logits.mean()}, Std: {logits.std()}, Min: {logits.min()}, Max: {logits.max()}")
+            print(f"---Batch {batch_idx} - Logits contain NaN or Inf")
+            print(f"---Logits Stats - Mean: {logits.mean()}, Std: {logits.std()}, Min: {logits.min()}, Max: {logits.max()}")
             raise ValueError(f"Logits contain NaN or Inf at batch {batch_idx}")
         
         self.validation_outputs.append({'logits': logits, 'masks': masks})  # Store outputs
@@ -246,10 +250,7 @@ class Segmentation_training_loop(pl.LightningModule):
         assert logits.device == masks.device
 
         # print(f"---weighted_loss device: {weighted_loss.device}")
-
         # preds = (torch.sigmoid(logits) > 0.5).int() # BCE, 
-
-
         # Determine if this is the last batch
         test_dataloader = self.trainer.test_dataloaders # First DataLoader
         total_batches = len(test_dataloader)
@@ -272,7 +273,7 @@ class Segmentation_training_loop(pl.LightningModule):
     def _get_current_lr(self):
         # print(f'+++++++++++++    get current lr')
         lr = [x["lr"] for x in self.optimizers().param_groups]
-        return torch.Tensor([lr]).cuda()
+        return lr[0]
 
     
     def compute_dynamic_weights(self, mask):
@@ -326,14 +327,17 @@ class Segmentation_training_loop(pl.LightningModule):
     def configure_optimizers(self):
         print(f'+++++++++++++    configure optimizers')
         params = [x for x in self.model.parameters() if x.requires_grad]
-        optimizer = torch.optim.AdamW(params, lr=1e-3, weight_decay=1e-4)
-        scheduler = torch.optim.lr_scheduler.MultiStepLR(optimizer, milestones=[8], gamma=0.1)
+        optimizer = torch.optim.AdamW(params, lr=1e-4, weight_decay=1e-4)
+        # scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=5, min_lr=1e-4, verbose=True)
+        scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size=4, gamma=0.5) # gama= coefficient. bigger value means faster decay
+        # scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.95)
 
         # Return as a list of dictionaries with `scheduler` and `interval` specified
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": scheduler,
+                "monitor": "val_loss",
                 "interval": "epoch",  # or "step" if you want to step every batch
                 "frequency": 1
             }
@@ -352,8 +356,11 @@ class Segmentation_training_loop(pl.LightningModule):
         assert images.ndim == 4, f"Expected images with 4 dimensions (B, C, H, W), got {images.shape}"
         assert preds.ndim == 4, f"Expected preds with 4 dimensions (B, C, H, W), got {preds.shape}"
         assert masks.ndim == 4, f"Expected masks with 4 dimensions (B, C, H, W), got {masks.shape}"
-        max_samples = 50  # Maximum number of samples to visualize
+
+        max_samples = 20  # Maximum number of samples to visualize
+        examples = []
         for i in range(min(images.shape[0], max_samples)):  # Loop through each sample in the batch
+            # print(f"---images.shape {images.shape}")
 
             # print(f"---Sample {i}")
             # Convert tensors to numpy
@@ -378,17 +385,21 @@ class Segmentation_training_loop(pl.LightningModule):
 
             # Stack the images horizontally (side by side)
             combined = np.concatenate([image, pred, mask], axis=1)
-            plt.imshow(np.concatenate([image, pred, mask], axis=1), cmap="gray")
-            plt.title(f"Sample {i} | Input | Prediction | Ground Truth")
-            # plt.show()
+            fig, ax = plt.subplots(figsize=(20,6))
+            fig.patch.set_edgecolor('yellow')  # Set border color
+            fig.patch.set_linewidth(3)        # Set border thickness
 
-            # Log to WandB
-            self.logger.experiment.log({
-                f"Sample {i} Visualization": wandb.Image(
-                    combined.astype(np.uint8),  # Convert to uint8 for display
-                    caption=f"Sample {i} | Input | Prediction | Ground Truth"
-                )
-            })
+            ax.imshow(np.concatenate([image, pred, mask], axis=1), cmap="gray")
+            ax.axis('off')  # Turn off axis labels
+            ax.set_title(f"Sample {i} | Input | Prediction | Ground Truth")
+
+            final_image = wandb.Image(combined, caption=f" sample {i} | Input | Prediction | Ground Truth")
+            examples.append(final_image)
+
+            plt.close(fig)
+
+        # Log to WandB
+        self.logger.experiment.log({"examples": examples})  
 
     
 
@@ -493,9 +504,12 @@ class Segmentation_training_loop(pl.LightningModule):
         best_threshold = thresholds[best_index]
         print(f"---Best Threshold: {best_threshold}, F1-Score: {f1_scores[best_index]}")
         aucpr_plot = plot_auc_pr(recall, precision, thresholds, best_index, best_threshold)
-        # aucpr_plot.show()
-        self.logger.experiment.log({"Precision-Recall Curve": wandb.Image(aucpr_plot)})
-        auc_pr = auc(recall, precision)
+        self.logger.experiment.log({
+        "Precision-Recall Curve": wandb.Image(aucpr_plot),
+        "Best Threshold": best_threshold, 
+        "Best F1-Score": f1_scores[best_index]})
+
+
         # Log AUC-PR for the test set
         self.log('auc_pr_test', auc_pr, prog_bar=True, logger=True)
 
@@ -503,9 +517,12 @@ class Segmentation_training_loop(pl.LightningModule):
         # print(f'+++++++++++++    metrics maker')
         # print(f"---Job type: {job_type}")
         # Thresholded predictions for metrics like IoU, precision, recall
+        # move masks to cuda
+
         mthresh = 0.5
-        preds = (torch.sigmoid(logits) > mthresh).int()
-        print(f'---metric threshod={mthresh}')
+        probs = torch.sigmoid(logits) 
+        preds = (probs > mthresh).int()
+        # print(f'---metric threshod={mthresh}')
 
         # Compute metrics
         tp, fp, fn, tn = smp.metrics.get_stats(preds, masks.long(), mode='binary')
@@ -522,6 +539,12 @@ class Segmentation_training_loop(pl.LightningModule):
 
         assert loss is not None, f"Loss is None for {job_type} job" 
 
+        # Ensure tensors are moved to CPU
+        # pr_masks = masks.flatten().cpu().numpy()  # Convert to NumPy array
+        # pr_probs = probs.flatten().cpu().numpy()  # Convert to NumPy array
+
+        # print(f"---pr_masks shape: {pr_masks.shape}, pr_probs shape: {pr_probs.shape}")
+
         # Logging
         if job_type == 'train':
             self.log('train_loss', loss, prog_bar=True, on_step=True, on_epoch=True)
@@ -531,9 +554,14 @@ class Segmentation_training_loop(pl.LightningModule):
 
         if not job_type == 'train':
             self.log(f'iou_{job_type}', ioumean, prog_bar=True, on_step=False, on_epoch=True)
-            self.log(f'precision_{job_type}', precisionmean, prog_bar=True, on_step=False, on_epoch=True)
+            self.log(f'precision_{job_type}', precisionmean, prog_bar=True, on_step=False, on_epoch=True )
             self.log(f'recall_{job_type}', recallmean, prog_bar=True, on_step=False, on_epoch=True)
-            self.log(f'f1_{job_type}', f1mean, prog_bar=True, on_step=False, on_epoch=True)
+            self.log(f'f1_{job_type}', f1mean, prog_bar=True, on_step=False, on_epoch=True )
+            # Precision-Recall Curve Logging (Binary Classification)
+            # wandb_pr = wandb.plot.pr_curve(pr_masks, pr_probs, title=f"Precision-Recall Curve {job_type}")
+            # self.log({"pr": wandb_pr})
+     
+
     
         return ioumean, precisionmean, recallmean, f1mean
     

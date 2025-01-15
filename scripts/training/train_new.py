@@ -29,6 +29,7 @@ from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint,EarlyStopping
 from iglovikov_helper_functions.dl.pytorch.lightning import find_average
 from surface_distance.metrics import compute_surface_distances, compute_surface_dice_at_tolerance
+from pytorch_lightning.tuner.tuning import Tuner
 # .............................................................
 import tifffile as tiff
 import matplotlib.pyplot as plt
@@ -99,15 +100,18 @@ def main(train, test):
     ###########################################################
     # Paths and Parameters
     repo_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2")
-    dataset_path = repo_path / "1data" / "3final" / "train_INPUT"
+    dataset_path = repo_path / "1data" / "4final" / "train_INPUT"
+    if test:
+        dataset_path = repo_path / "1data" / "4final" / "test_INPUT"
+
     test_ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_INPUT")
     save_path = repo_path / "4results"
     project = "TSX"
     subset_fraction = 1
-    bs = 16
-    max_epoch =20
-    early_stop = True
-    patience=5
+    bs = 8
+    max_epoch =50
+    early_stop = False
+    patience=10
     num_workers = 8
     WBOFFLINE = False
     LOGSTEPS = 50
@@ -125,6 +129,7 @@ def main(train, test):
     assert len(input_folders) == 1
     dataset_name = input_folders[0].name
     dataset_path = dataset_path / dataset_name
+    print(f"Dataset: {dataset_path}")
 
     if user_loss != 'focal':
         focal_alpha = None
@@ -178,6 +183,7 @@ def main(train, test):
     
     persistent_workers = num_workers > 0
     if job_type == "train":
+        print(">>> Creating data loaders")
         train_dl = create_subset(train_list, dataset_path, 'train', subset_fraction, inputs, bs, num_workers, persistent_workers)
         val_dl = create_subset(val_list, dataset_path, 'val', subset_fraction, inputs, bs, num_workers, persistent_workers)
 
@@ -220,6 +226,8 @@ def main(train, test):
         num_sanity_val_steps=2,
         callbacks=callbacks
     )
+
+
 
     # Training or Testing
     if train:

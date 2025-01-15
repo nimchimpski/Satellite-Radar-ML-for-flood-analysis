@@ -16,28 +16,30 @@ def main(test=None):
     '''
     signal.signal(signal.SIGINT, handle_interrupt)
 
-    if test:
-        click.echo("TEST SOURCE")
-        src_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_TILES\NORM_TILES_FOR_SELECT_AND_SPLIT_TEST")
-    else:
-        click.echo("SERIOUS DATA")
-        src_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim\TSX_TILES\NORM_TILES_FOR_SELECT_AND_SPLIT_INPUT")
-
+    src_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3TSX_TILES\NORM_TILES_FOR_SELECT_AND_SPLIT_INPUT")
     dataset_name = None
     ############################################
     MAKEFOLDER = True
     analysis_threshold=1
     mask_threshold=0.3
-    percent_under_thresh=0.05 # 0.001 = 1% 
+    percent_under_thresh=0.0 # 0.001 = 1% 
 
-    dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_INPUT")
+    dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\train_INPUT")
+    if test:
+        click.echo("TEST DESTINATION")
+        dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\test_INPUT")
     if not dst_base.exists():
         raise FileNotFoundError(f"Destination folder {dst_base} does not exist.")
-    dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\train_INPUT")
+    print(f"Destination folder: {dst_base}")
+  
 
-    train_ratio=0.005
-    val_ratio=0.005
-    test_ratio=0.99
+    train_ratio=0.829999
+    val_ratio=0.17
+    test_ratio=0.000001
+    if test:
+        train_ratio=0.001
+        val_ratio=0.001
+        test_ratio=0.998
     ########################################
 
     total = 0

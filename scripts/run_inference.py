@@ -151,9 +151,9 @@ def clean_checkpoint_keys(state_dict):
 def main(test=None):
     if test:
         print("TEST SOURCE")
-        img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\predict_input_test")
+        img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_input_test")
     else:
-        img_src =  Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3final\predict_INPUT")
+        img_src =  Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_INPUT")
     if path_not_exists(img_src):
         return
 
@@ -166,7 +166,7 @@ def main(test=None):
     # ckpt = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\checkpoints\good\mtnweighted_NO341_3__BS16__EP10_weighted_bce.ckpt")
     ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_INPUT")
 
-    threshold = 0.9 # PREDICTION CONFIDENCE THRESHOLD
+    threshold = 0.01 # PREDICTION CONFIDENCE THRESHOLD
     ############################################################################
 
     # FIND THE CKPT
@@ -192,7 +192,7 @@ def main(test=None):
     # CREATE THE EXTRACTED FOLDER
     extracted = img_src / f'{image_code}_extracted'
     if extracted.exists():
-        print(f"--- Deleting existing extracted folder: {extracted}")
+        # print(f"--- Deleting existing extracted folder: {extracted}")
         # delete the folder and create a new one
         shutil.rmtree(extracted)
     extracted.mkdir(exist_ok=True)
@@ -206,7 +206,6 @@ def main(test=None):
     scale_factor = process_raster_minmax(image, rescaled_image, stats[1], threshold=0.7)
     print(f'>>>scale_factor: {scale_factor}')
     # scaler = scale_factor*0.8
-    print(f'---threshold: {threshold}') 
     # print(f' scaler: {scaler}')
     # threshold = threshold*scaler
     # print(f'---new threshold= {threshold}')
@@ -292,7 +291,7 @@ def main(test=None):
     # print(f'>>>prediction_img shape:',prediction_img.shape)
     # display the prediction mask
     plt.imshow(prediction_img, cmap='gray')
-    plt.show()
+    # plt.show()
 
 
 

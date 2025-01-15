@@ -301,6 +301,8 @@ def print_tiff_info_TSX( image):
         with rasterio.open(image) as src:
             data = src.read()
             nan_check(data)
+            resolution = src.res  # Or alternatively src.transform.a, src.transform.e
+            print(f"---Resolution: {resolution} (pixel size in CRS units)")
             for i in range(1, src.count + 1):
                 band_data = src.read(i)
                 min, max = min_max_vals(band_data)

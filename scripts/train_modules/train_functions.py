@@ -258,9 +258,9 @@ def plot_auc_pr(recall, precision, thresholds, best_index, best_threshold):
     plt.legend(loc="best")
     plt.grid()
     plt.scatter(recall[best_index], precision[best_index], color='red', label=f"Best Threshold: {best_threshold:.2f}")
-    for i, t in enumerate(thresholds):
-        if i % 10 == 0:  # Mark every 10th threshold for clarity
-            plt.annotate(f"{t:.2f}", (recall[i], precision[i]))
+    # for i, t in enumerate(thresholds):
+    #     if i % 10 == 0:  # Mark every 10th threshold for clarity
+    #         plt.annotate(f"{t:.2f}", (recall[i], precision[i]))
     # plt.show()
     return plt
 
