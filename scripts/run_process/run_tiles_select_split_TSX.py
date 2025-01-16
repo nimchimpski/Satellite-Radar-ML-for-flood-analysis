@@ -22,7 +22,7 @@ def main(test=None):
     MAKEFOLDER = True
     analysis_threshold=1
     mask_threshold=0.3
-    percent_under_thresh=0.0 # 0.001 = 1% 
+    percent_under_thresh=0.25 # 0.001 = 1% 
 
     dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\train_INPUT")
     if test:

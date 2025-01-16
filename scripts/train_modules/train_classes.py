@@ -557,6 +557,7 @@ class Segmentation_training_loop(pl.LightningModule):
             self.log(f'precision_{job_type}', precisionmean, prog_bar=True, on_step=False, on_epoch=True )
             self.log(f'recall_{job_type}', recallmean, prog_bar=True, on_step=False, on_epoch=True)
             self.log(f'f1_{job_type}', f1mean, prog_bar=True, on_step=False, on_epoch=True )
+            self.log(f'thresh_{job_type}', mthresh)
             # Precision-Recall Curve Logging (Binary Classification)
             # wandb_pr = wandb.plot.pr_curve(pr_masks, pr_probs, title=f"Precision-Recall Curve {job_type}")
             # self.log({"pr": wandb_pr})
