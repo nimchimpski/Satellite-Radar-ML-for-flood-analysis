@@ -2,6 +2,7 @@ import numpy as np
 from pathlib import Path
 import rasterio
 from tqdm import tqdm
+import click
 
 # Assume tiles is a list of numpy arrays (ground truth masks)
 # Each tile has 1 for flooded and 0 for non-flooded pixels
@@ -25,30 +26,43 @@ def calc_ratio(tiles):
 
     # Calculate class ratio
     total_pixels = flooded_count + non_flooded_count
+    if total_pixels == 0:
+        print(f"---{tiles.name} Ratio: 0")
+        return  
     class_ratio = flooded_count / total_pixels
     # print(f'---event: {event.name}')
     print(f"{tile.parent.name} Ratio: {class_ratio:.2f}")
     return class_ratio
 
 # train_INPUT = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\train_INPUT\695971749_1.nc_normalized_tiles_logclipmm_g_pcnf100_mt0.3_pcu0.0" )
-train_INPUT = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\train_INPUT" )
 
 
+@click.command()
+@click.option('--test', is_flag=True, help="Use test_INPUT")
+@click.option('--train', is_flag=True, help="Use train_INPUT")
+def main(test = False, train = False):
 
-# for event in train_INPUT.iterdir():
-# if True:
-for folder in train_INPUT.iterdir():
-    for splitfolder in folder.iterdir():        
-        if splitfolder.is_dir and  splitfolder.name in ["train", "test", "val"]:
-            # if not splitfolder.name == "test":
-            #     continue
-            # print(f"---Processing {splitfolder.name}")
-            calc_ratio(splitfolder)
-        elif splitfolder.suffix == '.txt':
-            # print(f"---Processing txt {splitfolder.name}")
-            with open(splitfolder, 'r') as f:
-                lines = f.readlines()
-                numlines = len(lines)
-                print(f"---{splitfolder.name} has {numlines} lines")
+    if test:
+        src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\test_INPUT")
+    elif train:
+        src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\train_INPUT" )
+    # for event in train_INPUT.iterdir():
+    # if True:
+    for folder in src.iterdir():
+        for splitfolder in folder.iterdir():        
+            if splitfolder.is_dir and  splitfolder.name in ["train", "test", "val"]:
+                # if not splitfolder.name == "test":
+                #     continue
+                # print(f"---Processing {splitfolder.name}")
+                calc_ratio(splitfolder)
+            elif splitfolder.suffix == '.txt':
+                # print(f"---Processing txt {splitfolder.name}")
+                with open(splitfolder, 'r') as f:
+                    lines = f.readlines()
+                    numlines = len(lines)
+                    print(f"---{splitfolder.name} has {numlines} lines")
+
+if __name__ == "__main__":
+    main()
 
 
