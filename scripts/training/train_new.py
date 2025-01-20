@@ -109,7 +109,7 @@ def main(train, test):
     project = "TSX"
     subset_fraction = 1
     bs = 8
-    max_epoch =25
+    max_epoch =100
     early_stop = False
     patience=10
     num_workers = 8

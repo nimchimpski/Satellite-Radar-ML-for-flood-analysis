@@ -149,12 +149,22 @@ def clean_checkpoint_keys(state_dict):
 @click.command()
 @click.option('--test', is_flag=True, help='loading from test folder', show_default=False)
 def main(test=None):
+    with open(Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\floodaiv2_config.json")) as file:
+        config = json.load(file)
+    
+    # print(f'>>>config: {config}')
+    
+    threshold = config["threshold"] # PREDICTION CONFIDENCE THRESHOLD
+    print(f'>>>threshold: {threshold}')
     if test:
         print("TEST SOURCE")
         img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_input_test")
     else:
-        img_src =  Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_INPUT")
+        # img_src =  Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_INPUT")
+        img_src =  Path(config["input_folder"])
+        print(f'>>>img_src: {img_src}')
     if path_not_exists(img_src):
+        print(f"---No input folder found in {img_src}")
         return
 
     ############################################################################
@@ -166,7 +176,6 @@ def main(test=None):
     # ckpt = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\checkpoints\good\mtnweighted_NO341_3__BS16__EP10_weighted_bce.ckpt")
     ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_INPUT")
 
-    threshold = 0.98 # PREDICTION CONFIDENCE THRESHOLD
     ############################################################################
 
     # FIND THE CKPT
@@ -199,7 +208,7 @@ def main(test=None):
 
     statsdict = read_minmax_from_json(minmax_path)
     stats = (statsdict["min"], statsdict["max"])
-    print(f'>>>stats: {stats}')
+    print(f'>>>stats from file: {stats}')
 
     # PROCESS THE IMAGE FOR MIN MAX - 
     rescaled_image = extracted / f'{image.stem}_rescaled.tif'
@@ -212,7 +221,7 @@ def main(test=None):
 
     image = rescaled_image
 
-    save_path = img_src / f'{ckpt.stem}_th{threshold}_prediction.tif'
+    save_path = img_src / f'{ckpt.stem}_th{threshold}_WATER.tif'
     if save_path.exists():
         try:
             print(f"--- Deleting existing prediction file: {save_path}")
