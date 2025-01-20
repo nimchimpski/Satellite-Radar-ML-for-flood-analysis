@@ -16,7 +16,7 @@ from rasterio.warp import calculate_default_transform, reproject, Resampling
 from scripts.train_modules.train_classes import UnetModel
 from scripts.process_modules.process_tiffs_module import  create_event_datacube_TSX_inf,         reproject_to_4326_gdal, make_float32_inf
 from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr
-from scripts.process_modules.process_helpers import  print_tiff_info_TSX, check_single_input_filetype, rasterize_kml_rasterio, compute_image_minmax, process_raster_minmax, path_not_exists, read_minmax_from_json
+from scripts.process_modules.process_helpers import  print_tiff_info_TSX, check_single_input_filetype, rasterize_kml_rasterio, compute_image_minmax, process_raster_minmax, path_not_exists, read_minmax_from_json, normalize_imagedata_inf, read_raster, write_raster
 from collections import OrderedDict
 from skimage.morphology import binary_erosion
 
@@ -155,17 +155,27 @@ def main(test=None):
     # print(f'>>>config: {config}')
     
     threshold = config["threshold"] # PREDICTION CONFIDENCE THRESHOLD
+    img_src = Path(config["input_folder"])
+    output_filename = config["output_filename"]
+
     print(f'>>>threshold: {threshold}')
     if test:
         print("TEST SOURCE")
         img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_input_test")
-    else:
-        # img_src =  Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_INPUT")
-        img_src =  Path(config["input_folder"])
-        print(f'>>>img_src: {img_src}')
+
+    print(f'>>>img_src: {img_src}')
+
     if path_not_exists(img_src):
         print(f"---No input folder found in {img_src}")
         return
+    
+    save_path = img_src / f'{output_filename}_th{threshold}_WATER.tif'
+    if save_path.exists():
+        try:
+            print(f"--- Deleting existing prediction file: {save_path}")
+            save_path.unlink()
+        except Exception as e:
+            print(f"--- Error deleting existing prediction file: {e}")
 
     ############################################################################
     minmax_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\global_minmax_INPUT\global_minmax.json")
@@ -206,28 +216,34 @@ def main(test=None):
         shutil.rmtree(extracted)
     extracted.mkdir(exist_ok=True)
 
+
+
+
+    # GET THE TRAINING MIN MAX STATS
     statsdict = read_minmax_from_json(minmax_path)
     stats = (statsdict["min"], statsdict["max"])
-    print(f'>>>stats from file: {stats}')
+    print(f'>>>stats used for training model: {stats}')
+    glob_max = stats[1]
+    print(f'>>>glob_max: {glob_max}')
 
-    # PROCESS THE IMAGE FOR MIN MAX - 
-    rescaled_image = extracted / f'{image.stem}_rescaled.tif'
-    scale_factor = process_raster_minmax(image, rescaled_image, stats[1], threshold=0.7)
-    print(f'>>>scale_factor: {scale_factor}')
-    # scaler = scale_factor*0.8
-    # print(f' scaler: {scaler}')
-    # threshold = threshold*scaler
-    # print(f'---new threshold= {threshold}')
-
+    # NORMALIZE THE IMAGE
+    # GET THE IMAGE MIN MAX
+    data, metadata = read_raster(image)
+    loc_min, loc_max = data.min(), data.max()
+    print(f"---Local min: {loc_min}, Local max: {loc_max}")
+    # NORMALIZE THE DATA
+    normdata = normalize_imagedata_inf( data, glob_max, loc_min, loc_max)
+    # CREATE THE NORMALIZED IMAGE PATH OBJECT
+    norm_image = extracted / f'{image_code}_norm.tif'
+    # WRITE THE NORMALIZED IMAGE
+    write_raster(norm_image, normdata, metadata)
+    # PRINT THE NORMALIZED IMAGE INFO
+    print_tiff_info_TSX(norm_image)
+    
     image = rescaled_image
 
-    save_path = img_src / f'{ckpt.stem}_th{threshold}_WATER.tif'
-    if save_path.exists():
-        try:
-            print(f"--- Deleting existing prediction file: {save_path}")
-            save_path.unlink()
-        except Exception as e:
-            print(f"--- Error deleting existing prediction file: {e}")
+#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
     
     print_tiff_info_TSX(image)
     print(f'>>>image.name = ',image.name)

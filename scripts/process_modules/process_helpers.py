@@ -111,6 +111,7 @@ def compute_dataset_minmax(dataset, band_to_read=1):
     print(f"Global Min: {global_min}, Global Max: {global_max}")
     return global_min, global_max
 
+'''
 def check_loc_max_and_rescale(image, glob_max, output_path, band_to_read=1):
     with rasterio.open(image)as src:
         data = src.read(band_to_read)  # Read the first band
@@ -133,7 +134,7 @@ def check_loc_max_and_rescale(image, glob_max, output_path, band_to_read=1):
             ) as dst:
                 dst.write(data)
 
-
+'''
 def write_minmax_to_json(min, max, output_path):
     """
     Writes min and max values for each variable to a JSON file.
@@ -172,8 +173,12 @@ def compute_image_minmax(image, band_to_read=1):
         print(f"---: Shape: {data.shape}")
     return min, max
 
-def rescale_image_minmax( data, glob_max, loc_max):
+def normalize_imagedata_0( data, glob_max, loc_max):
         data = data * glob_max / loc_max
+        return data
+
+def normalize_imagedata_inf( data, glob_max, loc_min, loc_max):
+        data = ((data - loc_min) / (loc_max - loc_min)) * glob_max
         return data
 
 # FUNCTIONAL
@@ -184,24 +189,7 @@ def read_raster(image_path, band_to_read=1):
         metadata = src.meta.copy()
     return data, metadata
 
-def rescale_image_minmax(data, glob_max, loc_max):
-    """Rescales the image data to align `loc_max` with `glob_max`."""
-    scale_factor = glob_max / loc_max
-    return data * scale_factor, scale_factor
 
-def check_and_rescale(data, metadata, glob_max, threshold=0.8):
-    """Checks the local max and rescales the data if below a threshold."""
-    loc_min, loc_max = data.min(), data.max()
-    print(f"---Local min: {loc_min}, Local max: {loc_max}")
-    
-    if loc_max < threshold * glob_max:
-        data, scale_factor = rescale_image_minmax(data, glob_max, loc_max)
-        print(f"---Rescaled from {loc_max} to {glob_max}")
-    else:
-        print("---No rescaling needed.")
-        scale_factor = 1.0
-    
-    return data, metadata, scale_factor
 
 def write_raster(output_path, data, metadata):
     """Writes a raster dataset to the specified output path."""
@@ -224,6 +212,18 @@ def process_raster_minmax(image_path, output_path, glob_max, threshold=0.8):
     data, metadata, scale_factor = check_and_rescale(data, metadata, glob_max, threshold)
     write_raster(output_path, data, metadata)
     return scale_factor
+
+def check_and_rescale(data, metadata, glob_max, threshold=0.8):
+    """Checks the local max and rescales the data if below a threshold."""
+    loc_min, loc_max = data.min(), data.max()
+    print(f"---Local min: {loc_min}, Local max: {loc_max}")
+    data, scale_factor = rescale_image_minmax(data, glob_max, loc_max)
+    print(f"---Rescaled from {loc_max} to {glob_max}")
+    return data, metadata, scale_factor
+
+
+
+
 
 # DATAARRAY TESTS
 

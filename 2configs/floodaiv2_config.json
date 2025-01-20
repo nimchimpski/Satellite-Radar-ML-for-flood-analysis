@@ -7,7 +7,7 @@
 
 "output_folder": "C:/Users/floodai/UNOSAT_FloodAI_v2/1data/4final/predict_INPUT",
 
-"output_file_name" : "SENSOR_DATETIME_IMGCODE_WATER.tif",
+"output_filename" : "SENSOR_DATETIME_IMGCODE",
 
 "analysis_extent": "C:/Users/floodai/UNOSAT_FloodAI_v2/1data/4final/predict_INPUT/extent_INPUT"
 }
