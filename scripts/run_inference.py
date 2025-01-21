@@ -195,6 +195,7 @@ def main(test=None):
         print(f"---No checkpoint found in {ckpt_path}")
         return
     print(f'>>>ckpt: {ckpt.name}')
+
     # FIND THE SAR IMAGE
     image = check_single_input_filetype(img_src, 'image', '.tif')
     if image is None:
@@ -204,7 +205,7 @@ def main(test=None):
     # if poly is None:
         # return
 
-    # GET REGION CODE FROM MASK
+    # GET REGION CODE FROM MASK TODO
     image_code = "_".join(image.name.split('_')[:2])
     print(f'>>>image_code= ',image_code)
 
@@ -220,47 +221,47 @@ def main(test=None):
 
 
     # GET THE TRAINING MIN MAX STATS
-    statsdict = read_minmax_from_json(minmax_path)
+    statsdict =                       read_minmax_from_json(minmax_path)
     stats = (statsdict["min"], statsdict["max"])
-    print(f'>>>stats used for training model: {stats}')
-    glob_max = stats[1]
-    print(f'>>>glob_max: {glob_max}')
+    # print(f'>>>stats used for training model: {stats}')
+    # glob_max = stats[1]
+    # print(f'>>>glob_max: {glob_max}')
 
-    # NORMALIZE THE IMAGE
-    # GET THE IMAGE MIN MAX
-    data, metadata = read_raster(image)
-    loc_min, loc_max = data.min(), data.max()
-    print(f"---Local min: {loc_min}, Local max: {loc_max}")
-    # NORMALIZE THE DATA
-    normdata = normalize_imagedata_inf( data, glob_max, loc_min, loc_max)
-    # CREATE THE NORMALIZED IMAGE PATH OBJECT
-    norm_image = extracted / f'{image_code}_norm.tif'
-    # WRITE THE NORMALIZED IMAGE
-    write_raster(norm_image, normdata, metadata)
+    # # NORMALIZE THE IMAGE
+    # # GET THE IMAGE MIN MAX
+    # data, metadata = read_raster(image)
+    # loc_min, loc_max = data.min(), data.max()
+    # print(f"---Local min: {loc_min}, Local max: {loc_max}")
+    # # NORMALIZE THE DATA
+    # normdata = normalize_imagedata_inf( data, glob_max, loc_min, loc_max)
+    # # CREATE THE NORMALIZED IMAGE PATH OBJECT
+    # norm_image = extracted / f'{image_code}_norm.tif'
+    # # WRITE THE NORMALIZED IMAGE
+    # write_raster(norm_image, normdata, metadata)
     # PRINT THE NORMALIZED IMAGE INFO
-    print_tiff_info_TSX(norm_image)
-    
-    image = rescaled_image
+    # print_tiff_info_TSX(norm_image)
+    # image = rescaled_image
 
-#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<#TODO why are you normalizing here??????? <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-    
+
     print_tiff_info_TSX(image)
     print(f'>>>image.name = ',image.name)
     # with rasterio.open(image) as src:
         # print(f'>>>src shape= ',src.shape)
 
+    # SORT OUT ANALYSIS EXTENT
 
     # ex_extent = extracted / f'{image_code}_extent.tif'
     # create_extent_from_mask(image, ex_extent)
     # rasterize_kml_rasterio( poly, ex_extent, pixel_size=0.0001, burn_value=1)
 
+    # REPROJECT IMAGE
     reproj_image = extracted / f'{image_code}_4326.tif'
     reproject_to_4326_gdal(image, reproj_image)
 
     # reproj_extent = extracted / f'{image_code}_4326_extent.tif'
     # reproject_to_4326_gdal(ex_extent, reproj_extent)
 
+    # CHANGE DATATYPE TO FLOAT32
     final_image = extracted / f'{reproj_image.stem}_32_final_image.tif'
     make_float32_inf(reproj_image, final_image)
 

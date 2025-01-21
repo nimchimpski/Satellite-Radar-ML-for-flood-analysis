@@ -659,8 +659,8 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
     """
     print('+++++++in tile_datacube rxr fn ++++++++')
     global_min, global_max = stats
-    print('---global_min= ', global_min)
-    print('---global_max= ', global_max)
+    print('---FILE global_min= ', global_min)
+    print('---FILE global_max= ', global_max)
     num_tiles = 0
     num_saved = 0
     num_has_nans = 0
@@ -698,7 +698,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
             x_end = min(x_start + tile_size, da.x.size)
             y_end = min(y_start + tile_size, da.y.size)
 
-            # Select the subset of data for the current tile
+            # SELECT THE SLICE FOR THE CURRENT TILE
             try:
                 tile = da.isel(y=slice(y_start, y_end), x=slice(x_start, x_end))
             except KeyError:
