@@ -23,6 +23,7 @@ from rasterio.windows import Window
 from scripts.process_modules.process_helpers import  print_dataarray_info, nan_check
 
 
+
 # NORMALIZE
 def custom_normalize(array, lower_percentile=2, upper_percentile=98, clip_range=(0, 1)):
     """
@@ -760,9 +761,16 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
                 print('---Failed to normalize tile')
                 num_failed_norm += 1
                 continue
+
+
             tile_name = f"tile_{datacube_path.parent.name}_{x_start}_{y_start}.tif"
 
+            # GET TILE MIN AND MAX vals
+
+                
+
             if inference:
+
                 # Store metadata for stitching
                 tile_metadata.append({
                     "tile_name": tile_name,
@@ -816,6 +824,7 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
                 # print(f"---Saved metadata to {metadata_path}")
 
     if inference:
+        print(f'---end of tiling datacube function')
         return inference_tiles, tile_metadata            
 
         #     if num_saved  == 100:
@@ -1017,6 +1026,23 @@ def contains_nans(tile):
             print(f"Tile contains {nan_count} NaN values in {band}")
             contains_nan = True
     return contains_nan  # True if any NaNs were found, False if none
+
+def check_layer_max(da, layer_name='hh'):
+    """
+    Check the maximum value of a specific layer in an xarray.DataArray slice.
+    """
+    # Check if the layer exists in the DataArray
+    if layer_name not in da.coords['layer']:
+        raise ValueError(f"Layer '{layer_name}' not found in the DataArray. Available layers: {da.coords['layer'].values}")
+    
+    # Select the specified layer
+    layer_data = da.sel(layer=layer_name)
+    
+    # Calculate the maximum value
+    max_val = layer_data.max().item()
+    
+    return max_val
+
 
 def has_no_valid_layer(tile):
     '''

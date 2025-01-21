@@ -222,9 +222,6 @@ def check_and_rescale(data, metadata, glob_max, threshold=0.8):
     return data, metadata, scale_factor
 
 
-
-
-
 # DATAARRAY TESTS
 
 def dataset_type(da):
@@ -242,7 +239,7 @@ def open_dataarray(nc):
     return da
 
 def print_dataarray_info(da):
-    print('-----------PRINT DATARAY INFO--------------') 
+    print('++++++++++++PRINT DATARAY INFO--------------') 
     for layer in da.coords["layer"].values:
         layer_data = da.sel(layer=layer)
         print(f"---Layer '{layer}': Min={layer_data.min().item()}, Max={layer_data.max().item()}")
@@ -293,16 +290,15 @@ def pad_tile(tile, expected_size=250, pad_value=0):
 
 # CHECKS FOR TILES (MULTIBAND TIFS)
 
-def print_tiff_info_TSX( image):
-    print(f'+++ PRINT TIFF INFO---{image.name}')
+def print_tiff_info_TSX( image, index):
+    print(f'+++ PRINT TIFF INFO {index}---{image.name}')
     if image:
-        print(f'---in image = {image.name}') 
 
         with rasterio.open(image) as src:
             data = src.read()
             nan_check(data)
             resolution = src.res  # Or alternatively src.transform.a, src.transform.e
-            print(f"---Resolution: {resolution} (pixel size in CRS units)")
+
             for i in range(1, src.count + 1):
                 band_data = src.read(i)
                 min, max = min_max_vals(band_data)
@@ -311,6 +307,7 @@ def print_tiff_info_TSX( image):
                 print(f"---Band {name}: Min={min}, Max={max}")
                 print(f"---num unique vals = {numvals}")
                 print(f"---CRS: {src.crs}")
+                print(f'---resolution= {src.res}')
         
 def check_single_tile(tile):
     with rasterio.open(tile) as src:
@@ -342,7 +339,6 @@ def check_single_tile(tile):
                 if min < 0 or max > 1:
                     print(f'---out of range values in {name} band: {min}, {max}')
                     raise ValueError(f'---out of range values in {name} band: {min}, {max}')
-
 
 def rasterize_kml_rasterio(kml_path, output_path, pixel_size=0.0001, burn_value=1):
     # Convert KML to GeoJSON using Fiona
@@ -382,11 +378,7 @@ def rasterize_kml_rasterio(kml_path, output_path, pixel_size=0.0001, burn_value=
 
     print(f"Rasterized extent saved to {output_path}")
 
-
-
-
-
-# SU    BFUNCS FOR MULTD TILES/TIFS
+# SUBFUNCS FOR MULTD TILES/TIFS
 
 def get_band_name(band, src):
     return src.descriptions[band - 1].lower() if src.descriptions[band - 1] else None

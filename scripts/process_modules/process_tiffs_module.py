@@ -18,7 +18,7 @@ import rasterio
 import numpy as np
 from rasterio.io import MemoryFile
 from rasterio.warp import calculate_default_transform, reproject, Resampling
-from scripts.process_modules.process_helpers import  nan_check
+from scripts.process_modules.process_helpers import  nan_check, print_dataarray_info
 
 
 
@@ -77,7 +77,7 @@ def check_layers(layers, layer_names):
         nan_check(layer)
         check_int16_range(layer)
 
-
+# SEPERATE SAR LAYERS
 def create_vv_and_vh_tifs(file):
     '''
     will delete the original image after creating the vv and vh tifs
@@ -112,20 +112,308 @@ def create_vv_and_vh_tifs(file):
             # delete original image using unlink() method
     #print('---finished create_vv_and_vh_tifs fn')
 
-def create_slope_from_dem(target_file, dst_file):
-    cmd = [
-    "gdaldem", "slope", f"{target_file}", f"{dst_file}", "-compute_edges",
-    "-p"
+
+
+
+# CREAT ANALYSIS EXTENT
+def create_extent_from_mask(mask_path, output_raster, no_data_value=None):
+    # Load the mask file
+    with rasterio.open(mask_path) as src:
+        mask = src.read(1)  # Read the first band
+        transform = src.transform
+        crs = src.crs
+
+        # Identify no-data value
+        if no_data_value is None:
+            no_data_value = src.nodata
+        if no_data_value is None:
+            raise ValueError("No no-data value found in metadata or provided.")
+            # create a binary mask with the entire image as 1
+            
+
+        # Create a binary mask (1 for valid data, 0 for no-data)
+        binary_mask = (mask != no_data_value).astype(np.uint8)
+
+    # Save the binary mask as a GeoTIFF
+    with rasterio.open(
+        output_raster,
+        "w",
+        driver="GTiff",
+        height=binary_mask.shape[0],
+        width=binary_mask.shape[1],
+        count=1,
+        dtype="uint8",
+        crs=crs,
+        transform=transform,
+    ) as dst:
+        dst.write(binary_mask, 1)
+
+    print(f"extent saved to {output_raster}")
+
+
+# NORMALIZING
+def compute_image_min_max(image, band_to_read=1):
+    with rasterio.open(image) as src:
+        # Read the data as a NumPy array
+        data = src.read(band_to_read)  # Read the first band
+        # Update global min and max
+        min = int(data.min())
+        max = int(data.max())
+        print(f"---{image.name}: Min: {data.min()}, Max: {data.max()}")
+    return min, max
+
+
+def calculate_and_normalize_slope(input_dem, mask_code):
+    """
+    Calculate slope from a DEM using GDAL and normalize it between 0 and 1.
+    """
+
+    # Step 1: Calculate slope using GDAL's gdaldem
+    temp_slope = "temp_slope.tif"  # Temporary slope file
+    gdal_command = [
+        "gdaldem", "slope",
+        input_dem,         # Input DEM
+        temp_slope,         # Output raw slope file
+        "-compute_edges"
     ]
 
-    # Execute the command
     try:
-        subprocess.run(cmd, check=True)
-        print("Slope calculation completed.")
+        subprocess.run(gdal_command, check=True)
+        print(f"Raw slope raster created: {temp_slope}")
     except subprocess.CalledProcessError as e:
-        print(f"Error: {e}")
+        print(f"Error calculating slope: {e}")
+        return
+
+    # Step 2: Normalize slope using rasterio
+    with rasterio.open(temp_slope) as src:
+        slope = src.read(1)  # Read the slope data
+        slope_min, slope_max = slope.min(), slope.max()
+        print(f"Min slope: {slope_min}, Max slope: {slope_max}")
+
+        # Normalize the slope to the range [0, 1]
+        slope_norm_data = (slope - slope_min) / (slope_max - slope_min)
+
+        # Prepare metadata for output file
+        meta = src.meta.copy()
+        meta.update(dtype='float32')
+
+        normalized_slope = input_dem.parent / f"{mask_code}_slope_norm.tif"
+
+        # Save the normalized slope
+        with rasterio.open(normalized_slope, 'w', **meta) as dst:
+            dst.write(slope_norm_data.astype(np.float32), 1)
+
+    # Cleanup temporary raw slope file
+    Path(temp_slope).unlink()
+
+    print(f"Normalized slope raster saved to: {normalized_slope}")
+    return normalized_slope
 
 
+
+# CHANGE DATA TYPE
+def make_float32_inf(input_tif, output_file):
+    '''
+    converts the tif to float32
+    '''
+    # print('+++in make_float32 inf')
+    with rasterio.open(input_tif) as src:
+        data = src.read()
+        # print(f"---Original shape: {data.shape}, dtype: {data.dtype}")
+        if data.dtype == 'float32':
+            print(f'---{input_tif.name} already float32')
+            meta = src.meta.copy()
+            meta['count'] = 1
+        else:
+            # print(f'---{input_tif.name} converting to float32')
+            # Update the metadata
+            meta = src.meta.copy()
+            meta.update(dtype='float32')
+            # set num bands to 1
+            meta['count'] = 1
+            # Write the new file
+        with rasterio.open(output_file, 'w', **meta) as dst:
+            dst.write(data.astype('float32'))
+            return output_file
+
+
+def make_float32(input_tif, file_name):
+    '''
+    converts the tif to float32
+    '''
+    input_tif = Path(input_tif)
+    file_name = Path(file_name)
+    print('+++in make_float32 fn')
+    with rasterio.open(input_tif) as src:
+        data = src.read()
+        print(f"---Original shape: {data.shape}, dtype: {data.dtype}")
+        if data.dtype == 'float32':
+            print(f'---{input_tif.name} already float32')
+            src.close()
+            input_tif.rename(file_name)
+            print(f'---renamed {input_tif.name} to {file_name}')
+            return file_name
+
+        else:
+            print(f'---{input_tif.name} converting to float32')
+            # Update the metadata
+            meta = src.meta.copy()
+            meta.update(dtype='float32')
+            # set num bands to 1
+            meta['count'] = 1
+            # Write the new file
+            with rasterio.open(file_name, 'w', **meta) as dst:
+                dst.write(data.astype('float32'))        
+        return file_name
+
+
+def make_float32_inmem(input_tif):
+
+    # Open the input TIFF file
+    with rasterio.open(input_tif) as src:
+        # Read the data from the input file
+        data = src.read()
+        meta = src.meta.copy()
+
+        # Check if data is already float32
+        if meta['dtype'] == 'float32':
+            print('---Data already in float32 format.')
+            return src  # Return the original dataset if already float32
+
+        # Convert data to float32
+        converted_data = data.astype('float32')
+
+        # Update metadata to reflect new dtype
+        meta.update(dtype='float32')
+
+        # Create a new in-memory file with updated metadata and float32 data
+        with MemoryFile() as memfile:
+            with memfile.open(**meta) as mem:
+                mem.write(converted_data)
+                print('---Converted to float32 and written to memory.')
+                return memfile.open()
+
+
+    return output_file
+
+def xxx():
+
+        # MATCH THE DEM TO THE SAR IMAGE
+        # final_dem = extract_folder / f'{mask_code}_aligned_dem.tif'
+        # match_dem_to_mask(image, dem, final_dem)
+        # # print(f'>>>final_dem={final_dem.name}')
+
+        # # CHECK THE NEW DEM
+        # with rasterio.open(final_dem) as dem_src:
+        #     with rasterio.open(image) as img_src:
+        #         image_bounds = img_src.bounds
+        #         image_crs = img_src.crs
+        #         print(f'>>>image crs={image_crs}')
+        #         print(f'>>>dem crs={dem_src.crs}')  
+        #         img_width = img_src.width
+        #         img_height = img_src.height
+        #         img_transform = img_src.transform
+        #         print(f'>>>bounds match={dem_src.bounds == image_bounds}')
+        #         print(f'>>>crs match={dem_src.crs == image_crs}')
+        #         print(f'>>>width match={dem_src.width == img_width}')
+        #         print(f'>>>height match={dem_src.height == img_height}')
+        #         print(f'>>>transform match={dem_src.transform == img_transform}')
+        #         print(f'>>>count match={dem_src.count == img_src.count}')
+
+        # normalized_slope = calculate_and_normalize_slope(final_dem, mask_code)
+
+        # # CHECK THE SLOPE
+        # with rasterio.open(extract_folder / f'{mask_code}_slope_norm.tif') as src:
+        #     print(f'>>>slope min={src.read().min()}')
+        #     print(f'>>>slope max={src.read().max()}')
+        #     data = src.read()
+        #     nonans = nan_check(data)
+        #     print(f'>>>nonans?={nonans}')
+        pass
+
+# REPROJECTING
+def reproject_layers_to_4326_TSX( src_path, dst_path):
+    print('+++in reproject_layers_to_4326_TSX fn')
+
+    with rasterio.open(src_path) as src:
+        # print(f'---src_path= {src_path.name}')
+        # print(f'---dst_path= {dst_path.name}')
+        # print(f'---src_path crs = {src.crs}')
+        
+        transform, width, height = calculate_default_transform(src.crs, 'EPSG:4326', src.width, src.height, *src.bounds)
+        kwargs = src.meta.copy()
+        kwargs.update({'crs': 'EPSG:4326', 'transform': transform, 'width': width, 'height': height, 'dtype': 'float32'})
+        with rasterio.open(dst_path, 'w', **kwargs) as dst:
+            for i in range(1, src.count + 1):
+                band=src.read(i)
+                band[band > 1] = 1
+                reproject(
+                    source=rasterio.band(src, i),
+                    destination=rasterio.band(dst, i),
+                    src_transform=src.transform,
+                    src_crs=src.crs,
+                    dst_transform=transform,
+                    dst_crs='EPSG:4326',
+                    resampling=Resampling.nearest)
+            # print(f'---reprojected {src_path.name} to {dst_path.name} with {dst.crs}')
+
+def reproject_to_4326_gdal(input_path, output_path, resampleAlg):
+    if isinstance(input_path, Path):
+        input_path = str(input_path)
+    if isinstance(output_path, Path):
+        output_path = str(output_path)
+    # Open the input raster
+    src_ds = gdal.Open(input_path)
+    if not src_ds:
+        print(f"Failed to open {input_path}")
+        return
+    
+    # Ensure the input raster has a spatial reference system
+    src_srs = src_ds.GetProjection()
+    if not src_srs:
+        raise ValueError(f"Input raster {input_path} has no CRS.")
+
+    target_srs = 'EPSG:4326'
+
+    # Use GDAL's warp function to reproject
+    warp_options = gdal.WarpOptions(
+        dstSRS=target_srs,  # Target CRS
+        resampleAlg=resampleAlg,  # Resampling method (nearest neighbor for categorical data)
+        format="GTiff",
+    )  
+    gdal.Warp(output_path, src_ds, options=warp_options)
+    # print(f"---Reprojected raster saved to: {output_path}")           
+
+    return output_path   
+
+def reproject_to_4326_fixpx_gdal(input_path, output_path, resampleAlg, px_size):
+    print('+++in reproject_to_4326_fixpx_gdal fn')
+    # print(f'---resampleAlg= {resampleAlg}')
+    if isinstance(input_path, Path):
+        input_path = str(input_path)
+    if isinstance(output_path, Path):
+        output_path = str(output_path)
+    # Open the input raster
+    src_ds = gdal.Open(input_path)
+    if not src_ds:
+        print(f"Failed to open {input_path}")
+        return
+
+    target_srs = 'EPSG:4326'
+
+    # Use GDAL's warp function to reproject
+    warp_options = gdal.WarpOptions(
+        dstSRS=target_srs,  # Target CRS
+        xRes=px_size,
+        yRes=px_size,
+        resampleAlg=resampleAlg,  # Resampling method (nearest neighbor for categorical data)
+    )  
+    gdal.Warp(output_path, src_ds, options=warp_options)
+    # print(f"---Reprojected raster saved to: {output_path}")           
+
+    return output_path   
+
+# RESAMPLING
 def match_resolutions_with_check(event):
     """
     Match the resolution and dimensions of the target raster to the reference raster
@@ -173,40 +461,76 @@ def match_resolutions_with_check(event):
                 reprojected_layer.rio.to_raster(file)
                 #print(f'--- Resampled raster saved to: {file.name}')
 
-def make_datas(event):
-    '''
-    iterates through the files in the event folder and returns a dict of the datas
-    '''
-    datas = {}
-    for file in event.iterdir():
-        # print(f'---file {file}')
-        if 'epsg4326' in file.name and '_s2_' not in file.name:
-            if 'elevation.tif' in file.name:
-                # print(f'---elevation file found {file}')    
-                datas[file.name] = 'dem'
-            elif 'slope.tif' in file.name:
-                # print(f'---slope file found {file}')    
-                datas[file.name] = 'slope'
-            elif 'msk.tif' in file.name:
-                # print(f'---mask file found {file}')    
-                datas[file.name] = 'mask'   
-            elif 'valid.tif' in file.name:
-                # print(f'---valid file found {file}')    
-                datas[file.name] = 'valid'
-            elif 'vv.tif' in file.name:
-                # print(f'---image vv file found {file}') 
-                datas[file.name] = 'vv'
-            elif 'vh.tif' in file.name:
-                # print(f'---image vh file found {file}')   
-                datas[file.name] = 'vh'
-    #print('---datas ',datas)
-    return datas
+def resample_tiff(src_image, dst_image, target_res):
+    print(f'+++resample_tiff::::target res= {target_res}')
+    with rasterio.open(src_image, 'r') as src:
+        # Read metadata and calculate new dimensions
+        src_res = src.res  # (pixel width, pixel height in CRS units)
+        print(f'---src_res= {src_res}')
+        scale_factor_x = src_res[0] / target_res
+        scale_factor_y = src_res[1] / target_res
 
+        new_width = round(src.width * scale_factor_x)
+        new_height = round(src.height * scale_factor_y)
+        print(f'--- New Dimensions: width={new_width}, height={new_height}')
+        new_transform = src.transform * src.transform.scale(scale_factor_x, scale_factor_x)
+        print(f'--- New Transform: {new_transform}')
 
+        # Update metadata
+        kwargs = src.meta.copy()
+        kwargs.update({
+            'driver': 'GTiff',
+            'dtype': 'float32',
+            'height': new_height,
+            'width': new_width,
+            'transform': new_transform,
+        })
 
-    
-    print("\n+++ Datacube Health Check Completed +++")
+        # Resample and write to the new file
+        with rasterio.open(dst_image, 'w', **kwargs) as dst:
+            for i in range(1, src.count + 1):  # Loop through each band
+                resampled_data = src.read(
+                    i,
+                    out_shape=(new_height, new_width),
+                    resampling=Resampling.bilinear
+                )
+                dst.write(resampled_data, i)
+    print(f"Resampled image saved to {dst_image}")
 
+def resample_tiff_gdal(src_image, dst_image, target_res):
+    """
+    Simplified resampling of a GeoTIFF to the specified resolution using GDAL.
+
+    Parameters:
+        src_image (str): Path to the source GeoTIFF.
+        dst_image (str): Path to save the resampled GeoTIFF.
+        target_res (float): Target resolution in CRS units (e.g., meters per pixel).
+    """
+        # Ensure inputs are strings
+    if isinstance(src_image, Path):
+        src_image = str(src_image)
+    if isinstance(dst_image, Path):
+        dst_image = str(dst_image)
+    print(f'+++ Resampling {src_image} to target resolution: {target_res} m/pixel')
+
+    # Open the source dataset
+    src_ds = gdal.Open(src_image)
+    if not src_ds:
+        raise FileNotFoundError(f"Cannot open source file: {src_image}")
+
+    # Use GDAL's Warp function to resample
+    gdal.Warp(
+        dst_image,
+        src_ds,
+        xRes=target_res,
+        yRes=target_res,
+        resampleAlg=gdal.GRA_Bilinear,  # Use bilinear resampling
+        outputType=gdal.GDT_Float32,   # Save as 32-bit float
+    )
+
+    print(f'+++ Resampled image saved to: {dst_image}')
+
+# CREATING DATACUBES
 
 def create_event_datacubes(data_root, save_path, VERSION="v1"):
     '''
@@ -323,255 +647,6 @@ def create_event_datacubes(data_root, save_path, VERSION="v1"):
 
     print('>>>finished all events\n')
 
-# TERRASARX FUNCTIONS
-
-def create_extent_from_mask(mask_path, output_raster, no_data_value=None):
-    # Load the mask file
-    with rasterio.open(mask_path) as src:
-        mask = src.read(1)  # Read the first band
-        transform = src.transform
-        crs = src.crs
-
-        # Identify no-data value
-        if no_data_value is None:
-            no_data_value = src.nodata
-        if no_data_value is None:
-            raise ValueError("No no-data value found in metadata or provided.")
-            # create a binary mask with the entire image as 1
-            
-
-        # Create a binary mask (1 for valid data, 0 for no-data)
-        binary_mask = (mask != no_data_value).astype(np.uint8)
-
-    # Save the binary mask as a GeoTIFF
-    with rasterio.open(
-        output_raster,
-        "w",
-        driver="GTiff",
-        height=binary_mask.shape[0],
-        width=binary_mask.shape[1],
-        count=1,
-        dtype="uint8",
-        crs=crs,
-        transform=transform,
-    ) as dst:
-        dst.write(binary_mask, 1)
-
-    print(f"extent saved to {output_raster}")
-
-
-def make_float32(input_tif, file_name):
-    '''
-    converts the tif to float32
-    '''
-    input_tif = Path(input_tif)
-    file_name = Path(file_name)
-    print('+++in make_float32 fn')
-    with rasterio.open(input_tif) as src:
-        data = src.read()
-        print(f"---Original shape: {data.shape}, dtype: {data.dtype}")
-        if data.dtype == 'float32':
-            print(f'---{input_tif.name} already float32')
-            src.close()
-            input_tif.rename(file_name)
-            print(f'---renamed {input_tif.name} to {file_name}')
-            return file_name
-
-        else:
-            print(f'---{input_tif.name} converting to float32')
-            # Update the metadata
-            meta = src.meta.copy()
-            meta.update(dtype='float32')
-            # set num bands to 1
-            meta['count'] = 1
-            # Write the new file
-            with rasterio.open(file_name, 'w', **meta) as dst:
-                dst.write(data.astype('float32'))        
-        return file_name
-
-# # NORMALISING
-
-def compute_image_min_max(image, band_to_read=1):
-    with rasterio.open(image) as src:
-        # Read the data as a NumPy array
-        data = src.read(band_to_read)  # Read the first band
-        # Update global min and max
-        min = int(data.min())
-        max = int(data.max())
-        print(f"---{image.name}: Min: {data.min()}, Max: {data.max()}")
-    return min, max
-
-# #######
-
-def make_float32_inf(input_tif, output_file):
-    '''
-    converts the tif to float32
-    '''
-    # print('+++in make_float32 inf')
-    with rasterio.open(input_tif) as src:
-        data = src.read()
-        # print(f"---Original shape: {data.shape}, dtype: {data.dtype}")
-        if data.dtype == 'float32':
-            print(f'---{input_tif.name} already float32')
-            meta = src.meta.copy()
-            meta['count'] = 1
-        else:
-            # print(f'---{input_tif.name} converting to float32')
-            # Update the metadata
-            meta = src.meta.copy()
-            meta.update(dtype='float32')
-            # set num bands to 1
-            meta['count'] = 1
-            # Write the new file
-        with rasterio.open(output_file, 'w', **meta) as dst:
-            dst.write(data.astype('float32'))
-            return output_file
-
-   
-
-def make_float32_inmem(input_tif):
-
-    # Open the input TIFF file
-    with rasterio.open(input_tif) as src:
-        # Read the data from the input file
-        data = src.read()
-        meta = src.meta.copy()
-
-        # Check if data is already float32
-        if meta['dtype'] == 'float32':
-            print('---Data already in float32 format.')
-            return src  # Return the original dataset if already float32
-
-        # Convert data to float32
-        converted_data = data.astype('float32')
-
-        # Update metadata to reflect new dtype
-        meta.update(dtype='float32')
-
-        # Create a new in-memory file with updated metadata and float32 data
-        with MemoryFile() as memfile:
-            with memfile.open(**meta) as mem:
-                mem.write(converted_data)
-                print('---Converted to float32 and written to memory.')
-                return memfile.open()
-
-
-    return output_file
-
-def xxx():
-
-        # MATCH THE DEM TO THE SAR IMAGE
-        # final_dem = extract_folder / f'{mask_code}_aligned_dem.tif'
-        # match_dem_to_mask(image, dem, final_dem)
-        # # print(f'>>>final_dem={final_dem.name}')
-
-        # # CHECK THE NEW DEM
-        # with rasterio.open(final_dem) as dem_src:
-        #     with rasterio.open(image) as img_src:
-        #         image_bounds = img_src.bounds
-        #         image_crs = img_src.crs
-        #         print(f'>>>image crs={image_crs}')
-        #         print(f'>>>dem crs={dem_src.crs}')  
-        #         img_width = img_src.width
-        #         img_height = img_src.height
-        #         img_transform = img_src.transform
-        #         print(f'>>>bounds match={dem_src.bounds == image_bounds}')
-        #         print(f'>>>crs match={dem_src.crs == image_crs}')
-        #         print(f'>>>width match={dem_src.width == img_width}')
-        #         print(f'>>>height match={dem_src.height == img_height}')
-        #         print(f'>>>transform match={dem_src.transform == img_transform}')
-        #         print(f'>>>count match={dem_src.count == img_src.count}')
-
-        # normalized_slope = calculate_and_normalize_slope(final_dem, mask_code)
-
-        # # CHECK THE SLOPE
-        # with rasterio.open(extract_folder / f'{mask_code}_slope_norm.tif') as src:
-        #     print(f'>>>slope min={src.read().min()}')
-        #     print(f'>>>slope max={src.read().max()}')
-        #     data = src.read()
-        #     nonans = nan_check(data)
-        #     print(f'>>>nonans?={nonans}')
-        pass
-
-def reproject_layers_to_4326_TSX( src_path, dst_path):
-    print('+++in reproject_layers_to_4326_TSX fn')
-
-    with rasterio.open(src_path) as src:
-        # print(f'---src_path= {src_path.name}')
-        # print(f'---dst_path= {dst_path.name}')
-        # print(f'---src_path crs = {src.crs}')
-        
-        transform, width, height = calculate_default_transform(src.crs, 'EPSG:4326', src.width, src.height, *src.bounds)
-        kwargs = src.meta.copy()
-        kwargs.update({'crs': 'EPSG:4326', 'transform': transform, 'width': width, 'height': height, 'dtype': 'float32'})
-        with rasterio.open(dst_path, 'w', **kwargs) as dst:
-            for i in range(1, src.count + 1):
-                band=src.read(i)
-                band[band > 1] = 1
-                reproject(
-                    source=rasterio.band(src, i),
-                    destination=rasterio.band(dst, i),
-                    src_transform=src.transform,
-                    src_crs=src.crs,
-                    dst_transform=transform,
-                    dst_crs='EPSG:4326',
-                    resampling=Resampling.nearest)
-            # print(f'---reprojected {src_path.name} to {dst_path.name} with {dst.crs}')
-
-def reproject_to_4326_gdal(input_path, output_path):
-    if isinstance(input_path, Path):
-        input_path = str(input_path)
-    if isinstance(output_path, Path):
-        output_path = str(output_path)
-    # Open the input raster
-    src_ds = gdal.Open(input_path)
-    if not src_ds:
-        print(f"Failed to open {input_path}")
-        return
-
-    target_srs = 'EPSG:4326'
-
-    # Use GDAL's warp function to reproject
-    warp_options = gdal.WarpOptions(
-        dstSRS=target_srs,  # Target CRS
-        resampleAlg="near",  # Resampling method (nearest neighbor for categorical data)
-    )  
-    gdal.Warp(output_path, src_ds, options=warp_options)
-    # print(f"---Reprojected raster saved to: {output_path}")           
-
-    return output_path   
-
-
-
-def reproject_to_4326_fixpx_gdal(input_path, output_path, resampleAlg, px_size):
-    print('+++in reproject_to_4326_fixpx_gdal fn')
-    # print(f'---resampleAlg= {resampleAlg}')
-    if isinstance(input_path, Path):
-        input_path = str(input_path)
-    if isinstance(output_path, Path):
-        output_path = str(output_path)
-    # Open the input raster
-    src_ds = gdal.Open(input_path)
-    if not src_ds:
-        print(f"Failed to open {input_path}")
-        return
-
-    target_srs = 'EPSG:4326'
-
-    # Use GDAL's warp function to reproject
-    warp_options = gdal.WarpOptions(
-        dstSRS=target_srs,  # Target CRS
-        xRes=px_size,
-        yRes=px_size,
-        resampleAlg=resampleAlg,  # Resampling method (nearest neighbor for categorical data)
-    )  
-    gdal.Warp(output_path, src_ds, options=warp_options)
-    # print(f"---Reprojected raster saved to: {output_path}")           
-
-    return output_path   
-
-
-
 def make_layerdict_TSX(extracted):
     '''
     iterates through the files in the event folder and returns a dict of the datas
@@ -599,6 +674,93 @@ def make_layerdict_TSX(extracted):
     return datas
 
     print("\n+++ Datacube Health Check Completed +++")
+
+
+def make_datas(event):
+    '''
+    iterates through the files in the event folder and returns a dict of the datas
+    '''
+    datas = {}
+    for file in event.iterdir():
+        # print(f'---file {file}')
+        if 'epsg4326' in file.name and '_s2_' not in file.name:
+            if 'elevation.tif' in file.name:
+                # print(f'---elevation file found {file}')    
+                datas[file.name] = 'dem'
+            elif 'slope.tif' in file.name:
+                # print(f'---slope file found {file}')    
+                datas[file.name] = 'slope'
+            elif 'msk.tif' in file.name:
+                # print(f'---mask file found {file}')    
+                datas[file.name] = 'mask'   
+            elif 'valid.tif' in file.name:
+                # print(f'---valid file found {file}')    
+                datas[file.name] = 'valid'
+            elif 'vv.tif' in file.name:
+                # print(f'---image vv file found {file}') 
+                datas[file.name] = 'vv'
+            elif 'vh.tif' in file.name:
+                # print(f'---image vh file found {file}')   
+                datas[file.name] = 'vh'
+    #print('---datas ',datas)
+    return datas
+
+
+
+    
+    print("\n+++ Datacube Health Check Completed +++")
+
+
+def make_das_from_layerdict( layerdict, folder):
+    dataarrays = []
+    layer_names = []
+    for tif_file, band_name in layerdict.items():
+        # print(f'---tif_file= {tif_file}')
+        # print(f'---band_name= {band_name}')
+        filepath = folder / tif_file
+        # print(f'---**************filepath = {filepath.name}')
+        tiffda = rxr.open_rasterio(filepath)
+        nan_check(tiffda)
+        # print(f'---{band_name}= {tiffda}')   
+        # check num uniqq values
+        # print(f"---Unique data: {np.unique(tiffda.data)}")
+        # print("----unique values:", np.unique(tiffda.values))
+        dataarrays.append(tiffda)
+        layer_names.append(band_name)
+# 
+    return dataarrays, layer_names
+# def set_tif_dtype_to_float32(tif_file):
+    
+def check_int16_range(dataarray):
+    # TAKES A DATAARRAY NOT A DATASET
+    #print("+++in small int16 range check fn+++")
+    int16_min, int16_max = np.iinfo(np.int16).min, np.iinfo(np.int16).max
+    if (dataarray < int16_min).any() or (dataarray > int16_max).any():
+        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
+        # Calculate actual min and max values in the array
+        actual_min = dataarray.min().item()
+        actual_max = dataarray.max().item()
+        
+        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
+        print(f"---Minimum value found: {actual_min}")
+        print(f"---Maximum value found: {actual_max}")
+        return False
+    
+    # else:
+    #     print(f"---no exceedances int16.")
+
+    # Optional: Replace NaN and Inf values if necessary
+    # dataarray = dataarray.fillna(0)  # Replace NaN with 0 or another appropriate value
+    # dataarray = dataarray.where(~np.isinf(dataarray), 0)  # Replace Inf with 0 or appropriate value
+
+def nan_check(nparray):
+    if np.isnan(nparray).any():
+        print("----Warning: NaN values found in the data.")
+        return False
+    else:
+        print("----NO NANS FOUND")
+        return True
+
 
 def create_event_datacube_TSX(event, mask_code, VERSION="v1"):
     '''
@@ -644,17 +806,18 @@ def create_event_datacube_TSX_inf(event, mask_code, VERSION="v1"):
     '''
     print(f'+++++++++++ IN CREAT EVENT DATACUBE {event.name}+++++++++++++++++')
     # FIND THE EXTRACTED FOLDER
+    print(f'---mask code= {mask_code}')
     extracted_folder = list(event.rglob(f'*{mask_code}_extracted'))[0]
-
+    print(f'---extrated folder = {extracted_folder}')
     layerdict = make_layerdict_TSX(extracted_folder)
 
-    # print(f'---making das from layerdict= {layerdict}')
+    print(f'---making das from layerdict= {layerdict}')
     dataarrays, layer_names = make_das_from_layerdict( layerdict, extracted_folder)
 
-    # print(f'---CHECKING DATAARRAY LIST')
+    print(f'---CHECKING DATAARRAY LIST')
     # check_dataarray_list(dataarrays, layer_names)
     # print('---dataarrays list = ',dataarrays) 
-    # print(f'---CREATING CONCATERNATED DATASET')
+    print(f'---CREATING CONCATERNATED DATASET')
     da = xr.concat(dataarrays, dim='layer').astype('float32')   
     da = da.assign_coords(layer=layer_names)
 
@@ -663,7 +826,7 @@ def create_event_datacube_TSX_inf(event, mask_code, VERSION="v1"):
         # print('---Squeezing out the "band" dimension')
         da = da.squeeze('band') 
 
-    # print_dataarray_info(da)
+    print_dataarray_info(da)
 
     #######   CHUNKING ############
     # da = da.chunk({'x': 256, 'y': 256, 'layer': 1})
@@ -676,54 +839,7 @@ def create_event_datacube_TSX_inf(event, mask_code, VERSION="v1"):
     # print(f'##################  ds saved for= {event.name} bye bye #################\n')
 
 
-
-def calculate_and_normalize_slope(input_dem, mask_code):
-    """
-    Calculate slope from a DEM using GDAL and normalize it between 0 and 1.
-    """
-
-    # Step 1: Calculate slope using GDAL's gdaldem
-    temp_slope = "temp_slope.tif"  # Temporary slope file
-    gdal_command = [
-        "gdaldem", "slope",
-        input_dem,         # Input DEM
-        temp_slope,         # Output raw slope file
-        "-compute_edges"
-    ]
-
-    try:
-        subprocess.run(gdal_command, check=True)
-        print(f"Raw slope raster created: {temp_slope}")
-    except subprocess.CalledProcessError as e:
-        print(f"Error calculating slope: {e}")
-        return
-
-    # Step 2: Normalize slope using rasterio
-    with rasterio.open(temp_slope) as src:
-        slope = src.read(1)  # Read the slope data
-        slope_min, slope_max = slope.min(), slope.max()
-        print(f"Min slope: {slope_min}, Max slope: {slope_max}")
-
-        # Normalize the slope to the range [0, 1]
-        slope_norm_data = (slope - slope_min) / (slope_max - slope_min)
-
-        # Prepare metadata for output file
-        meta = src.meta.copy()
-        meta.update(dtype='float32')
-
-        normalized_slope = input_dem.parent / f"{mask_code}_slope_norm.tif"
-
-        # Save the normalized slope
-        with rasterio.open(normalized_slope, 'w', **meta) as dst:
-            dst.write(slope_norm_data.astype(np.float32), 1)
-
-    # Cleanup temporary raw slope file
-    Path(temp_slope).unlink()
-
-    print(f"Normalized slope raster saved to: {normalized_slope}")
-    return normalized_slope
-
-
+# WORK ON DEM
 def match_dem_to_mask(sar_image, dem, output_path):
     """
     Matches the DEM to the SAR image grid by enforcing exact alignment of transform, CRS, and dimensions.
@@ -769,6 +885,20 @@ def match_dem_to_mask(sar_image, dem, output_path):
     print(f"Reprojected and aligned DEM saved to: {output_path}")
 
 
+def create_slope_from_dem(target_file, dst_file):
+    cmd = [
+    "gdaldem", "slope", f"{target_file}", f"{dst_file}", "-compute_edges",
+    "-p"
+    ]
+
+    # Execute the command
+    try:
+        subprocess.run(cmd, check=True)
+        print("Slope calculation completed.")
+    except subprocess.CalledProcessError as e:
+        print(f"Error: {e}")
+
+# CLIPPING AND ALIGNMENT
 def clip_image_to_mask_gdal(input_raster, mask_raster, output_raster):
 
     # Open the mask to extract its bounding box
@@ -824,8 +954,6 @@ def clean_mask(mask_path, output_path):
 
         print(f"Cleaned and aligned mask saved to: {output_path}")
 
-
-
 def align_image_to_mask(sar_image, mask, aligned_image):
     print('+++in align_image_to_mask fn')
 
@@ -866,62 +994,6 @@ def align_image_to_mask(sar_image, mask, aligned_image):
                 )
 
     print(f"---Aligned SAR image saved to: {aligned_image}")
-
-def make_das_from_layerdict( layerdict, folder):
-    dataarrays = []
-    layer_names = []
-    for tif_file, band_name in layerdict.items():
-        # print(f'---tif_file= {tif_file}')
-        # print(f'---band_name= {band_name}')
-        filepath = folder / tif_file
-        # print(f'---**************filepath = {filepath.name}')
-        tiffda = rxr.open_rasterio(filepath)
-        nan_check(tiffda)
-        # print(f'---{band_name}= {tiffda}')   
-        # check num uniqq values
-        # print(f"---Unique data: {np.unique(tiffda.data)}")
-        # print("----unique values:", np.unique(tiffda.values))
-        dataarrays.append(tiffda)
-        layer_names.append(band_name)
-# 
-    return dataarrays, layer_names
-# def set_tif_dtype_to_float32(tif_file):
-
-
-
-# WORK ON DATAARRAYS
-    
-def check_int16_range(dataarray):
-    # TAKES A DATAARRAY NOT A DATASET
-    #print("+++in small int16 range check fn+++")
-    int16_min, int16_max = np.iinfo(np.int16).min, np.iinfo(np.int16).max
-    if (dataarray < int16_min).any() or (dataarray > int16_max).any():
-        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
-        # Calculate actual min and max values in the array
-        actual_min = dataarray.min().item()
-        actual_max = dataarray.max().item()
-        
-        print(f"---Warning: Values out of int16 range found (should be between {int16_min} and {int16_max}).")
-        print(f"---Minimum value found: {actual_min}")
-        print(f"---Maximum value found: {actual_max}")
-        return False
-    
-    # else:
-    #     print(f"---no exceedances int16.")
-
-    # Optional: Replace NaN and Inf values if necessary
-    # dataarray = dataarray.fillna(0)  # Replace NaN with 0 or another appropriate value
-    # dataarray = dataarray.where(~np.isinf(dataarray), 0)  # Replace Inf with 0 or appropriate value
-
-def nan_check(nparray):
-    if np.isnan(nparray).any():
-        print("----Warning: NaN values found in the data.")
-        return False
-    else:
-        print("----NO NANS FOUND")
-        return True
-
-
 
 
 # probably not needed

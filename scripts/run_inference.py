@@ -14,7 +14,7 @@ from rasterio.plot import show
 from rasterio.windows import Window
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from scripts.train_modules.train_classes import UnetModel
-from scripts.process_modules.process_tiffs_module import  create_event_datacube_TSX_inf,         reproject_to_4326_gdal, make_float32_inf
+from scripts.process_modules.process_tiffs_module import  create_event_datacube_TSX_inf,reproject_to_4326_gdal, make_float32_inf, resample_tiff_gdal
 from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr
 from scripts.process_modules.process_helpers import  print_tiff_info_TSX, check_single_input_filetype, rasterize_kml_rasterio, compute_image_minmax, process_raster_minmax, path_not_exists, read_minmax_from_json, normalize_imagedata_inf, read_raster, write_raster
 from collections import OrderedDict
@@ -156,6 +156,7 @@ def main(test=None):
     
     threshold = config["threshold"] # PREDICTION CONFIDENCE THRESHOLD
     img_src = Path(config["input_folder"])
+    print(f'>>>img source= {img_src}')
     output_filename = config["output_filename"]
 
     print(f'>>>threshold: {threshold}')
@@ -187,7 +188,7 @@ def main(test=None):
     ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_INPUT")
 
     ############################################################################
-
+    print(f'>>> CHECK LAYERDICT NAMES=FILENAMES IN FOLDER <<<')
     # FIND THE CKPT
     ckpt = next(ckpt_path.rglob("*.ckpt"), None)
     print(f'>>> threshold: {threshold}')
@@ -209,71 +210,64 @@ def main(test=None):
     image_code = "_".join(image.name.split('_')[:2])
     print(f'>>>image_code= ',image_code)
 
-    # CREATE THE EXTRACTED FOLDER
+    if True:
+    
+        # CREATE THE EXTRACTED FOLDER
+        extracted = img_src / f'{image_code}_extracted'
+        if extracted.exists():
+            # print(f"--- Deleting existing extracted folder: {extracted}")
+            # delete the folder and create a new one
+            shutil.rmtree(extracted)
+        extracted.mkdir(exist_ok=True)
+
+        # CHANGE DATATYPE TO FLOAT32
+        print('>>>CHANGING DATATYPE')
+        image_32 = extracted / f'{image_code}_32.tif'
+        make_float32_inf(image, image_32)
+        print_tiff_info_TSX(image_32, 1)
+
+        # RESAMPLE TO 2.5
+        print('>>>RESAMPLING')
+        resamp_image = extracted / f'{image_32.stem}_resamp'
+        resample_tiff_gdal(image_32, resamp_image, target_res=2.5)
+        print_tiff_info_TSX(resamp_image, 2)
+
+        # with rasterio.open(image) as src:
+            # print(f'>>>src shape= ',src.shape)
+
+        # SORT OUT ANALYSIS EXTENT
+
+        # ex_extent = extracted / f'{image_code}_extent.tif'
+        # create_extent_from_mask(image, ex_extent)
+        # rasterize_kml_rasterio( poly, ex_extent, pixel_size=0.0001, burn_value=1)
+
+        # REPROJECT IMAGE
+        print('>>>REPROJECTING')
+        final_image = extracted / 'final_image.tif'
+        reproject_to_4326_gdal(resamp_image, final_image, resampleAlg = 'bilinear')
+        print_tiff_info_TSX(final_image, 3)
+
+        # reproj_extent = extracted / f'{image_code}_4326_extent.tif'
+        # reproject_to_4326_gdal(ex_extent, reproj_extent)
+        # fnal_extent = extracted / f'{image_code}_32_final_extent.tif'
+        # make_float32_inf(reproj_extent, final_extent
+
     extracted = img_src / f'{image_code}_extracted'
-    if extracted.exists():
-        # print(f"--- Deleting existing extracted folder: {extracted}")
-        # delete the folder and create a new one
-        shutil.rmtree(extracted)
-    extracted.mkdir(exist_ok=True)
-
-
+    final_image = extracted / 'final_image.tif'
 
 
     # GET THE TRAINING MIN MAX STATS
-    statsdict =                       read_minmax_from_json(minmax_path)
+    statsdict =  read_minmax_from_json(minmax_path)
     stats = (statsdict["min"], statsdict["max"])
-    # print(f'>>>stats used for training model: {stats}')
-    # glob_max = stats[1]
-    # print(f'>>>glob_max: {glob_max}')
-
-    # # NORMALIZE THE IMAGE
-    # # GET THE IMAGE MIN MAX
-    # data, metadata = read_raster(image)
-    # loc_min, loc_max = data.min(), data.max()
-    # print(f"---Local min: {loc_min}, Local max: {loc_max}")
-    # # NORMALIZE THE DATA
-    # normdata = normalize_imagedata_inf( data, glob_max, loc_min, loc_max)
-    # # CREATE THE NORMALIZED IMAGE PATH OBJECT
-    # norm_image = extracted / f'{image_code}_norm.tif'
-    # # WRITE THE NORMALIZED IMAGE
-    # write_raster(norm_image, normdata, metadata)
-    # PRINT THE NORMALIZED IMAGE INFO
-    # print_tiff_info_TSX(norm_image)
-    # image = rescaled_image
 
 
-    print_tiff_info_TSX(image)
-    print(f'>>>image.name = ',image.name)
-    # with rasterio.open(image) as src:
-        # print(f'>>>src shape= ',src.shape)
 
-    # SORT OUT ANALYSIS EXTENT
-
-    # ex_extent = extracted / f'{image_code}_extent.tif'
-    # create_extent_from_mask(image, ex_extent)
-    # rasterize_kml_rasterio( poly, ex_extent, pixel_size=0.0001, burn_value=1)
-
-    # REPROJECT IMAGE
-    reproj_image = extracted / f'{image_code}_4326.tif'
-    reproject_to_4326_gdal(image, reproj_image)
-
-    # reproj_extent = extracted / f'{image_code}_4326_extent.tif'
-    # reproject_to_4326_gdal(ex_extent, reproj_extent)
-
-    # CHANGE DATATYPE TO FLOAT32
-    final_image = extracted / f'{reproj_image.stem}_32_final_image.tif'
-    make_float32_inf(reproj_image, final_image)
-
-    # final_extent = extracted / f'{image_code}_32_final_extent.tif'
-    # make_float32_inf(reproj_extent, final_extent)
-
-    # print_tiff_info_TSX(image=final_image) 
-# 
-    create_event_datacube_TSX_inf(img_src, image_code)
+    if True:
+        create_event_datacube_TSX_inf(img_src, image_code)
 
     cube = next(img_src.rglob("*.nc"), None)  
     save_tiles_path = img_src /  f'{image_code}_tiles'
+
     if save_tiles_path.exists():
         # print(f">>> Deleting existing tiles folder: {save_tiles_path}")
         # delete the folder and create a new one
