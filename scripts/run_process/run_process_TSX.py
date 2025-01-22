@@ -32,10 +32,10 @@ def main(test=None):
         dataset =  data_root / 'TSX_TO_PROCESS_INPUT' 
         # dataset=Path(r"Y:\1NEW_DATA\1data\2interim\TSX aa datacubes") 
         # dataset = Path(r'Y:\1NEW_DATA\1data\2interim\TSX aa datacubes\ok')
-    make_tifs = 0
+    make_tifs = 1
     make_datacubes = 0
     get_minmax = 0
-    make_norm_tiles = 1
+    make_norm_tiles = 0
     norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
     minmax_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\global_minmax_INPUT\global_minmax.json")
     percent_non_flood = 100
@@ -94,6 +94,10 @@ def main(test=None):
                     #############################################
 
                     # print_tiff_info_TSX(ex_image, ex_mask)
+
+                    #*****************************************************
+                    # TODO ALL INPUTS SHOULD BE RESAMPLED TO EX. 2.5M/PX, TO MATCH THE RESAMPLING OF ALL INFERENCE INPUT IMAGES
+                    #******************************************************
 
                     # REPROJECT THE TIFS TO EPSG:4326
                     print('\n>>>>>>>>>>>>>>>> reproj all tifs to 4326 >>>>>>>>>>>>>>>>>')
