@@ -10,7 +10,6 @@ import xarray as xr
 import json
 import matplotlib.pyplot as plt
 import click
-import yaml
 from rasterio.plot import show
 from rasterio.windows import Window
 from rasterio.warp import calculate_default_transform, reproject, Resampling
@@ -149,37 +148,29 @@ def clean_checkpoint_keys(state_dict):
 
 @click.command()
 @click.option('--test', is_flag=True, help='loading from test folder', show_default=False)
-def main(test=False):
-
-    print(f'>>>test mode = {test}')
-    # READ CONFIG
-    config_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\floodaiv2_config.yaml")
-    with open(config_path, "r") as file:
-        config = yaml.safe_load(file)
-
-    threshold = config["threshold"] # PREDICTION CONFIDENCE THRESHOLD
-    # Normalize all paths in the config
-    input_file = Path(config['input_file'])
-    output_folder = Path(config['output_folder'])
-    output_filename = Path(config['output_filename'])
-    analysis_extent = Path(config['analysis_extent'])
-
-    print(f'>>> config = {config}')
-    print(f'>>>threshold: {threshold}') 
-    print(f'>>>output_folder= {output_folder}')
-    print(f'>>>alalysis_extent= {analysis_extent}')
+def main(test=None):
+    with open(Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\floodaiv2_config.json")) as file:
+        config = json.load(file)
     
-    ############################################################################
-    # DEFINE PATHS
+    # print(f'>>>config: {config}')
+    
+    threshold = config["threshold"] # PREDICTION CONFIDENCE THRESHOLD
+    img_src = Path(config["input_folder"])
+    print(f'>>>img source= {img_src}')
+    output_filename = config["output_filename"]
 
-    # DEFINE THE WORKING FOLDER FOR I/O
-    img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_input_test")
-    print(f'>>>working folder: {img_src}')
+    print(f'>>>threshold: {threshold}')
+    if test:
+        print("TEST SOURCE")
+        img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_input_test")
+
+    print(f'>>>img_src: {img_src}')
+
     if path_not_exists(img_src):
         print(f"---No input folder found in {img_src}")
         return
     
-    save_path = output_folder / output_filename
+    save_path = img_src / f'{output_filename}_th{threshold}_WATER.tif'
     if save_path.exists():
         try:
             print(f"--- Deleting existing prediction file: {save_path}")
@@ -187,18 +178,16 @@ def main(test=False):
         except Exception as e:
             print(f"--- Error deleting existing prediction file: {e}")
 
+    ############################################################################
     minmax_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\global_minmax_INPUT\global_minmax.json")
     if path_not_exists(minmax_path):
         return
-
-    ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_INPUT")
-
     norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
     stats = None
+    # ckpt = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\4results\checkpoints\good\mtnweighted_NO341_3__BS16__EP10_weighted_bce.ckpt")
+    ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_INPUT")
 
     ############################################################################
-
-
     print(f'>>> CHECK LAYERDICT NAMES=FILENAMES IN FOLDER <<<')
     # FIND THE CKPT
     ckpt = next(ckpt_path.rglob("*.ckpt"), None)
@@ -208,13 +197,11 @@ def main(test=False):
         return
     print(f'>>>ckpt: {ckpt.name}')
 
-    image = input_file # FROM CONFIG
-    if test:
-        # FIND THE SAR IMAGE
-        image = check_single_input_filetype(img_src, 'image', '.tif')
+    # FIND THE SAR IMAGE
+    image = check_single_input_filetype(img_src, 'image', '.tif')
     if image is None:
         return
-    print(f'>>>image: {image}')
+    # print(f'>>>image: {image}')
     # poly = check_single_input_filetype(img_src,  'poly', '.kml')
     # if poly is None:
         # return

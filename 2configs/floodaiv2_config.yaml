@@ -1,0 +1,15 @@
+
+
+
+ threshold : 0.8
+
+ input_file :   Y:\1NEW_DATA\1data\1raw\TC20241212MOZ\20241218_SC\urn_ogc_def_EOP_DLR_C582_N84_A_SM_strip_008_R_2024-12-18T16_01_14_298000Z-product\dims_op_oc_dfd2_696556728_1\TSX-1.SAR.L1B\TDX1_SAR__EEC_RE___SM_S_SRA_20241218T160114_20241218T160119\IMAGEDATA\IMAGE_HH_SRA_strip_008.tif                  
+
+ output_folder :    C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_INPUT   
+
+ output_filename  :  SENSOR_DATETIME_728_1 
+
+ analysis_extent :    C:/Users/floodai/UNOSAT_FloodAI_v2/1data/4final/predict_INPUT/extent_INPUT   
+
+
+
