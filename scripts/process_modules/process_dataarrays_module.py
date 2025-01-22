@@ -649,6 +649,7 @@ def location_to_crs(location, crs):
 
 
 # TILING
+
 def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_func, stats, percent_non_flood, inference=False):
     """
     Tile a DATASET (extracted from a dataarray is selected) and save to 'tiles' dir in same location.
@@ -841,6 +842,204 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
     print('---num_failed_norm= ', num_failed_norm)
     print('---num_px_outside_extent= ', num_px_outside_extent)
     return num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask_px, num_skip_nomask_px, num_failed_norm, num_not_256, num_px_outside_extent
+
+
+def tile_datacube_rxr_inf(datacube_path, save_tiles_path, tile_size, stride, norm_func, stats, percent_non_flood, inference=False):
+    """
+    Tile a DATASET (extracted from a dataarray is selected) and save to 'tiles' dir in same location.
+    'ARGs:
+    
+    play with the stride and tile_size to get the right size of tiles.
+    TODO add date etc to saved tile name?
+    TODO add json file with metadata for each tile inv mask and anal_ext pixel count etc
+    """
+    print('+++++++in tile_datacube rxr fn ++++++++')
+    global_min, global_max = stats
+    print('---FILE global_min= ', global_min)
+    print('---FILE global_max= ', global_max)
+    if stride != tile_size:
+        print(f'--stride = {stride}')
+    num_tiles = 0
+    num_saved = 0
+    num_has_nans = 0
+    num_novalid_layer = 0
+    num_novalid_pixels = 0
+    num_nomask_px = 0
+    num_skip_nomask_px = 0
+    num_failed_norm = 0
+    num_not_256 = 0
+    num_px_outside_extent = 0
+
+
+    ds = xr.open_dataset(datacube_path)
+    var = list(ds.data_vars)[0]
+    da = ds[var]
+
+    # print('---DS VARS BEFORE TILING = ', list(ds.data_vars))
+
+    print_dataarray_info(da)
+    if da.chunks:
+        for dim, chunk in zip(da.dims, da.chunks):
+            print(f"---Dimension '{dim}' has chunk sizes: {chunk}")
+    tile_metadata = []
+    inference_tiles = []
+
+    # estimate number of tiles that will be made
+    total_tiles = (da.x.size // stride) * (da.y.size // stride)
+    max_non_flooded = total_tiles * (percent_non_flood / 100)
+
+    # print('----START TILING----------------')
+    for y_start in tqdm(range(0, da.y.size, stride), desc="### Processing tiles by row"):
+        for x_start in range(0, da.x.size, stride):
+
+            # Ensure tiles start on the boundary and fit within the dataset
+            x_end = min(x_start + tile_size, da.x.size)
+            y_end = min(y_start + tile_size, da.y.size)
+
+            # SELECT THE SLICE FOR THE CURRENT TILE
+            try:
+                tile = da.isel(y=slice(y_start, y_end), x=slice(x_start, x_end))
+            except KeyError:
+                print("---Error: tiling.")
+                return
+            
+            num_tiles += 1   
+
+            if not inference:
+                if has_pixels_outside_extent(tile):
+                    num_px_outside_extent += 1
+                    # print('---tile has pixels outside extent')
+                    continue
+
+                if has_no_mask_pixels(tile):
+                    # print(f'---max_non_flooded= {max_non_flooded}')
+                    if num_nomask_px > max_non_flooded:
+                        print(f'---reached max nomaskpx, skipping tile')
+                        num_skip_nomask_px += 1  
+                        continue
+                    num_nomask_px +=1
+                    # print('---tile has no mask pixels')
+                    # print(f'---num_skip_nomask_pixels= {num_skip_nomask_px} of {max_non_flooded}') 
+                
+            if int(tile.sizes["x"]) != tile_size or int(tile.sizes["y"]) != tile_size:
+                num_not_256 += 1
+                continue
+
+                # print("---odd shaped encountered; padding.")
+                # padtile = pad_tile(tile, 250)
+                # print(f"---Tile dimensions b4 padding: {tile.sizes['x']}x{tile.sizes['y']}")
+                # tile = pad_tile(tile, tile_size)
+                # print("---Tile coords:", tile.coords)
+                # print(f"---Tile dimensions after padding: {tile.sizes['x']}x{tile.sizes['y']}")
+
+            if contains_nans(tile):
+                num_has_nans += 1
+                print('---tile has nans')
+                continue
+
+            # if has_no_valid_layer(tile):
+            #     num_novalid_layer += 1
+            #     # print('---tile has no valid layer')
+            #     continue
+            # if has_no_valid_pixels(tile):
+            #     num_novalid_pixels += 1
+            #     # print('---tile has no valid pixels')
+            #     continue
+
+            # print("---PRINTING DA INFO B4 NORM-----")
+            # print_dataarray_info(tile)
+            normalized = False
+            # normalized_tile, normalized = normalize_inmemory_tile(tile)
+            # print('---norm_func= ', norm_func)  
+            if norm_func == 'logclipmm_g':
+                normalized_tile, normalized = log_clip_minmaxnorm(tile, global_min, global_max) 
+        
+            if not normalized:
+                print('---Failed to normalize tile')
+                num_failed_norm += 1
+                continue
+
+
+            tile_name = f"tile_{datacube_path.parent.name}_{x_start}_{y_start}.tif"
+
+            # GET TILE MIN AND MAX vals
+
+                
+
+            if inference:
+
+                # Store metadata for stitching
+                tile_metadata.append({
+                    "tile_name": tile_name,
+                    "x_start": x_start,
+                    "y_start": y_start,
+                    "x_end": x_end,
+                    "y_end": y_end,
+                    "original_width": x_end - x_start,
+                    "original_height": y_end - y_start, 
+            })
+
+            dest_path = save_tiles_path  / tile_name
+            print
+            if not dest_path.parent.exists():
+                os.makedirs(dest_path.parent, exist_ok=True)
+                print('---created dir= ', dest_path.parent)
+
+            ######### SAVE TILE ############
+            # Save layer names as metadata
+            layer_names = list(normalized_tile.coords["layer"].values)
+            layer_names = [str(name) for name in layer_names]
+            # get crs and transform
+            # crs = normalized_tile.rio.crs
+            crs = "EPSG:4326"
+            transform = normalized_tile.rio.transform()
+            tile_data = normalized_tile.values
+            num_layers, height, width = tile_data.shape
+            # print('---layer_names= ', layer_names)
+
+            with rasterio.open(dest_path, 'w',
+                                driver='GTiff',
+                                height=height,
+                                width=width,
+                                count=num_layers,
+                                dtype=tile_data.dtype,
+                                crs=crs,
+                                transform=transform,
+                                compress=None) as dst:
+                for i in range(1, num_layers + 1):
+
+                    dst.write(tile_data[i - 1], i)
+                    dst.set_band_description(i, layer_names[i-1])  # Add band descriptions
+            num_saved += 1
+            inference_tiles.append(normalized_tile)
+
+            if inference:
+                # Save metadata for stitching
+                metadata_path = save_tiles_path / "tile_metadata.json"
+                with open(metadata_path, "w") as f:
+                    json.dump(tile_metadata, f, indent=4)
+                # print(f"---Saved metadata to {metadata_path}")
+
+    if inference:
+        print(f'---end of tiling datacube function')
+        return inference_tiles, tile_metadata            
+
+        #     if num_saved  == 100:
+        #         break
+        # if num_saved  == 100:
+        #     break
+    print('--- num_tiles= ', num_tiles)
+    print('---num_saved= ', num_saved)  
+    print('---num_has_nans= ', num_has_nans)
+    print('---num_novalid_layer= ', num_novalid_layer)
+    print('---num_novalid_pixels= ', num_novalid_pixels)
+    print('---num_nomask px= ', num_nomask_px)
+    print('---num_skip_nomask_pixels= ', num_skip_nomask_px)
+    print('---num_failed_norm= ', num_failed_norm)
+    print('---num_px_outside_extent= ', num_px_outside_extent)
+    return num_tiles, num_saved, num_has_nans, num_novalid_layer, num_novalid_pixels, num_nomask_px, num_skip_nomask_px, num_failed_norm, num_not_256, num_px_outside_extent
+
+
 
 def tile_datacube_rasterio(datacube_path, save_tiles_path, tile_size=256, stride=256):
     """

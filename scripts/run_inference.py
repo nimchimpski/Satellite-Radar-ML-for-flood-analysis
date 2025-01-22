@@ -16,14 +16,28 @@ from rasterio.windows import Window
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from scripts.train_modules.train_classes import UnetModel
 from scripts.process_modules.process_tiffs_module import  create_event_datacube_TSX_inf,reproject_to_4326_gdal, make_float32_inf, resample_tiff_gdal
-from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr
+from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr_inf
 from scripts.process_modules.process_helpers import  print_tiff_info_TSX, check_single_input_filetype, rasterize_kml_rasterio, compute_image_minmax, process_raster_minmax, path_not_exists, read_minmax_from_json, normalize_imagedata_inf, read_raster, write_raster
 from collections import OrderedDict
 from skimage.morphology import binary_erosion
 
 start=time.time()
 
+def create_weight_matrix(tile_size, overlap_size):
+    """Generate a weight matrix for blending predictions in overlapping areas."""
+    weight = np.ones((tile_size, tile_size), dtype=np.float32)
+
+    # Linear gradient weights for overlap regions
+    edge_weight = np.linspace(0, 1, overlap_size)
+    weight[:overlap_size, :] *= edge_weight[:, None]  # Top edge
+    weight[-overlap_size:, :] *= edge_weight[::-1][:, None]  # Bottom edge
+    weight[:, :overlap_size] *= edge_weight[None, :]  # Left edge
+    weight[:, -overlap_size:] *= edge_weight[::-1][None, :]  # Right edge
+
+    return weight
+
 def make_prediction_tiles(tile_folder, metadata, model, device, threshold):
+    print(f'---ORIGINAL PREDICTIONS FUNCTION')
     predictions_folder = Path(tile_folder).parent / f'{tile_folder.stem}_predictions'
     if predictions_folder.exists():
         print(f"--- Deleting existing predictions folder: {predictions_folder}")
@@ -57,6 +71,67 @@ def make_prediction_tiles(tile_folder, metadata, model, device, threshold):
 
     return predictions_folder
 
+def make_prediction_tiles_new(tile_folder, metadata, model, device, threshold):
+    predictions_folder = Path(tile_folder).parent / f'{tile_folder.stem}_predictions'
+    if predictions_folder.exists():
+        print(f"--- Deleting existing predictions folder: {predictions_folder}")
+        shutil.rmtree(predictions_folder)
+    predictions_folder.mkdir(exist_ok=True)
+
+    # DETERMINE THE OVERALL OUTPUT SHAPE
+    tile_size = 256
+    stride = 192
+    overlap = tile_size - stride
+
+    # CREATE A WEIGHT MATRIX FOR BLENDING
+    weight_matrix = create_weight_matrix(tile_size, overlap)
+
+    # DETERMINE THE OVERALL OUTPUT DIMENSIONS
+    max_x = max([tile_info['x_start'] for tile_info in metadata]) + tile_size
+    max_y = max([tile_info['y_start'] for tile_info in metadata]) + tile_size
+    global_shape = (max_x, max_y)
+
+    # INITIALIZE ARRAYS FOR MERGING PREDICTIONS
+    global_prediction = np.zeros(global_shape, dtype=np.float32)
+    global_weight_sum = np.zeros(global_shape, dtype=np.float32)
+
+    #.................
+    # GET A TILE FORM THE METADATA
+    for tile_info in tqdm(metadata, desc="Making predictions"):
+        tile_path = tile_folder / tile_info["tile_name"]
+        x, y = tile_info['x_start'], tile_info['y_start']
+
+        # OPEN THE TILE
+        with rasterio.open(tile_path) as src:
+            tile = src.read(1).astype(np.float32)  # Read the first band
+            profile = src.profile   
+            nodata_mask = src.read_masks(1) == 0  # True where no-data
+
+        # PREPARE TILE FOR MODEL
+        tile_tensor = torch.tensor(tile).unsqueeze(0).unsqueeze(0).to(device)  # Add batch and channel dims
+
+        # PERFORM INFERENCE
+        with torch.no_grad():
+            pred = model(tile_tensor)
+            pred = torch.sigmoid(pred).squeeze().cpu().numpy()  # Convert logits to probabilities
+            pred = (pred > threshold).astype(np.float32)  # Convert probabilities to binary mask
+            pred[nodata_mask] = 0  # Mask out no-data areas
+
+        # ADD WEIGHTED PREDICTION TO GLOBAL ARRAYS
+        global_prediction[x:x+tile_size, y:y+tile_size] += pred * weight_matrix
+        global_weight_sum[x:x+tile_size, y:y+tile_size] += weight_matrix
+
+    # NORMALIZE GLOBAL PREDICTIONS BY WEIGHT SUM
+    global_weight_sum[global_weight_sum == 0] = 1  # Prevent division by zero
+    final_prediction = global_prediction / global_weight_sum
+
+    # SAVE FINAL MERGED PREDICTION AS GEOTIFF
+    profile.update(dtype=rasterio.float32, height=global_shape[0], width=global_shape[1])
+    merged_path = predictions_folder / "merged_prediction.tif"
+    with rasterio.open(merged_path, "w", **profile) as dst:
+        dst.write(final_prediction.astype(np.float32), 1)
+
+    return predictions_folder
 
 
 def stitch_tiles(metadata, prediction_tiles, save_path, image):
@@ -173,7 +248,7 @@ def main(test=False):
     # DEFINE PATHS
 
     # DEFINE THE WORKING FOLDER FOR I/O
-    img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_input_test")
+    img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_input")
     print(f'>>>working folder: {img_src}')
     if path_not_exists(img_src):
         print(f"---No input folder found in {img_src}")
@@ -195,6 +270,7 @@ def main(test=False):
 
     norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
     stats = None
+    FULLRUN = False
 
     ############################################################################
 
@@ -223,10 +299,13 @@ def main(test=False):
     image_code = "_".join(image.name.split('_')[:2])
     print(f'>>>image_code= ',image_code)
 
-    if True:
+    # CREATE THE EXTRACTED FOLDER
+    extracted = img_src / f'{image_code}_extracted'
+
     
-        # CREATE THE EXTRACTED FOLDER
-        extracted = img_src / f'{image_code}_extracted'
+    print(f'>>> FULLRUN = {FULLRUN}')
+
+    if FULLRUN:
         if extracted.exists():
             # print(f"--- Deleting existing extracted folder: {extracted}")
             # delete the folder and create a new one
@@ -265,7 +344,6 @@ def main(test=False):
         # fnal_extent = extracted / f'{image_code}_32_final_extent.tif'
         # make_float32_inf(reproj_extent, final_extent
 
-    extracted = img_src / f'{image_code}_extracted'
     final_image = extracted / 'final_image.tif'
 
 
@@ -275,7 +353,7 @@ def main(test=False):
 
 
 
-    if True:
+    if FULLRUN:
         create_event_datacube_TSX_inf(img_src, image_code)
 
     cube = next(img_src.rglob("*.nc"), None)  
@@ -289,7 +367,7 @@ def main(test=False):
         # CALCULATE THE STATISTICS
 
     # DO THE TILING
-    tiles, metadata = tile_datacube_rxr(cube, save_tiles_path, tile_size=256, stride=256, norm_func=norm_func, stats=stats, percent_non_flood=0, inference=True) 
+    tiles, metadata = tile_datacube_rxr_inf(cube, save_tiles_path, tile_size=256, stride=192, norm_func=norm_func, stats=stats, percent_non_flood=0, inference=True) 
     # print(f">>>{len(tiles)} tiles saved to {save_tiles_path}")
     # print(f">>>{len(metadata)} metadata saved to {save_tiles_path}")
     # metadata = Path(save_tiles_path) / 'tile_metadata.json'
@@ -323,7 +401,7 @@ def main(test=False):
     # print prediction_img size
     # print(f'>>>prediction_img shape:',prediction_img.shape)
     # display the prediction mask
-    plt.imshow(prediction_img, cmap='gray')
+    # plt.imshow(prediction_img, cmap='gray')
     # plt.show()
 
 
