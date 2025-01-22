@@ -24,17 +24,18 @@ from skimage.morphology import binary_erosion
 start=time.time()
 
 def create_weight_matrix(tile_size, overlap_size):
-    """Generate a weight matrix for blending predictions in overlapping areas."""
+    """Generate a weight matrix using cosine decay for blending."""
     weight = np.ones((tile_size, tile_size), dtype=np.float32)
 
-    # Linear gradient weights for overlap regions
-    edge_weight = np.linspace(0, 1, overlap_size)
+    # Cosine weights for overlap regions
+    edge_weight = 0.5 * (1 + np.cos(np.linspace(-np.pi, 0, overlap_size)))
     weight[:overlap_size, :] *= edge_weight[:, None]  # Top edge
     weight[-overlap_size:, :] *= edge_weight[::-1][:, None]  # Bottom edge
     weight[:, :overlap_size] *= edge_weight[None, :]  # Left edge
     weight[:, -overlap_size:] *= edge_weight[::-1][None, :]  # Right edge
 
     return weight
+
 
 def make_prediction_tiles(tile_folder, metadata, model, device, threshold):
     print(f'---ORIGINAL PREDICTIONS FUNCTION')
@@ -71,7 +72,7 @@ def make_prediction_tiles(tile_folder, metadata, model, device, threshold):
 
     return predictions_folder
 
-def make_prediction_tiles_new(tile_folder, metadata, model, device, threshold):
+def make_prediction_tiles_new(tile_folder, metadata, model, device, threshold, stride):
     predictions_folder = Path(tile_folder).parent / f'{tile_folder.stem}_predictions'
     if predictions_folder.exists():
         print(f"--- Deleting existing predictions folder: {predictions_folder}")
@@ -80,8 +81,8 @@ def make_prediction_tiles_new(tile_folder, metadata, model, device, threshold):
 
     # DETERMINE THE OVERALL OUTPUT SHAPE
     tile_size = 256
-    stride = 192
-    overlap = tile_size - stride
+    stride = stride
+    overlap = tile_size
 
     # CREATE A WEIGHT MATRIX FOR BLENDING
     weight_matrix = create_weight_matrix(tile_size, overlap)
@@ -114,7 +115,6 @@ def make_prediction_tiles_new(tile_folder, metadata, model, device, threshold):
         with torch.no_grad():
             pred = model(tile_tensor)
             pred = torch.sigmoid(pred).squeeze().cpu().numpy()  # Convert logits to probabilities
-            pred = (pred > threshold).astype(np.float32)  # Convert probabilities to binary mask
             pred[nodata_mask] = 0  # Mask out no-data areas
 
         # ADD WEIGHTED PREDICTION TO GLOBAL ARRAYS
@@ -124,6 +124,9 @@ def make_prediction_tiles_new(tile_folder, metadata, model, device, threshold):
     # NORMALIZE GLOBAL PREDICTIONS BY WEIGHT SUM
     global_weight_sum[global_weight_sum == 0] = 1  # Prevent division by zero
     final_prediction = global_prediction / global_weight_sum
+    final_prediction = (final_prediction > threshold).astype(np.float32)
+      # Convert probabilities to binary mask
+
 
     # SAVE FINAL MERGED PREDICTION AS GEOTIFF
     profile.update(dtype=rasterio.float32, height=global_shape[0], width=global_shape[1])
@@ -226,6 +229,12 @@ def clean_checkpoint_keys(state_dict):
 @click.option('--test', is_flag=True, help='loading from test folder', show_default=False)
 def main(test=False):
 
+    # import matplotlib.pyplot as plt
+    # wm = create_weight_matrix(256, 64)
+    # plt.imshow(wm, cmap="viridis")
+    # plt.colorbar()
+    # plt.show()
+
     print(f'>>>test mode = {test}')
     # READ CONFIG
     config_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\floodaiv2_config.yaml")
@@ -271,6 +280,7 @@ def main(test=False):
     norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
     stats = None
     FULLRUN = False
+    stride = 248
 
     ############################################################################
 
@@ -296,7 +306,7 @@ def main(test=False):
         # return
 
     # GET REGION CODE FROM MASK TODO
-    image_code = "_".join(image.name.split('_')[:2])
+    image_code = "_".join(image.parents[3].name.split('_')[4:])
     print(f'>>>image_code= ',image_code)
 
     # CREATE THE EXTRACTED FOLDER
@@ -367,7 +377,7 @@ def main(test=False):
         # CALCULATE THE STATISTICS
 
     # DO THE TILING
-    tiles, metadata = tile_datacube_rxr_inf(cube, save_tiles_path, tile_size=256, stride=192, norm_func=norm_func, stats=stats, percent_non_flood=0, inference=True) 
+    tiles, metadata = tile_datacube_rxr_inf(cube, save_tiles_path, tile_size=256, stride=stride, norm_func=norm_func, stats=stats, percent_non_flood=0, inference=True) 
     # print(f">>>{len(tiles)} tiles saved to {save_tiles_path}")
     # print(f">>>{len(metadata)} metadata saved to {save_tiles_path}")
     # metadata = Path(save_tiles_path) / 'tile_metadata.json'
@@ -394,10 +404,10 @@ def main(test=False):
     # SET THE MODEL TO EVALUATION MODE
     model.eval()
 
-    prediction_tiles = make_prediction_tiles(save_tiles_path, metadata, model, device, threshold)
+    prediction_tiles = make_prediction_tiles_new(save_tiles_path, metadata, model, device, threshold, stride)
 
     # STITCH PREDICTION TILES
-    prediction_img = stitch_tiles(metadata, prediction_tiles, save_path, final_image)
+    # prediction_img = stitch_tiles(metadata, prediction_tiles, save_path, final_image)
     # print prediction_img size
     # print(f'>>>prediction_img shape:',prediction_img.shape)
     # display the prediction mask
