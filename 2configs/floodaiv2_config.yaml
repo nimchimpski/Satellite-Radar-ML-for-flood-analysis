@@ -7,7 +7,8 @@
  tile_size : 256
 #  256, 512, 1024, 2048, 4096 max
               
- input_file :   Y:\1NEW_DATA\1data\1raw\dset_DLR_TSX\archive\dims_op_oc_dfd2_695959729_2\dims_op_oc_dfd2_695959729_2\TSX-1.SAR.L1B\TSX1_SAR__EEC_RE___SC_S_SRA_20200524T000552_20200524T000617\IMAGEDATA\IMAGE_HH_SRA_scan_009.tif              
+ input_file :   Y:\1NEW_DATA\1data\1raw\dset_DLR_TSX\archive\dims_op_oc_dfd2_695959729_1\dims_op_oc_dfd2_695959729_1\TSX-1.SAR.L1B\TSX1_SAR__EEC_RE___SC_S_SRA_20200524T000638_20200524T000659\IMAGEDATA\IMAGE_HH_SRA_scan_009.tif  
+            
 #  REMOVE QUOTATION MARKS!
  output_folder :    C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_INPUT   
 
