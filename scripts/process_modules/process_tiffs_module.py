@@ -804,7 +804,7 @@ def create_event_datacube_TSX_inf(event, mask_code, VERSION="v1"):
     '''
     An xarray dataset is created for the event folder and saved as a .nc file.
     '''
-    print(f'+++++++++++ IN CREAT EVENT DATACUBE {event.name}+++++++++++++++++')
+    print(f'+++++++++++ IN CREAT EVENT DATACUBE TSX INF {event.name}+++++++++++++++++')
     # FIND THE EXTRACTED FOLDER
     print(f'---mask code= {mask_code}')
     extracted_folder = list(event.rglob(f'*{mask_code}_extracted'))[0]
@@ -829,8 +829,8 @@ def create_event_datacube_TSX_inf(event, mask_code, VERSION="v1"):
     print_dataarray_info(da)
 
     #######   CHUNKING ############
-    # da = da.chunk({'x': 256, 'y': 256, 'layer': 1})
-    # print('---Rechunked datacube')  
+    da = da.chunk({'x': 256, 'y': 256, 'layer': 1})
+    print('---Rechunked datacube')  
 
     #######   SAVING ############
     output_path = extracted_folder / f"{mask_code}.nc"
