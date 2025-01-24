@@ -2,14 +2,18 @@
 
 
  threshold : 0.8
+#  ... 0.6, 0.7, 0.8, 0.9, 0.95 ...
 
- input_file : Y:\1NEW_DATA\1data\1raw\dset_DLR_TSX\current\dims_op_oc_dfd2_695958835_1\TSX-1.SAR.L1B\TSX1_SAR__EEC_RE___SL_S_SRA_20240316T032045_20240316T032046\IMAGEDATA\IMAGE_HH_SRA_spot_042.tif                
- input_file :   Y:\1NEW_DATA\1data\1raw\TC20241212MOZ\20241218_SC\urn_ogc_def_EOP_DLR_C582_N84_A_SM_strip_009_R_2024-12-18T16_01_39_116303Z-product\dims_op_oc_dfd2_696555804_1\TSX-1.SAR.L1B\TDX1_SAR__EEC_RE___SM_S_SRA_20241218T160139_20241218T160144\IMAGEDATA\IMAGE_HH_SRA_strip_009.tif                  
-
+ tile_size : 256
+#  256, 512, 1024, 2048, 4096 max
+              
+ input_file :   Y:\1NEW_DATA\1data\1raw\dset_DLR_TSX\archive\dims_op_oc_dfd2_695959729_2\dims_op_oc_dfd2_695959729_2\TSX-1.SAR.L1B\TSX1_SAR__EEC_RE___SC_S_SRA_20200524T000552_20200524T000617\IMAGEDATA\IMAGE_HH_SRA_scan_009.tif              
+#  REMOVE QUOTATION MARKS!
  output_folder :    C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_INPUT   
 
- output_filename  :  SENSOR_wedpm_729_1.tif
- output_filename  :  SENSOR_DATETIME_804_1.tif
+ output_filename  : _
+#  custom field, cannot be totally blanc. Use: _myname 
+# you do not need to add: sensor_type, filecode, date,  tile_size, threshold
 
  analysis_extent :    C:/Users/floodai/UNOSAT_FloodAI_v2/1data/4final/predict_INPUT/extent_INPUT   
 
