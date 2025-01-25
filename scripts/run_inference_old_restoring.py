@@ -18,7 +18,7 @@ from rasterio.windows import Window
 from rasterio.warp import calculate_default_transform, reproject, Resampling
 from scripts.train_modules.train_classes import UnetModel
 from scripts.process_modules.process_tiffs_module import  create_event_datacube_TSX_inf,reproject_to_4326_gdal, make_float32_inf, resample_tiff_gdal
-from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr
+from scripts.process_modules.process_dataarrays_module import tile_datacube_rxr_inf
 from scripts.process_modules.process_helpers import  print_tiff_info_TSX, check_single_input_filetype, rasterize_kml_rasterio, compute_image_minmax, process_raster_minmax, path_not_exists, read_minmax_from_json, normalize_imagedata_inf, read_raster, write_raster
 from collections import OrderedDict
 from skimage.morphology import binary_erosion
@@ -216,7 +216,7 @@ def main(test=None):
     print(f'>>>image_code= ',image_code)
 
 
-    if False:
+    if True:
     
         # CREATE THE EXTRACTED FOLDER
         extracted = img_src / f'{image_code}_extracted'
@@ -233,9 +233,9 @@ def main(test=None):
         # print_tiff_info_TSX(image_32, 1)
 
         # RESAMPLE TO 2.5
-        print('>>>RESAMPLING')
-        resamp_image = extracted / f'{image_32.stem}_resamp'
-        resample_tiff_gdal(image_32, resamp_image, target_res=2.5)
+        # print('>>>RESAMPLING')
+        # resamp_image = extracted / f'{image_32.stem}_resamp'
+        # resample_tiff_gdal(image_32, resamp_image, target_res=2.5)
         # print_tiff_info_TSX(resamp_image, 2)
 
         # with rasterio.open(image) as src:
@@ -250,7 +250,8 @@ def main(test=None):
         # REPROJECT IMAGE
         print('>>>REPROJECTING')
         final_image = extracted / 'final_image.tif'
-        reproject_to_4326_gdal(resamp_image, final_image, resampleAlg = 'bilinear')
+        # reproject_to_4326_gdal(resamp_image, final_image, resampleAlg = 'bilinear')
+        reproject_to_4326_gdal(image_32, final_image, resampleAlg = 'bilinear')
         # print_tiff_info_TSX(final_image, 3)
 
         # reproj_extent = extracted / f'{image_code}_4326_extent.tif'
@@ -288,7 +289,7 @@ def main(test=None):
         # CALCULATE THE STATISTICS
 
     # DO THE TILING
-    tiles, metadata = tile_datacube_rxr(cube, save_tiles_path, tile_size=256, stride=256, norm_func=norm_func, stats=stats, percent_non_flood=0, inference=True) 
+    tiles, metadata = tile_datacube_rxr_inf(cube, save_tiles_path, tile_size=256, stride=256, norm_func=norm_func, stats=stats, percent_non_flood=0, inference=True) 
     # print(f">>>{len(tiles)} tiles saved to {save_tiles_path}")
     # print(f">>>{len(metadata)} metadata saved to {save_tiles_path}")
     # metadata = Path(save_tiles_path) / 'tile_metadata.json'
