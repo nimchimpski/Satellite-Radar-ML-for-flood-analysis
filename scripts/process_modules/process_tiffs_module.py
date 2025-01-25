@@ -829,8 +829,8 @@ def create_event_datacube_TSX_inf(event, mask_code, VERSION="v1"):
     print_dataarray_info(da)
 
     #######   CHUNKING ############
-    da = da.chunk({'x': 256, 'y': 256, 'layer': 1})
-    print('---Rechunked datacube')  
+    # da = da.chunk({'x': 256, 'y': 256, 'layer': 1})
+    # print('---Rechunked datacube')  
 
     #######   SAVING ############
     output_path = extracted_folder / f"{mask_code}.nc"
