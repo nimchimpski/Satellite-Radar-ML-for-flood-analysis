@@ -826,7 +826,7 @@ def create_event_datacube_TSX_inf(event, mask_code, VERSION="v1"):
         # print('---Squeezing out the "band" dimension')
         da = da.squeeze('band') 
 
-    print_dataarray_info(da)
+    # print_dataarray_info(da)
 
     #######   CHUNKING ############
     # da = da.chunk({'x': 256, 'y': 256, 'layer': 1})
@@ -836,7 +836,7 @@ def create_event_datacube_TSX_inf(event, mask_code, VERSION="v1"):
     output_path = extracted_folder / f"{mask_code}.nc"
     da.to_netcdf(output_path, mode='w', format='NETCDF4', engine='netcdf4')
     
-    # print(f'##################  ds saved for= {event.name} bye bye #################\n')
+    print(f'##################  ds saved for= {event.name} bye bye #################\n')
 
 
 # WORK ON DEM

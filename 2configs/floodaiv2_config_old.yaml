@@ -1,0 +1,23 @@
+
+
+
+ threshold : 0.8
+#  ... 0.6, 0.7, 0.8, 0.9, 0.95 ...
+
+ tile_size : 256
+#  256, 512, 1024, 2048, 4096 max
+              
+ input_folder :   C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_INPUT
+
+            
+#  REMOVE QUOTATION MARKS!
+ output_folder :    C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_INPUT   
+
+ output_filename  : _
+#  custom field, cannot be totally blanc. Use: _myname 
+# you do not need to add: sensor_type, filecode, date,  tile_size, threshold
+
+ analysis_extent :    C:/Users/floodai/UNOSAT_FloodAI_v2/1data/4final/predict_INPUT/extent_INPUT   
+
+
+

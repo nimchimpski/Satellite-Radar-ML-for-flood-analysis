@@ -877,7 +877,7 @@ def tile_datacube_rxr_inf(datacube_path, save_tiles_path, tile_size, stride, nor
 
     # print('---DS VARS BEFORE TILING = ', list(ds.data_vars))
 
-    print_dataarray_info(da)
+    # print_dataarray_info(da)
     if da.chunks:
         for dim, chunk in zip(da.dims, da.chunks):
             print(f"---Dimension '{dim}' has chunk sizes: {chunk}")
@@ -888,7 +888,7 @@ def tile_datacube_rxr_inf(datacube_path, save_tiles_path, tile_size, stride, nor
     total_tiles = (da.x.size // stride) * (da.y.size // stride)
     max_non_flooded = total_tiles * (percent_non_flood / 100)
 
-    # print('----START TILING----------------')
+    print('-----START TILING----------------')
     for y_start in tqdm(range(0, da.y.size, stride), desc="### Processing tiles by row"):
         for x_start in range(0, da.x.size, stride):
 
