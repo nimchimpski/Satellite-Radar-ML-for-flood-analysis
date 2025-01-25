@@ -160,14 +160,22 @@ def main(test=None):
     # print(f'>>>config: {config}')
     
     threshold = config["threshold"] # PREDICTION CONFIDENCE THRESHOLD
-    img_src = Path(config["input_folder"])
-    print(f'>>>img source= {img_src}')
-    output_filename = config["output_filename"]
+    tile_size = config["tile_size"] # TILE SIZE FOR INFERENCE
+    # Normalize all paths in the config
+    input_file = Path(config['input_file'])
+    output_folder = Path(config['output_folder'])
+    output_filename = Path(config['output_filename'])
+    analysis_extent = Path(config['analysis_extent'])
 
+    # print(f'>>> config = {config}')
+    print(f'>>>threshold: {threshold}') 
+    print(f'>>>tile_size: {tile_size}')
+    print(f'>>>output_folder= {output_folder}')
+    print(f'>>>output_filename= {output_filename}')
+    print(f'>>>alalysis_extent= {analysis_extent}')
     print(f'>>>threshold: {threshold}')
-    if test:
-        print("TEST SOURCE")
-        img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_input_test")
+
+    img_src = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_input_test")
 
     print(f'>>>img_src: {img_src}')
 

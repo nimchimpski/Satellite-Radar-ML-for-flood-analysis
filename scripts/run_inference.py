@@ -11,6 +11,7 @@ import json
 import matplotlib.pyplot as plt
 import click
 import yaml
+import gc
 from rasterio.plot import show
 from rasterio.windows import Window
 from rasterio.warp import calculate_default_transform, reproject, Resampling
@@ -274,8 +275,8 @@ def main(test=False):
 
     norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
     stats = None
-    MAKE_TIFS = True
-    MAKE_DATAARRAY= True
+    MAKE_TIFS = False
+    MAKE_DATAARRAY= False
     stride = tile_size
 
     ############################################################################
@@ -338,9 +339,9 @@ def main(test=False):
         # print_tiff_info_TSX(image_32, 1)
 
         # RESAMPLE TO 2.5
-        print('>>>RESAMPLING')
-        resamp_image = extracted / f'{image_32.stem}_resamp'
-        resample_tiff_gdal(image_32, resamp_image, target_res=2.5)
+        # print('>>>RESAMPLING')
+        # resamp_image = extracted / f'{image_32.stem}_resamp'
+        # resample_tiff_gdal(image_32, resamp_image, target_res=2.5)
         # print_tiff_info_TSX(resamp_image, 2)
 
         # with rasterio.open(image) as src:
@@ -355,7 +356,7 @@ def main(test=False):
         # REPROJECT IMAGE
         print('>>>REPROJECTING')
         final_image = extracted / 'final_image.tif'
-        reproject_to_4326_gdal(resamp_image, final_image, resampleAlg = 'bilinear')
+        reproject_to_4326_gdal(image_32, final_image, resampleAlg = 'bilinear')
         # print_tiff_info_TSX(final_image, 3)
 
         # reproj_extent = extracted / f'{image_code}_4326_extent.tif'
@@ -424,8 +425,9 @@ def main(test=False):
     # plt.show()
 
     del model
-    del tensors
-    torch.cuda.empty_cach()
+
+    torch.cuda.empty_cache()
+    gc.collect()
 
     end = time.time()
     # time taken in minutes to 2 decimal places

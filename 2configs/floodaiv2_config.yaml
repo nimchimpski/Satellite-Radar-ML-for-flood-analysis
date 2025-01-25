@@ -4,10 +4,10 @@
  threshold : 0.8
 #  ... 0.6, 0.7, 0.8, 0.9, 0.95 ...
 
- tile_size : 256
-#  256, 512, 1024, 2048, 4096 max
+ tile_size : 1024
+#  256, 512, 1024 max
               
- input_file :   Y:\1NEW_DATA\1data\1raw\dset_DLR_TSX\archive\dims_op_oc_dfd2_695959729_1\dims_op_oc_dfd2_695959729_1\TSX-1.SAR.L1B\TSX1_SAR__EEC_RE___SC_S_SRA_20200524T000638_20200524T000659\IMAGEDATA\IMAGE_HH_SRA_scan_009.tif  
+ input_file :  C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_INPUT\dims_op_oc_dfd2_696555741_1\TSX-1.SAR.L1B\TDX1_SAR__EEC_RE___SM_S_SRA_20241217T161810_20241217T161816\IMAGEDATA\IMAGE_HH_SRA_strip_027.tif
             
 #  REMOVE QUOTATION MARKS!
  output_folder :    C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\predict_INPUT   
