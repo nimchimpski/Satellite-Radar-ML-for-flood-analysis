@@ -26,7 +26,7 @@ import segmentation_models_pytorch as smp
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint,EarlyStopping
-from iglovikov_helper_functions.dl.pytorch.lightning import find_average
+# from iglovikov_helper_functions.dl.pytorch.lightning import find_average
 from surface_distance.metrics import compute_surface_distances, compute_surface_dice_at_tolerance
 #-------------------------------------------
 import tifffile as tiff
@@ -39,17 +39,26 @@ from functools import partial
 from wandb import Artifact
 #--------------------------------------------
 
-from scripts.train_modules.z.boundaryloss import BoundaryLoss
+# from scripts.train_modules.z.boundaryloss import BoundaryLoss
 from scripts.train_modules.train_helpers import *
 from scripts.train_modules.train_classes import  UnetModel,   Segmentation_training_loop 
 from scripts.train_modules.train_functions import handle_interrupt
-from scripts.train_modules.train_functions import calculate_metrics, log_metrics_to_wandb
-from scripts.train_modules.training_loops import Segmentation_training_loop
+from scripts.train_modules.train_functions import calculate_metrics
+# log_metrics_to_wandb
+# from scripts.train_modules.training_loops import Segmentation_training_loop
+
+def pick_device():
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
+
 
 # Simulate one training step
-model = UnetModel(encoder_name='resnet34', in_channels=1, classes=1, pretrained=False).to('cuda')
-dummy_input = torch.randn(16, 1, 256, 256).to('cuda')
-dummy_mask = torch.randint(0, 2, (16, 1, 256, 256), dtype=torch.float32).to('cuda')  # Binary mask
+model = UnetModel(encoder_name='resnet34', in_channels=1, classes=1, pretrained=False).to('cpu')
+dummy_input = torch.randn(2, 1, 256, 256).to('cpu')
+dummy_mask = torch.randint(0, 2, (2, 1, 256, 256), dtype=torch.float32).to('cpu')  # Binary mask
 
 output = model(dummy_input)
 print(f"Output shape: {output.shape}")  # Should match dummy_mask shape
