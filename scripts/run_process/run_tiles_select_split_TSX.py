@@ -16,18 +16,20 @@ def main(test=None):
     '''
     signal.signal(signal.SIGINT, handle_interrupt)
 
-    src_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\3TSX_TILES\NORM_TILES_FOR_SELECT_AND_SPLIT_INPUT")
+    repo_dir = Path(__file__).resolve().parent.parent.parent
+    print(f'>>>repo_dir= {repo_dir}')
+    src_base = repo_dir / 'data' / '2interim' / 'TSX_tiles' / 'NORM_TILES_FOR_SELECT_AND_SPLIT_INPUT'
     dataset_name = None
     ############################################
-    MAKEFOLDER = True
+    MAKEFOLDER = False
     analysis_threshold=1
     mask_threshold=0.3
     percent_under_thresh=0.25 # 0.001 = 1% 
 
-    dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\train_INPUT")
+    dst_base = repo_dir / 'data' / '4final' / 'train_INPUT'
     if test:
         click.echo("TEST DESTINATION")
-        dst_base = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\4final\test_INPUT")
+        dst_base = repo_dir / 'data' / '4final' / 'test_INPUT'
     if not dst_base.exists():
         raise FileNotFoundError(f"Destination folder {dst_base} does not exist.")
     print(f"Destination folder: {dst_base}")

@@ -690,7 +690,9 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
 
     # estimate number of tiles that will be made
     total_tiles = (da.x.size // stride) * (da.y.size // stride)
+    print(f'---total_tiles= {total_tiles}') 
     max_non_flooded = total_tiles * (percent_non_flood / 100)
+    print(f'---max_non_flooded= {max_non_flooded}')
 
     # print('----START TILING----------------')
     for y_start in tqdm(range(0, da.y.size, stride), desc="### Processing tiles by row"):
@@ -710,10 +712,10 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
             num_tiles += 1   
 
             if not inference:
-                if has_pixels_outside_extent(tile):
-                    num_px_outside_extent += 1
-                    # print('---tile has pixels outside extent')
-                    continue
+                # if has_pixels_outside_extent(tile):
+                #     num_px_outside_extent += 1
+                #     # print('---tile has pixels outside extent')
+                #     continue
 
                 if has_no_mask_pixels(tile):
                     # print(f'---max_non_flooded= {max_non_flooded}')
@@ -763,12 +765,9 @@ def tile_datacube_rxr(datacube_path, save_tiles_path, tile_size, stride, norm_fu
                 num_failed_norm += 1
                 continue
 
-
             tile_name = f"tile_{datacube_path.parent.name}_{x_start}_{y_start}.tif"
 
             # GET TILE MIN AND MAX vals
-
-                
 
             if inference:
 

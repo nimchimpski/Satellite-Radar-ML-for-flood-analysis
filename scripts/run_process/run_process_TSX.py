@@ -21,23 +21,24 @@ start=time.time()
 def main(test=None):
 
     ############################################################################
-    # data_root = Path(r"Y:\1NEW_DATA\1data\2interim\ALL TSX PROCESSING")
-    data_root = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\1data\2interim")
+    # repo_src = Path(r"Y:\1NEW_DATA\1data\2interim\ALL TSX PROCESSING")
+    repo_root = Path('/Users/alexwebb/Library/Mobile Documents/com~apple~CloudDocs/Documents/coding/floodai/UNOSAT_FloodAI_v2')
+    repo_src = repo_root / 'data' / '2interim'
 
     if test:
         print('>>>TEST MODE<<<')
-        dataset =  data_root / 'TSX_TO_PROCESS_TEST' 
+        dataset =  repo_src / 'TSX_TO_PROCESS_TEST' 
     else:
         print('>>>FULL DATASET MODE<<<')
-        dataset =  data_root / 'TSX_TO_PROCESS_INPUT' 
+        dataset =  repo_src / 'SAR_TO_PROCESS_INPUT' 
         # dataset=Path(r"Y:\1NEW_DATA\1data\2interim\TSX aa datacubes") 
         # dataset = Path(r'Y:\1NEW_DATA\1data\2interim\TSX aa datacubes\ok')
     make_tifs = 1
-    make_datacubes = 0
-    get_minmax = 0
-    make_norm_tiles = 0
+    make_datacubes = 1
+    get_minmax = 1
+    make_norm_tiles = 1
     norm_func = 'logclipmm_g' # 'mm' or 'logclipmm'
-    minmax_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\2configs\global_minmax_INPUT\global_minmax.json")
+    minmax_path = repo_root / 'configs' / 'global_minmax_INPUT' / 'global_minmax.json'
     percent_non_flood = 100
     ############################################################################
     print(f'>>>make_tifs= {make_tifs==1} \n>>>make_datacubes= {make_datacubes==1} \n>>>get minmax= {get_minmax==1} \n>>>make_tiles= {make_norm_tiles==1}')
@@ -49,12 +50,15 @@ def main(test=None):
         for event in tqdm(dataset.iterdir(), desc='events') : # ITER EVENT
             if event.is_dir():
                 print(f'################### EVENT={event.name}  ###################')
-
-                orig_mask = list(event.rglob('*MASK.tif'))[0]
-                # GET REGION CODE FROM MASK
-                mask_code = "_".join(orig_mask.name.split('_')[:2])
+                # list event contents
+                print(f'>>>event contents: {[x.name for x in event.iterdir()]}') 
+                orig_mask = list(event.rglob('*mask.tif'))[0]
+                # GET REGION CODE FROM FOLDER
+                mask_code = "_".join(orig_mask.parent.name.split('_')[:3])
+                print(f'>>>mask_code= ',mask_code)
 
                 # COPY  THE MASK, IMAGE, AND DEM TO THE EXTRACTED FOLDER
+                print('\n>>>>>>>>>>>>>>>> making tiffs >>>>>>>>>>>>>>>>>')
                 if make_tifs:
                     extract_folder = event / f'{mask_code}_extracted'
                     if extract_folder.exists():
@@ -62,26 +66,21 @@ def main(test=None):
                     extract_folder.mkdir(exist_ok=True)
 
                     # COPY THE MASK
-                    orig_mask = list(event.rglob('*MASK.tif'))[0]
-                    # GET REGION CODE FROM MASK
-                    mask_code = "_".join(orig_mask.name.split('_')[:2])
-
-                    print(f'>>>mask_code= ',mask_code)
                     ex_mask = extract_folder / f'{mask_code}_mask.tif'
                     shutil.copy(orig_mask, ex_mask)
                     print(f'>>>mask={ex_mask.name}')
 
-                    ex_extent = extract_folder / f'{mask_code}_extent.tif'
-                    create_extent_from_mask(ex_mask, ex_extent)
+                    # ex_extent = extract_folder / f'{mask_code}_extent.tif'
+                    # create_extent_from_mask(ex_mask, ex_extent)
 
                     # copy the poly
                     # poly = list(event.rglob('*POLY*.kml'))[0]
                     # ex_poly = extract_folder / f'{mask_code}_poly.tif'
                     # shutil.copy(poly, ex_poly)
                     # COPY THE SAR IMAGE
-                    image = list(event.rglob('*IMAGE_*.tif') )[0]
+                    image = list(event.rglob('*compressed*.tif') )[0]
 
-                    print(f'>>>image={image}')
+                    print(f'>>>image={image.name}')
                     ex_image = extract_folder / f'{mask_code}_image.tif'
                     shutil.copy(image, ex_image)
 
@@ -102,23 +101,28 @@ def main(test=None):
                     # REPROJECT THE TIFS TO EPSG:4326
                     print('\n>>>>>>>>>>>>>>>> reproj all tifs to 4326 >>>>>>>>>>>>>>>>>')
                     reproj_image = extract_folder / f'{mask_code}_4326_image.tif'
-                    reproj_dem = extract_folder / f'{mask_code}_4326_dem.tif'
-                    reproj_slope = extract_folder / f'{mask_code}_4326_slope.tif'
+                    # reproj_dem = extract_folder / f'{mask_code}_4326_dem.tif'
+                    # reproj_slope = extract_folder / f'{mask_code}_4326_slope.tif'
                     reproj_mask = extract_folder / f'{mask_code}_4326_mask.tif'
-                    reproj_extent = extract_folder / f'{mask_code}_4326_extent.tif'
+                    # reproj_extent = extract_folder / f'{mask_code}_4326_extent.tif'
 
-                    orig_images = [ ex_image,  ex_extent, ex_mask]
-                    rep_images = [reproj_image,  reproj_extent, reproj_mask]
+                    # orig_images = [ ex_image,  ex_mask]
+                    # rep_images = [reproj_image,   reproj_mask]
 
-                    for i,j in zip( orig_images, rep_images):
-                        print(f'---i={i.name} j={j.name}')
-                        # check if mask or extent 
-                        if 'extent' in i.name or 'mask' in i.name:
-                            resampleAlg = 'near'
-                        elif 'image' in i.name:
-                            resampleAlg = 'bilinear'
-                        print(f'---resampleAlg= {resampleAlg}')
-                        reproject_to_4326_fixpx_gdal(i, j, resampleAlg, px_size=0.0001)
+                    # for i,j in zip( orig_images, rep_images):
+                    #     print(f'---i={i.name} j={j.name}')
+                    #     # check if mask or extent 
+                    #     if 'extent' in i.name or 'mask' in i.name:
+                    #         resampleAlg = 'near'
+                    #     elif 'image' in i.name:
+                    #         resampleAlg = 'bilinear'
+                    #     print(f'---resampleAlg= {resampleAlg}')
+                    #     reproject_to_4326_fixpx_gdal(i, j, resampleAlg, px_size=0.0001)
+
+                    # if the image, mask are alreadt 4326 we ignore the above and just change the names
+                    print('>>>tifs were already 4326, just changing names')
+                    ex_image.rename(reproj_image)
+                    ex_mask.rename(reproj_mask)
 
                     print_tiff_info_TSX(reproj_image)
                     print_tiff_info_TSX(reproj_mask)
@@ -127,7 +131,8 @@ def main(test=None):
                     print('\n>>>>>>>>>>>>>>>> clean mask >>>>>>>>>>>>>>>>>')
                     cleaned_mask = extract_folder / f'{mask_code}_cleaned_mask.tif'
                     clean_mask(reproj_mask, cleaned_mask)
-                    
+                    # delete reproj_mask
+                    reproj_mask.unlink()  
                     # print('>>>TIFF CHECK 2')
                     # print_tiff_info_TSX(image=reproj_image, mask=cleaned_mask)
 
@@ -143,16 +148,19 @@ def main(test=None):
                     file_name = extract_folder / f'{mask_code}_final_image.tif'
                     final_image = make_float32(clipped_image, file_name)
                     # print_tiff_info_TSX(final_image, mask=cleaned_mask)
+                    clipped_image.unlink()
 
                     print('>>> final image= ',final_image)
 
                     print('\n>>>>>>>>>>>>>>>> make mask float32 >>>>>>>>>>>>>>>>>')
                     final_mask = extract_folder / f'{mask_code}_final_mask.tif'
                     make_float32(cleaned_mask, final_mask)
+                    cleaned_mask.unlink()
 
-                    print('\n>>>>>>>>>>>>>>>> make extent float32 >>>>>>>>>>>>>>>>>')
-                    final_extent = extract_folder / f'{mask_code}_final_extent.tif'
-                    make_float32(reproj_extent, final_extent)
+
+                    # print('\n>>>>>>>>>>>>>>>> make extent float32 >>>>>>>>>>>>>>>>>')
+                    # final_extent = extract_folder / f'{mask_code}_final_extent.tif'
+                    # make_float32(reproj_extent, final_extent)
 
                     print_tiff_info_TSX(final_image) 
                     print_tiff_info_TSX(final_mask) 
@@ -165,7 +173,7 @@ def main(test=None):
     # CALCULATE MIN MAX
     if get_minmax:
         if minmax_path.exists():
-            print(f'>>>minmax file exists: {minmax_path}')
+            print(f'>>>deleting existing minmax file: {minmax_path}')
             # delete file
             os.remove(minmax_path)
 
@@ -199,7 +207,7 @@ def main(test=None):
             event_code = "_".join(cube.name.split('_')[:2])
             print("\n>>>>>>>>>>>> cube >>>>>>>>>>>>>>>=", cube.name)
             print(">>>event_code=", event_code)
-            save_tiles_path = data_root / 'TSX_TILES' / 'NORM_TILES_FOR_SELECT_AND_SPLIT_INPUT' / f"{event_code}_normalized_tiles_{norm_func}_pcnf{percent_non_flood}"
+            save_tiles_path = repo_src / 'TSX_TILES' / 'NORM_TILES_FOR_SELECT_AND_SPLIT_INPUT' / f"{event_code}_normalized_tiles_{norm_func}_pcnf{percent_non_flood}"
             if save_tiles_path.exists():
                 print(f"### Deleting existing tiles folder: {save_tiles_path}")
                 # delete the folder and create a new one

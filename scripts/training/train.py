@@ -48,7 +48,10 @@ from scripts.train_modules.train_classes import  UnetModel,   Segmentation_train
 from scripts.train_modules.train_functions import  loss_chooser, wandb_initialization, job_type_selector, create_subset
 
 #.............................................................
-load_dotenv()
+# PATHS DEFINITIONS ANd CONSTANTS
+repo_root = Path(__file__).resolve().parents[2]
+print(f"repo root: {repo_root}")
+
 os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
 
 def pick_device() -> torch.device:
@@ -57,10 +60,6 @@ def pick_device() -> torch.device:
     if torch.cuda.is_available():
         return torch.device("cuda")
     return torch.device("cpu")
-
-device = pick_device()                       # used everywhere below
-print(f"⇢ Using device: {device}")
-
 
 def handle_interrupt(signum, frame):
     print("\n---Custom signal handler: SIGINT received. Exiting.")
@@ -76,21 +75,16 @@ def main(train, test):
     """
     CONDA ENVIRONMENT = 'floodenv2'
     """
-    # if train and test:
-    #     raise click.UsageError("You can only specify one of --train or --test.")
-    # elif not (train or test):
-    #     while True:
-    #         user_input = input("Choose an option (--train or --test): ").strip().lower()
-    #         if user_input == "--train":
-    #             click.echo("Training the model...")
-    #             train = True
-    #             break
-    #         elif user_input == "--test":
-    #             click.echo("Testing the model...")
-    #             test = True
-    #             break
-    #         else:
-    #             click.echo("Invalid input. Please choose '--train' or '--test'.")
+    device = pick_device()                       # used everywhere below
+    print(f"⇢ Using device: {device}")
+
+    env_file = repo_root / ".env"
+    if env_file.exists():
+        load_dotenv(env_file)
+    else:
+        print("Warning: .env not found; using shell environment")
+
+
     if test and train:
         raise ValueError("You can only specify one of --train or --test.")
     train = True
@@ -110,13 +104,12 @@ def main(train, test):
     pl.seed_everything(42, workers=True)
     ###########################################################
     # Paths and Parameters
-    repo_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2")
-    dataset_path = repo_path / "1data" / "4final" / "train_INPUT"
+    dataset_path = repo_root / "data" / "4final" / "train_INPUT"
     if test:
-        dataset_path = repo_path / "1data" / "4final" / "test_INPUT"
+        dataset_path = repo_root / "data" / "4final" / "test_INPUT"
 
-    test_ckpt_path = Path(r"C:\Users\floodai\UNOSAT_FloodAI_v2\5checkpoints\ckpt_INPUT")
-    save_path = repo_path / "4results"
+    test_ckpt_path = repo_root / "checkpoints" / "ckpt_INPUT"
+    save_path = repo_root / "results"
     project = "TSX"
     subset_fraction = 1
     bs = 8
@@ -168,7 +161,7 @@ def main(train, test):
         "bce_weight": bce_weight,
         "max_epoch": max_epoch,
     }
-    wandb_logger = wandb_initialization(job_type, repo_path, project, dataset_name, run_name,train_list, val_list, test_list, wandb_config)
+    wandb_logger = wandb_initialization(job_type, repo_root, project, dataset_name, run_name,train_list, val_list, test_list, wandb_config)
 
     config = wandb.config
 
@@ -213,7 +206,7 @@ def main(train, test):
         mode="min",
     )
     # Trainer Setup
-    ckpt_dir = repo_path / "5checkpoints"
+    ckpt_dir = repo_root / "5checkpoints"
     ckpt_dir.mkdir(parents=True, exist_ok=True)
     checkpoint_callback = ModelCheckpoint(
         dirpath=ckpt_dir,

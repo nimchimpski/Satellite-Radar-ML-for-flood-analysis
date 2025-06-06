@@ -117,11 +117,15 @@ def create_vv_and_vh_tifs(file):
 
 # CREAT ANALYSIS EXTENT
 def create_extent_from_mask(mask_path, output_raster, no_data_value=None):
+    """
+    this assumes the mask is a binary mask where valid data is 1 and no-data is 0, probably for the surrounding area"""
     # Load the mask file
+    print('+++in create_extent_from_mask fn')
     with rasterio.open(mask_path) as src:
         mask = src.read(1)  # Read the first band
         transform = src.transform
         crs = src.crs
+        print(f'---src.nodata= {src.nodata}')
 
         # Identify no-data value
         if no_data_value is None:

@@ -1,0 +1,26 @@
+python - <<'PY'
+import re, sys, pathlib, ruamel.yaml
+
+src = pathlib.Path("preprocess_env_mac.yml")
+dst = src.with_suffix(".clean.yml")
+
+yaml = ruamel.yaml.YAML()
+yaml.preserve_quotes = True
+
+data = yaml.load(src.read_text())
+
+def strip_build(tag: str) -> str:
+    """zstd=1.5.6=h0ea2cb4_0  ->  zstd=1.5.6"""
+    return re.sub(r"(^[^=]+=[0-9][^=]*)=.*", r"\1", tag)
+
+deps_out = []
+for dep in data["dependencies"]:
+    if isinstance(dep, str) and not dep.startswith("pip"):
+        deps_out.append(strip_build(dep))
+    else:
+        deps_out.append(dep)
+
+data["dependencies"] = deps_out
+yaml.dump(data, dst.open("w"))
+print(f"Wrote cleaned file →  {dst}")
+PY

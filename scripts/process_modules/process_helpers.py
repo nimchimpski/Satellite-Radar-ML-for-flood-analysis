@@ -85,14 +85,15 @@ def compute_dataset_minmax(dataset, band_to_read=1):
         global_min (float): Global minimum pixel value.
         global_max (float): Global maximum pixel value.
     """
+    print('+++in compute_dataset_minmax')
     global_min = float('inf')
     global_max = float('-inf')
     
-    # Iterate through all TIFF files
+    # Iterate through all image files in each event
     for event in dataset.iterdir(): # ITER EVENT
         print(f'---event= {event.name}')    
         if event.is_dir():
-            images = list(event.rglob('*IMAGE_*.tif') )
+            images = list(event.rglob('*image*.tif') )
             print(f'---num images= {len(images)}')
             if len(images) != 1:
                 raise (f"---Error: {event.name} contains {len(images)} images. Skipping...")
@@ -290,8 +291,8 @@ def pad_tile(tile, expected_size=250, pad_value=0):
 
 # CHECKS FOR TILES (MULTIBAND TIFS)
 
-def print_tiff_info_TSX( image, index):
-    print(f'+++ PRINT TIFF INFO {index}---{image.name}')
+def print_tiff_info_TSX( image):
+    print(f'+++ PRINT TIFF INFO ---{image.name}')
     if image:
 
         with rasterio.open(image) as src:
