@@ -1,45 +1,28 @@
 
 
-# Ignore Python virtual environments
 venv/
-
-# Ignore compiled Python files
 __pycache__/
 *.py[cod]
-
-# Ignore Jupyter Notebook checkpoints
 .ipynb_checkpoints/
-
-# Ignore OS-specific files (macOS)
 .DS_Store
-
-# Ignore log files
 *.log
 
-# general
-.env
+# main folders to ignore
+data/
+data1/
+
+ignoretest/
+predictions/
+predictions1/
+predictions1/
+predictions_bkp/
+
 tiles/
+
 ignore/
-.xml
+*ignore*/
 
-# Ignore specific config or sensitive files
-configs/secrets.yaml
-wandb/
-
-# ignore checkpoint files
-*.ckpt
-
-*.code-workspace
-
-# DATA
-1data/
-
-*.nc
-
-# But allow .dvc files
-!1data/3final/*.dvc
-!1data/**/*.dvc
-
+# folder contents
 4results/predict_input_###
 4reults/ignore
 4results/prediction_image_results
@@ -47,12 +30,22 @@ wandb/
 
 QGIS/images
 
-ignoretest/
-predictions/
-predictions1/
+# files types
+*.env
+*.xml
+*.ckpt
+*.code-workspace
+*.nc
 
-predictions1/
-predictions_bkp/
-*ignore*/
+# Ignore specific config or sensitive files
+configs/secrets.yaml
+wandb/
+
+# But allow .dvc files
+!1data/3final/*.dvc
+!1data/**/*.dvc
 
 test_images_KEEP/
+
+/serverscripts
+deploy-item.sh
