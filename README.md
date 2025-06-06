@@ -4,8 +4,12 @@ FloodAI-V2 is a deep learning-based segmentation framework tailored for flood de
 
 ## Key Features of FloodAIv2:   
 The code attempts to be modular with reusable functions split across ‘modules’.
-Multiple dataset versions were made for training and testing - based on 1) DLR Water S1S2 combined with UNOSAT data 2) DLR TerraSARX / TanDEMX
-Preprocessing Enhancements:   A new data preprocessing pipeline was developed extract the relevant data from Geotifs concatenating it into  xarray datasets along with other data such as DEM and SLOPE, which is then converted into machine-learning-ready tiles, with mappable layers as model input channels.
+Multiple dataset versions were made for training and testing - based on 
+1) DLR Water S1S2 combined with UNOSAT data 
+2) DLR TerraSARX / TanDEMX
+
+### Preprocessing Enhancements:   
+A new data preprocessing pipeline was developed extract the relevant data from Geotifs concatenating it into  xarray datasets along with other data such as DEM and SLOPE, which is then converted into machine-learning-ready tiles, with mappable layers as model input channels.
 Normalization steps included   log scaling, clipping, and Min-Max normalization   for SAR data, ensuring consistency during training and inference. Normalization is shown to have a huge impact on training results.
 A   parameterized tile selection process   was trialled and partially implemented, allowing controlled class balancing and landcover diversity.  Current class balance selection is random, with insufficient control to achieve a varied selection of landcover types in the tiles meeting the desired percentage below the required threshold. Use of  STAC metadata to one simple and powerful way to solve this.
 
