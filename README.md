@@ -2,7 +2,7 @@
 
 FloodAI-V2 was developed to support rapid, accurate flood mapping during disaster response operations, building on lessons learned from the original FloodAI system. The first version, while conceptually valuable, had become outdated and unmaintainable—its codebase was no longer functional with modern environments. In response, FloodAI-V2 was created from scratch as a fully modern, modular, and scalable framework. It addresses previous limitations by improving training stability, enabling flexible model architectures, and supporting multi-modal geospatial inputs. Optimized for flood detection using Synthetic Aperture Radar (SAR) imagery, particularly very high-resolution sources like TerraSAR-X, the system also integrates auxiliary data such as Digital Elevation Models (DEM) and terrain slope to enhance accuracy in complex terrains. Built with PyTorch Lightning, it features robust validation tracking, GPU-accelerated training, and seamless experiment logging via Weights & Biases—making it ready for both research and operational deployment.
 
-## Key Features of FloodAIv2:   
+## Key Features of FloodAI v2:   
 The code attempts to be modular with reusable functions split across ‘modules’.
 Multiple dataset versions were made for training and testing - based on 
 1) DLR Water S1S2 combined with UNOSAT data 
