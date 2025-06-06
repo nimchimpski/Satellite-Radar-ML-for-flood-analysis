@@ -27,7 +27,7 @@ import segmentation_models_pytorch as smp
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint,EarlyStopping
-from iglovikov_helper_functions.dl.pytorch.lightning import find_average
+# from iglovikov_helper_functions.dl.pytorch.lightning import find_average
 from surface_distance.metrics import compute_surface_distances, compute_surface_dice_at_tolerance
 from pytorch_lightning.tuner.tuning import Tuner
 # .............................................................
@@ -50,6 +50,17 @@ from scripts.train_modules.train_functions import  loss_chooser, wandb_initializ
 #.............................................................
 load_dotenv()
 os.environ['KMP_DUPLICATE_LIB_OK'] = "True"
+
+def pick_device() -> torch.device:
+    if torch.backends.mps.is_available():
+        return torch.device("mps")
+    if torch.cuda.is_available():
+        return torch.device("cuda")
+    return torch.device("cpu")
+
+device = pick_device()                       # used everywhere below
+print(f"⇢ Using device: {device}")
+
 
 def handle_interrupt(signum, frame):
     print("\n---Custom signal handler: SIGINT received. Exiting.")
@@ -193,7 +204,7 @@ def main(train, test):
         if ckpt_to_test is None:
             raise FileNotFoundError(f"No checkpoint found in {test_ckpt_path}")
     # Model Initialization
-    model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED).to('cuda')
+    model = UnetModel(encoder_name='resnet34', in_channels=in_channels, classes=1, pretrained=PRETRAINED).to(device)
 
     loss_fn = loss_chooser(user_loss, config.focal_alpha, config.focal_gamma, config.bce_weight)
     early_stopping = pl.callbacks.EarlyStopping(
@@ -215,17 +226,40 @@ def main(train, test):
         callbacks=[checkpoint_callback, early_stopping]
     else:
         callbacks=[checkpoint_callback]
+    # ---------- precision & accelerator automatically picked ------------- #
+    #  – MPS  : bf16 autocast, accelerator="mps"
+    #  – CUDA : fp16 autocast, accelerator="gpu"
+    #  – CPU  : fp32
+    #
+
+    accelerator = (
+        "mps"
+        if device.type == "mps"
+        else "gpu"
+        if device.type == "cuda"
+        else "cpu"
+    )
+
+    precision = (
+        "bf16-mixed"
+        if device.type == "mps"
+        else "16-mixed"
+        if device.type == "cuda"
+        else 32
+    )
+
     trainer = pl.Trainer(
         logger=wandb_logger,
         log_every_n_steps=LOGSTEPS,
         max_epochs=config.max_epoch,
-        accelerator='gpu',
+        accelerator=accelerator,
         devices=1,
-        precision='16-mixed',
+        precision=precision,
         fast_dev_run=DEVRUN,
         num_sanity_val_steps=2,
-        callbacks=callbacks
+        callbacks=callbacks,
     )
+
 
 
 
@@ -245,7 +279,8 @@ def main(train, test):
     run_time = (time.time() - start) / 60
     print(f">>> Total runtime: {run_time:.2f} minutes")
     wandb.finish()
-    torch.cuda.empty_cache()
+    if device.type == "cuda":
+        torch.cuda.empty_cache()
 
 
 if __name__ == '__main__':

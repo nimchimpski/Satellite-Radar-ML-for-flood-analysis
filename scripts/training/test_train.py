@@ -54,11 +54,11 @@ def pick_device():
         return torch.device("cuda")
     return torch.device("cpu")
 
-
+device = pick_device()
 # Simulate one training step
-model = UnetModel(encoder_name='resnet34', in_channels=1, classes=1, pretrained=False).to(pick_device())
-dummy_input = torch.randn(2, 1, 256, 256).to(pick_device())
-dummy_mask = torch.randint(0, 2, (2, 1, 256, 256), dtype=torch.float32).to(pick_device())  # Binary mask
+model = UnetModel(encoder_name='resnet34', in_channels=1, classes=1, pretrained=False).to(device)
+dummy_input = torch.randn(2, 1, 256, 256).to(device)
+dummy_mask = torch.randint(0, 2, (2, 1, 256, 256), dtype=torch.float32).to(device)  # Binary mask
 
 output = model(dummy_input)
 print(f"Output shape: {output.shape}")  # Should match dummy_mask shape

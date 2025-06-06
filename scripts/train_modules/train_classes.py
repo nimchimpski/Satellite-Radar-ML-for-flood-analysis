@@ -12,7 +12,7 @@ import segmentation_models_pytorch as smp
 import pytorch_lightning as pl
 from pytorch_lightning.loggers import WandbLogger
 from pytorch_lightning.callbacks import ModelCheckpoint,EarlyStopping
-from iglovikov_helper_functions.dl.pytorch.lightning import find_average
+# from iglovikov_helper_functions.dl.pytorch.lightning import find_average
 from surface_distance.metrics import compute_surface_distances, compute_surface_dice_at_tolerance
 from torch.utils.data import DataLoader
 from torchvision.utils import save_image
