@@ -42,7 +42,7 @@ from wandb import Artifact
 from datetime import datetime
 # .............................................................
 
-from scripts.process_modules.process_helpers import handle_interrupt
+from scripts.process.process_helpers import handle_interrupt
 from scripts.train_modules.train_helpers import is_sweep_run
 from scripts.train_modules.train_classes import  UnetModel,   Segmentation_training_loop 
 from scripts.train_modules.train_functions import  loss_chooser, wandb_initialization, job_type_selector, create_subset
@@ -73,16 +73,16 @@ signal.signal(signal.SIGINT, handle_interrupt)
 
 def main(train, test):
     """
-    CONDA ENVIRONMENT = 'floodenv2'
+    CONDA ENVIRONMENT = 'floodai_train'
     """
     device = pick_device()                       # used everywhere below
-    print(f"⇢ Using device: {device}")
+    print(f">>> Using device: {device}")
 
     env_file = repo_root / ".env"
     if env_file.exists():
         load_dotenv(env_file)
     else:
-        print("Warning: .env not found; using shell environment")
+        print(">>>Warning: .env not found; using shell environment")
 
 
     if test and train:
@@ -110,7 +110,7 @@ def main(train, test):
 
     test_ckpt_path = repo_root / "checkpoints" / "ckpt_INPUT"
     save_path = repo_root / "results"
-    project = "TSX"
+    project = "LAUSANNE"
     subset_fraction = 1
     bs = 8
     max_epoch =100
